@@ -1,0 +1,30 @@
+[profile.default]
+# Libraries + tests only for fast CI; full `contracts/` use profile `full` (see below).
+src = "libraries"
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+# Substring filters; avoids 0.8.24-only V4 and legacy / heavy libs.
+skip = ["OldLiquidityLibrary", "LiquidityLibraryV4", "ABDKMathQuad"]
+
+remappings = [
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[profile.full]
+src = "contracts"
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+# Broken legacy file; not needed for FloatStrategy / router tests.
+skip = ["Old_Float_Offensive"]
+remappings = [
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \":*)",
+      "Bash(node -e \":*)",
+      "Bash(grep -l \"IFloatStrategy\" \"C:\\\\code\\\\roulette_contracts\\\\artifacts\\\\build-info\"\"*.json 2>/dev/null || find \"C:coderoulette_contractsartifacts\" -name \"*.json\" | xargs grep -l \"IFloatStrategy \")",
+      "Bash(grep -l \"IFloatStrategy\" /c/code/roulette_contracts/artifacts/build-info/*.json)",
+      "Bash(grep -l \"FloatLiquidtoken\" \"C:/code/roulette_contracts/artifacts/build-info/\"*.json)"
+    ]
+  }
+}
