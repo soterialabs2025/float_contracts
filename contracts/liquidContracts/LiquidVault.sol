@@ -55,7 +55,7 @@ contract LiquidVault is Ownable, ReentrancyGuard, Pausable {
   } 
 
   function setUpContract() external onlyOwner  {
-    assetAddress = _manager.getAddress("ASSET");
+    assetAddress = _manager.getAddress("LiquidASSET");
     liquidTokenAddress = _manager.getAddress("LiquidToken");
     strategyAddr = _manager.getAddress("LiquidStrategy");
     swapRouterAddr = _manager.getAddress("LiquidSwapRouter");
@@ -79,7 +79,7 @@ contract LiquidVault is Ownable, ReentrancyGuard, Pausable {
   }
 
   function updateAsset() external onlyAuthorized {
-    assetAddress = _manager.getAddress("ASSET");
+    assetAddress = _manager.getAddress("LiquidASSET");
     asset = IERC20(assetAddress);
   } 
 
@@ -100,7 +100,7 @@ contract LiquidVault is Ownable, ReentrancyGuard, Pausable {
     return address(weth) != address(0) ? weth.balanceOf(address(this)) : 0;
   }
   
-  /// @notice Get available ASSET balance in vault
+  /// @notice Get available LiquidASSET balance in vault
   /// @return Available ASSET balance
   function availableAsset() public view returns (uint256) {
     return asset.balanceOf(address(this));
@@ -358,23 +358,6 @@ contract LiquidVault is Ownable, ReentrancyGuard, Pausable {
     return liquidToken.allowance(owner, address(this));
   }
 
-  /// @notice Get detailed position information from Uniswap V3
-  /// @return tickLower The lower end of the tick range for the position
-  /// @return tickUpper The higher end of the tick range for the position
-  /// @return liquidity The liquidity of the position
-  /// @return feeGrowthInside0LastX128 The fee growth of token0 as of the last action on the individual position
-  /// @return feeGrowthInside1LastX128 The fee growth of token1 as of the last action on the individual position
-  /// @return tokensOwed0 The uncollected amount of token0 owed to the position
-  /// @return tokensOwed1 The uncollected amount of token1 owed to the position
-  function getPositionDetails() external view returns (int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1) {
-    if (address(strategy) == address(0)) return (0, 0, 0, 0, 0, 0, 0);
-    
-    uint256 positionId_ = ILiquidStrategy(address(strategy)).getPositionId();
-    if (positionId_ == 0) return (0, 0, 0, 0, 0, 0, 0);
-    
-    INonfungiblePositionManager npm = INonfungiblePositionManager(nonfungiblePositionManagerAddr);
-    (, , , , , tickLower, tickUpper, liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128, tokensOwed0, tokensOwed1) = npm.positions(positionId_);
-  }
 
   /// @notice Rescue ERC20 tokens sent to the contract by mistake
   /// @dev Only owner can rescue tokens. Cannot rescue asset or liquid token as they are part of the vault.

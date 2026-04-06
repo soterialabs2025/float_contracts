@@ -12,8 +12,8 @@ import "./libraries/TickMath.sol";
 import "./interfaces/ILiquidStrategy.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-/// @notice Holds ASSET only (no Uniswap V3 liquidity). Incoming WETH is swapped to ASSET.
-///         `vaultValue()` is total NAV in WETH (ASSET at spot + idle WETH).
+/// @notice Holds LiquidASSET only (no Uniswap V3 liquidity). Incoming WETH is swapped to LiquidASSET.
+///         `vaultValue()` is total NAV in WETH (LiquidASSET at spot + idle WETH).
 contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {    
     error Unauthorized();
     error ZeroValue();
@@ -24,7 +24,7 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
     IUniswapV3PoolMinimal private pool;
     ISwapRouter private swapRouter;
     address public managerAddress;
-    IERC20 private ASSET;
+    IERC20 private LiquidASSET;
     IERC20 private WETH;
     address private immutable baseWETH = 0x4200000000000000000000000000000000000006;
     address private swapRouterAddr;
@@ -87,7 +87,7 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
         keeperStratAddr = _keeperStrategyAddr;
         pool = IUniswapV3PoolMinimal(assetPoolV3);
         swapRouter = ISwapRouter(swapRouterAddr);
-        ASSET = IERC20(assetAddr);
+        LiquidASSET = IERC20(assetAddr);
         _giveAllowances();
         contractSetUp = true;
         emit ContractSetUp(_msgSender());
@@ -97,7 +97,7 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
         // Optional: add harvest-on-deposit here; vault uses `vaultValue()` after this for share math.
     }
 
-    /// @notice Converts all WETH on this contract to ASSET. `amount` must be > 0 (vault hint); uses full WETH balance.
+    /// @notice Converts all WETH on this contract to LiquidASSET. `amount` must be > 0 (vault hint); uses full WETH balance.
     ///         Then snapshots `_spotPrice1e18`, current tick as `baselineTick`, clears `floorTick`, and sets `lowerTick`/`upperTick` from `startM` and `tickSpacing`.
     function deposit(uint256 amount) external override onlyAuthorized nonReentrant {
         if (amount == 0) revert ZeroValue();
@@ -143,7 +143,7 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
         if (totalSupply_ == 0) revert ZeroValue();
         if (receiver == address(0)) revert ZeroAddress();
 
-        uint256 idleAssetBefore = ASSET.balanceOf(address(this));
+        uint256 idleAssetBefore = LiquidASSET.balanceOf(address(this));
         uint256 idleWethBefore = WETH.balanceOf(address(this));
 
         uint256 userIdleAsset = Math.mulDiv(idleAssetBefore, userShares, totalSupply_);
@@ -158,12 +158,12 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
         totalUserWeth -= wethFee;
 
         uint256 wethBeforeSwap = WETH.balanceOf(address(this));
-        _swap(ASSET, WETH, totalUserAsset);
+        _swap(LiquidASSET, WETH, totalUserAsset);
         uint256 wethFromAsset = WETH.balanceOf(address(this)) - wethBeforeSwap;
         totalUserWeth += wethFromAsset;
 
         if (assetFee > 0) {
-            ASSET.safeTransfer(owner(), assetFee);
+            LiquidASSET.safeTransfer(owner(), assetFee);
         }
         if (wethFee > 0) {
             WETH.safeTransfer(owner(), wethFee);
@@ -176,7 +176,7 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
     function _convertAllWethToAsset() internal {
         uint256 w = WETH.balanceOf(address(this));
         if (w > 0) {
-            _swap(WETH, ASSET, w);
+            _swap(WETH, LiquidASSET, w);
         }
     }
 
@@ -192,11 +192,11 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
     }
 
     function _getTokenBalances() internal view returns (uint256 assetBal, uint256 wethBal) {
-        assetBal = ASSET.balanceOf(address(this));
+        assetBal = LiquidASSET.balanceOf(address(this));
         wethBal = WETH.balanceOf(address(this));
     }
 
-    /// @dev WETH-denominated holdings: idle WETH plus ASSET valued via reference pool spot.
+    /// @dev WETH-denominated holdings: idle WETH plus LiquidASSET valued via reference pool spot.
     function _totalValueInWeth() internal view returns (uint256) {
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         uint256 p = _spotPrice1e18();
@@ -323,8 +323,8 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
     }
 
     function _giveAllowances() internal {
-        if (address(ASSET) != address(0)) {
-            ASSET.approve(address(swapRouter), type(uint256).max);
+        if (address(LiquidASSET) != address(0)) {
+            LiquidASSET.approve(address(swapRouter), type(uint256).max);
         }
         WETH.approve(address(swapRouter), type(uint256).max);
     }
@@ -332,18 +332,18 @@ contract LiquidStrategy is ILiquidStrategy, Ownable, Pausable, ReentrancyGuard {
     function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external override onlyAuthorized {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
 
-        uint256 assetBal = ASSET.balanceOf(address(this));
+        uint256 assetBal = LiquidASSET.balanceOf(address(this));
         if (assetBal > 0) {
-            _swap(ASSET, WETH, assetBal);
+            _swap(LiquidASSET, WETH, assetBal);
         }
         assetAddr = _newAssetAddr;
-        ASSET = IERC20(_newAssetAddr);
+        LiquidASSET = IERC20(_newAssetAddr);
         assetPoolV3 = _newPoolV3Addr;
         pool = IUniswapV3PoolMinimal(_newPoolV3Addr);
         _giveAllowances();
         uint256 wethBal = WETH.balanceOf(address(this));
         if (wethBal > 0) {
-            _swap(WETH, ASSET, wethBal);
+            _swap(WETH, LiquidASSET, wethBal);
         }
         emit StrategyEvent(10, 0, 0, 0);
     }

@@ -133,7 +133,7 @@ contract LiquidSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         _;
     }
     function setUpContract() external onlyOwner {
-        address _tokenAddr = manager.getAddress("ASSET");
+        address _tokenAddr = manager.getAddress("LiquidASSET");
         address _strategyAddr = manager.getAddress("LiquidStrategy");
         demeterAddr = manager.getAddress("Demeter");
         address _ur = manager.getAddress("UniversalRouter");
@@ -147,8 +147,14 @@ contract LiquidSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         emit StrategySet(_strategyAddr);
     }
 
+    /// @notice Repoint registry if router was deployed with a different manager than `LiquidVault` (fixes `updateAsset` from `LiquidContractManager`).
+    function setManager(address _manager) external onlyOwner {
+        require(_manager != address(0), "manager=0");
+        manager = IContractManager(_manager);
+    }
+
     function updateAsset() external onlyAuthorized {
-        address _assetAddr = manager.getAddress("ASSET");
+        address _assetAddr = manager.getAddress("LiquidASSET");
         require(_assetAddr != address(0), "asset=0");
         TOKEN = IERC20(_assetAddr);
     }

@@ -7,11 +7,11 @@ import "./interfaces/IContractManager.sol";
 /**
  * @title LiquidTokens
  * @author TB_Contracts Team
- * @notice ERC20 token representing shares in the ASSET/WETH concentrated liquidity pool
+ * @notice ERC20 token representing shares in the LiquidASSET/WETH concentrated liquidity pool
  * @dev This token is minted when users deposit into the LiquidVault
  * @dev Users burn these tokens to withdraw their proportional share of the pool
  */
-contract LiquidLiquidToken is ERC20, Ownable {
+contract LiquidToken is ERC20, Ownable {
     
     // The vault contract that can mint/burn these tokens
     address public LiquidVault;

@@ -55,7 +55,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
   } 
 
   function setUpContract() external onlyOwner  {
-    assetAddress = _manager.getAddress("ASSET");
+    assetAddress = _manager.getAddress("LiquidASSET");
     liquidTokenAddress = _manager.getAddress("FloatLiquidToken");
     strategyAddr = _manager.getAddress("FloatStrategy");
     swapRouterAddr = _manager.getAddress("FloatSwapRouter");
@@ -79,7 +79,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
   }
 
   function updateAsset() external onlyAuthorized {
-    assetAddress = _manager.getAddress("ASSET");
+    assetAddress = _manager.getAddress("LiquidASSET");
     asset = IERC20(assetAddress);
   } 
 
@@ -100,8 +100,8 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     return address(weth) != address(0) ? weth.balanceOf(address(this)) : 0;
   }
   
-  /// @notice Get available ASSET balance in vault
-  /// @return Available ASSET balance
+  /// @notice Get available LiquidASSET balance in vault
+  /// @return Available LiquidASSET balance
   function availableAsset() public view returns (uint256) {
     return asset.balanceOf(address(this));
   }
@@ -269,7 +269,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
   }
 
   /// @notice Get the balance of tokens in the pool
-  /// @return tokenAmt Amount of ASSET in pool
+  /// @return tokenAmt Amount of LiquidASSET in pool
   /// @return wethAmt Amount of WETH in pool
   function getPoolBalance() external view returns (uint256 tokenAmt, uint256 wethAmt) {
     if (address(strategy) == address(0)) return (0, 0);
@@ -278,7 +278,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
  
   /// @notice Retire the strategy in emergency situations.
   /// @dev Calls strategy.withdraw for 100% of shares, draining all liquidity, collecting fees,
-  ///      swapping ASSET→WETH inside the strategy, and returning all WETH to this vault.
+  ///      swapping LiquidASSET→WETH inside the strategy, and returning all WETH to this vault.
   ///      retiredWethBalance is then used for proportional user withdrawals via retireWithdrawal().
   function retireStrategy() external onlyOwner nonReentrant {
     require(!retired, "Strategy already retired");
@@ -294,7 +294,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     retiredTotalSupply = totalSupply_;
     retiredTokenBalance = 0;
 
-    // Drain strategy: decreases all pool liquidity, swaps ASSET→WETH, transfers WETH here.
+    // Drain strategy: decreases all pool liquidity, swaps LiquidASSET→WETH, transfers WETH here.
     // Passing userShares == totalSupply_ → 100% proportion withdrawn.
     uint256 wethBefore = weth.balanceOf(address(this));
     strategy.withdraw(totalSupply_, totalSupply_, address(this));

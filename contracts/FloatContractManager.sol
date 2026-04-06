@@ -137,7 +137,7 @@ contract FloatContractManager is Ownable {
         );
         require(success, "changeAsset call failed");
 
-        addresses["ASSET"] = _newAssetAddr;
+        addresses["LiquidASSET"] = _newAssetAddr;
         addresses["AssetPoolV3"] = newPoolV3Addr;
 
         // Update Vault - must succeed

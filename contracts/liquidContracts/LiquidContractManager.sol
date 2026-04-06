@@ -120,7 +120,7 @@ contract LiquidContractManager is Ownable {
 
         address vaultAddr = addresses["LiquidVault"];
         address strategyAddr = addresses["LiquidStrategy"];
-        address swapRouterAddr = addresses["LiquidSwaprouter"];
+        address swapRouterAddr = addresses["LiquidSwapRouter"];
 
         require(strategyAddr != address(0), "Strategy address not set");
 
@@ -132,24 +132,33 @@ contract LiquidContractManager is Ownable {
         require(newPoolV3Addr != address(0), "Pool does not exist for asset/WETH");
 
         // Call changeAsset on Strategy first; only persist new asset when it succeeds
-        (bool success, ) = strategyAddr.call(
+        _bubbleCall(
+            strategyAddr,
             abi.encodeWithSignature("changeAsset(address,address)", _newAssetAddr, newPoolV3Addr)
         );
-        require(success, "changeAsset call failed");
 
-        addresses["ASSET"] = _newAssetAddr;
-        addresses["AssetPoolV3"] = newPoolV3Addr;
+        addresses["LiquidASSET"] = _newAssetAddr;
+        addresses["LiquidAssetPoolV3"] = newPoolV3Addr;
 
-        // Update Vault - must succeed
         if (vaultAddr != address(0)) {
-            (bool ok,) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));
-            require(ok, "Vault updateAsset failed");
+            _bubbleCall(vaultAddr, abi.encodeWithSignature("updateAsset()"));
         }
 
-        // Update SwapRouter - must succeed
         if (swapRouterAddr != address(0)) {
-            (bool ok,) = swapRouterAddr.call(abi.encodeWithSignature("updateAsset()"));
-            require(ok, "SwapRouter updateAsset failed");
+            _bubbleCall(swapRouterAddr, abi.encodeWithSignature("updateAsset()"));
+        }
+    }
+
+    /// @dev Forwards revert data from the callee (e.g. `Unauthorized()`, `asset=0`) instead of a generic string.
+    function _bubbleCall(address target, bytes memory data) private {
+        (bool success, bytes memory returndata) = target.call(data);
+        if (!success) {
+            if (returndata.length > 0) {
+                assembly ("memory-safe") {
+                    revert(add(returndata, 32), mload(returndata))
+                }
+            }
+            revert("call failed");
         }
     }
 }    
