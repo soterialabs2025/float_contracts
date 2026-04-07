@@ -17,6 +17,27 @@
 /contracts/libraries/artifacts
 /ignition
 out/
+.deps\**
+.deps\**\**
+.deps\**\**\**
+.deps\**\**\**\**
+.deps\**\**\**\**\**
+.deps\**\**\**\**\**\**
+.deps\**\**\**\**\**\**\**
+.deps\**\**\**\**\**\**\**\**
+.deps\**\**\**\**\**\**\**\**\**
+.deps\**\**\**\**\**\**\**\**\**\**
+.deps/**
+.deps/**/**
+.deps/**/**/**
+.deps/**/**/**/**
+.deps/**/**/**/**/**
+.deps/**/**/**/**/**/**
+.deps/**/**/**/**/**/**/**
+.deps/**/**/**/**/**/**/**/**
+.deps/**/**/**/**/**/**/**/**/**
+.deps/**/**/**/**/**/**/**/**/**/**
+.deps\npm\
 
 # misc
 .DS_Store
@@ -37,3 +58,11 @@ cache/
 .states
 .debs\
 .cache\
+deps/npm/
+deps/yarn/
+deps/pnpm/
+deps/bun/
+deps/deno/
+deps/cargo/
+deps/cargo/
+deps\npm\@openzeppelin\

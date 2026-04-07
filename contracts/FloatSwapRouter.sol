@@ -13,6 +13,7 @@ import "../interfaces/ISwapRouter.sol";
 import "../interfaces/INonfungiblePositionManager.sol";
 import "../interfaces/IUniswapV3PoolMinimal.sol";
 import "../interfaces/IUniswapV3Factory.sol";
+import "../interfaces/IUniswapV3Pool.sol";
 import "../interfaces/IContractManager.sol";
 import "../interfaces/IUniswapV2Router02.sol";
 import "../interfaces/IUniversalRouter.sol";
@@ -65,7 +66,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     /// @notice Slippage cap (bps) for `swapExactInputFromStrategyStrictQuote` only (quoter + TWAP min-out).
     /// @dev Default 200 (2%) — looser than `defaultSlippageBps` because TWAP raises the floor on large swaps;
     ///      strict path never uses `fallbackSlippageBps` (no weak quoter fallback).
-    uint16 public strictStrategySlippageBps = 200;
+    uint16 public strictStrategySlippageBps = 300;
 
     /// @dev When `amountIn` is at least this (raw units of tokenIn), `swapExactInputFromStrategyStrictQuote`
     ///      merges a TWAP-based floor with the quoter min when `strategyTwapPeriodSeconds != 0`.
@@ -75,7 +76,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     /// @notice TWAP window (seconds) for strategy strict swaps when `amountIn >= largeSwapTwapMinAmount`.
     /// @dev Default 600 (10m): balances manipulation resistance with freshness when the system may be targeted.
     ///      Set to 0 to use strict quoter only (no TWAP floor).
-    uint32 public strategyTwapPeriodSeconds = 600;
+    uint32 public strategyTwapPeriodSeconds = 400;
 
     bool public initialized;
     
@@ -502,7 +503,9 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         return Math.mulDiv(amountIn, 1 << 192, ratioX192);
     }
 
-    /// @notice `max(quote * (1-slip), twapOut * (1-slip))` when TWAP branch active; else quoter-only.
+    /// @notice When TWAP is active: `max(quote * (1-slip), twapOut * (1-slip))`, capped at raw `quoted` so a lagging
+    ///         TWAP cannot require more output than the quoter's spot simulation (avoids STF after real volatility).
+    ///         If `observe` reverts (new pool / sparse cardinality), falls back to quoter-only min.
     function _minimumOutStrictQuote(
         address tokenIn,
         address tokenOut,
@@ -513,7 +516,8 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     ) internal returns (uint256 minOut) {
         require(slippageBps <= maxSlippageBps, "slippage>max");
         uint256 quoted = _quoteExactOutStrict(tokenIn, tokenOut, amountIn, fee);
-        minOut = Math.mulDiv(quoted, (10_000 - slippageBps), 10_000);
+        uint256 qMin = Math.mulDiv(quoted, (10_000 - slippageBps), 10_000);
+        minOut = qMin;
 
         if (twapPeriodSeconds == 0 || amountIn < largeSwapTwapMinAmount) {
             return minOut;
@@ -524,11 +528,26 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         address pool = IUniswapV3Factory(baseV3FactoryAddr).getPool(token0, token1, fee);
         require(pool != address(0), "StrictQuote: no pool");
 
-        (int24 meanTick,) = UniswapV3OracleLibrary.consult(pool, twapPeriodSeconds);
-        uint256 twapOut = _amountOutAtTick(tokenIn, tokenOut, meanTick, amountIn);
-        uint256 minTwap = Math.mulDiv(twapOut, (10_000 - slippageBps), 10_000);
-        if (minTwap > minOut) {
-            minOut = minTwap;
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = twapPeriodSeconds;
+        secondsAgos[1] = 0;
+
+        try IUniswapV3Pool(pool).observe(secondsAgos) returns (
+            int56[] memory tickCumulatives,
+            uint160[] memory
+        ) {
+            int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
+            int32 sec = int32(twapPeriodSeconds);
+            int24 meanTick = int24(tickCumulativesDelta / sec);
+            if (tickCumulativesDelta < 0 && (tickCumulativesDelta % sec != 0)) {
+                meanTick--;
+            }
+            uint256 twapOut = _amountOutAtTick(tokenIn, tokenOut, meanTick, amountIn);
+            uint256 minTwap = Math.mulDiv(twapOut, (10_000 - slippageBps), 10_000);
+            uint256 merged = Math.max(qMin, minTwap);
+            minOut = merged > quoted ? qMin : merged;
+        } catch {
+            minOut = qMin;
         }
     }
 
