@@ -73,7 +73,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   } 
 
   function setUpContract() external onlyOwner  {
-    assetAddress = _manager.getAddress("LiquidASSET");
+    assetAddress = _manager.getAddress("ASSET");
     liquidTokenAddress = _manager.getAddress("FloatLiquidToken");
     strategyAddr = _manager.getAddress("FloatStrategy");
     swapRouterAddr = _manager.getAddress("FloatSwapRouter");

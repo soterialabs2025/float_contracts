@@ -586,17 +586,18 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function getPositionId() external view override returns (uint256) {
         return liqPos.positionId;
     }
+    /// @dev Uses `forceApprove` so tokens that require allowance 0 before a new non-zero value (e.g. USDT-style) do not revert.
     function _giveAllowances() internal {
         if (address(ASSET) != address(0)) {
-            ASSET.approve(address(nonfungiblePositionManager), type(uint256).max);
-            ASSET.approve(address(swapRouter), type(uint256).max);
+            ASSET.forceApprove(address(nonfungiblePositionManager), type(uint256).max);
+            ASSET.forceApprove(address(swapRouter), type(uint256).max);
         }
-        WETH.approve(address(nonfungiblePositionManager), type(uint256).max);
-        WETH.approve(address(swapRouter), type(uint256).max);
+        WETH.forceApprove(address(nonfungiblePositionManager), type(uint256).max);
+        WETH.forceApprove(address(swapRouter), type(uint256).max);
     }
     function _removeAllowances() internal {
-        if (address(ASSET) != address(0)) ASSET.approve(address(nonfungiblePositionManager), 0);
-        WETH.approve(address(nonfungiblePositionManager), 0);
+        if (address(ASSET) != address(0)) ASSET.forceApprove(address(nonfungiblePositionManager), 0);
+        WETH.forceApprove(address(nonfungiblePositionManager), 0);
     }
     function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external override onlyAuthorized {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
