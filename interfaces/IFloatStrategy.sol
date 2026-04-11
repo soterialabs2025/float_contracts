@@ -2,6 +2,9 @@
 pragma solidity ^0.8.20;
 
 interface IFloatStrategy {
+  /// @notice Cumulative WETH-notional LP fees recorded by the strategy (drives vault fee-per-share accounting).
+  function UniswapFeesCollected() external view returns (uint256);
+
   function getPositionId() external view returns (uint256);
   function beforeDeposit() external;
   function deposit(uint256 amount) external;

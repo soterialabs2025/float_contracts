@@ -15,16 +15,16 @@ contract StrategyManager is Ownable {
     uint256 public constant DIVISOR = 10000;
     uint24 public v3Fee = 10000;
     int24 public tickSpacing = 200;
-    int8 public startM = 4;
+    int8 public startM = 5;
     uint256 public withdrawalFeeBps = 0;
     uint16 public slippageBps = 100;
     uint16 public fallbackSlippageBps = 300;
     uint256 public minHarvestDelay = 2 hours;
     DeviationBands public deviationBands;
-    uint256 public offensiveTargetAssetBps = 5000; 
+    uint256 public offensiveTargetAssetBps = 4500;  
     uint32 public floorSlopeNumerator = 1;
     uint32 public floorSlopeDenominator = 3;
-    uint16 public minFloorDeviationBps = 300;
+    uint16 public minFloorDeviationBps = 200;
 
     event ParamUpdated(bytes32 indexed param, uint256 val1, uint256 val2);
 

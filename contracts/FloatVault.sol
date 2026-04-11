@@ -14,10 +14,11 @@ import "../libraries/Math.sol";
 import "../interfaces/IFloatStrategy.sol";
 import "../interfaces/INonfungiblePositionManager.sol";
 import "../interfaces/ISwapRouter.sol";
+import "../interfaces/IFloatVault.sol";
 import "../interfaces/IUniswapV3PoolMinimal.sol";
 import "../interfaces/IUniswapV3Factory.sol";
 
-contract FloatVault is Ownable, ReentrancyGuard, Pausable {
+contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
    
   using SafeERC20 for IERC20;
 
@@ -47,7 +48,24 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
   event Deposit(address indexed depositor, uint256 amount, uint256 shares);
   event StrategyRetired(uint256 poolValue);
   event RetireWithdrawal(address indexed receiver, uint256 shares, uint256 tokenAmount, uint256 wethAmount);
-  event AssetChanged(address indexed newAsset); 
+  event AssetChanged(address indexed newAsset);
+  event PoolValueSnapshotRecorded(uint256 valueWeth, uint64 timestamp, uint64 blockNumber);
+
+  /// @dev Scaled accumulator for `UniswapFeesCollected` growth per liquid share (WETH-notional attribution, not a claim).
+  uint256 public constant FEES_PER_SHARE_PRECISION = 1e18;
+  uint256 public accUniswapFeesPerShare;
+  /// @notice Last `strategy.UniswapFeesCollected()` value applied into `accUniswapFeesPerShare`.
+  uint256 public uniswapFeesCollectedSynced;
+  mapping(address => uint256) public uniswapFeeDebt;
+
+  /// @notice WETH-denominated Uniswap position value from the strategy at snapshot time (see `IFloatStrategy.poolValue()`).
+  struct PoolValueSnapshot {
+    uint256 valueWeth;
+    uint64 timestamp;
+    uint64 blockNumber;
+  }
+
+  PoolValueSnapshot public latestPoolValueSnapshot;
   constructor(address _managerAddr) Ownable(_msgSender()) {
    require(_managerAddr != address(0), "Invalid manager address"); 
     _manager = IContractManager(_managerAddr);
@@ -78,11 +96,30 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     _;
   }
 
+  modifier onlyFloatKeeper() {
+    if (_msgSender() != _manager.getAddress("FloatKeeper")) revert Unauthorized();
+    _;
+  }
+
   function updateAsset() external onlyAuthorized {
     assetAddress = _manager.getAddress("LiquidASSET");
     asset = IERC20(assetAddress);
-  } 
+  }
 
+  /// @inheritdoc IFloatVault
+  /// @dev Callable only by `FloatKeeper` (per manager). Demeter triggers via `FloatKeeper.snapshotVaultPoolValue()`.
+  function recordPoolValueSnapshot() external override onlyFloatKeeper {
+    require(contractSetUp, "not initialized");
+    require(address(strategy) != address(0), "no strategy");
+    _syncUniswapFees();
+    uint256 pv = IFloatStrategy(address(strategy)).poolValue();
+    latestPoolValueSnapshot = PoolValueSnapshot({
+      valueWeth: pv,
+      timestamp: uint64(block.timestamp),
+      blockNumber: uint64(block.number)
+    });
+    emit PoolValueSnapshotRecorded(pv, uint64(block.timestamp), uint64(block.number));
+  }
 
    function balance() public view returns (uint256) {
     if (address(strategy) == address(0)) return 0;
@@ -110,6 +147,52 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     return liquidToken.totalSupply() == 0 ? 1e18 : balance() * 1e18 / liquidToken.totalSupply();
   }
 
+  /// @notice Pulls new `UniswapFeesCollected` into `accUniswapFeesPerShare` using current total supply.
+  /// @dev If `totalSupply == 0`, increments are absorbed (only `uniswapFeesCollectedSynced` advances).
+  function syncUniswapFees() external nonReentrant {
+    _syncUniswapFees();
+  }
+
+  /// @notice WETH-notional fees attributed to this account vs `uniswapFeeDebt` (simulates pending sync).
+  /// @dev Exact only when shares only change via this vault. Peer transfers of `liquidToken` desync debt.
+  function pendingUniswapFees(address user) public view returns (uint256) {
+    if (address(strategy) == address(0)) return 0;
+    uint256 acc = accUniswapFeesPerShare;
+    uint256 g = IFloatStrategy(address(strategy)).UniswapFeesCollected();
+    uint256 last = uniswapFeesCollectedSynced;
+    if (g > last) {
+      uint256 delta = g - last;
+      uint256 s = liquidToken.totalSupply();
+      if (s > 0) {
+        acc += Math.mulDiv(delta, FEES_PER_SHARE_PRECISION, s);
+      }
+    }
+    uint256 bal = liquidToken.balanceOf(user);
+    uint256 accumulated = Math.mulDiv(bal, acc, FEES_PER_SHARE_PRECISION);
+    uint256 debt = uniswapFeeDebt[user];
+    return accumulated > debt ? accumulated - debt : 0;
+  }
+
+  function _syncUniswapFees() internal {
+    if (address(strategy) == address(0)) return;
+    uint256 g = IFloatStrategy(address(strategy)).UniswapFeesCollected();
+    if (g <= uniswapFeesCollectedSynced) return;
+    uint256 delta = g - uniswapFeesCollectedSynced;
+    uint256 s = liquidToken.totalSupply();
+    if (s > 0) {
+      accUniswapFeesPerShare += Math.mulDiv(delta, FEES_PER_SHARE_PRECISION, s);
+    }
+    uniswapFeesCollectedSynced = g;
+  }
+
+  function _setUniswapFeeDebt(address user) internal {
+    uniswapFeeDebt[user] = Math.mulDiv(
+      liquidToken.balanceOf(user),
+      accUniswapFeesPerShare,
+      FEES_PER_SHARE_PRECISION
+    );
+  }
+
   function _earn(uint256 wethAmount) internal {
     if (wethAmount > 0 && address(strategy) != address(0)) {
       weth.safeTransfer(address(strategy), wethAmount);
@@ -131,12 +214,14 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     require(tokenIn != address(0), "tokenIn=0");
     require(amount > 0, "zero");
     address depositor = _msgSender();
+    _syncUniswapFees();
     uint256 supply = totalSupply();
     // Measure total vault value BEFORE beforeDeposit (idle + Uniswap position, WETH-denominated)
     uint256 poolValueBefore = address(strategy) != address(0) ? strategy.balanceOfIdle() + strategy.poolValue() : 0;
 
     if (address(strategy) != address(0)) {
       strategy.beforeDeposit();
+      _syncUniswapFees();
       // Re-measure after beforeDeposit in case it harvested/changed value
       poolValueBefore = strategy.balanceOfIdle() + strategy.poolValue();
     }
@@ -144,7 +229,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     uint256 balBefore = weth.balanceOf(address(this));
     uint256 received;
 
-    if (tokenIn == WETH_ADDR) {
+    if (tokenIn == WETH_ADDR) { 
       // ── Direct WETH deposit ──────────────────────────────────────────────
       weth.safeTransferFrom(depositor, address(this), amount);
       received = weth.balanceOf(address(this)) - balBefore;
@@ -188,6 +273,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     require(shares > 0, "zero shares");
 
     liquidToken.mint(depositor, shares);
+    _setUniswapFeeDebt(depositor);
     emit Deposit(depositor, received, shares);
   }
 
@@ -208,7 +294,9 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
 
     uint256 wethToDeposit = retiredWethBalance;
 
+    _syncUniswapFees();
     strategy.beforeDeposit();
+    _syncUniswapFees();
     uint256 poolValueBefore = strategy.balanceOfIdle() + strategy.poolValue();
 
     // Transfer WETH to strategy and deposit (matches the normal vault→strategy deposit flow)
@@ -234,7 +322,8 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
   function withdraw(uint256 shares) external nonReentrant returns (uint256 assets) {
     require(!retired, "Strategy retired - use retireWithdrawal()");
     require(shares > 0, "zero");
-    
+
+    _syncUniswapFees();
     address receiver = _msgSender();
     uint256 userBalance = liquidToken.balanceOf(receiver);
     require(shares <= userBalance, "Insufficient shares");
@@ -246,8 +335,11 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     liquidToken.transferFrom(receiver, address(this), shares);
     
     uint256 balBefore = balance(); // WETH-denominated value
-    IFloatStrategy(address(strategy)).withdraw(shares, totalSupply_, receiver); 
+    IFloatStrategy(address(strategy)).withdraw(shares, totalSupply_, receiver);
+    // Collect during withdraw can bump `UniswapFeesCollected`; sync before burn while supply is unchanged.
+    _syncUniswapFees();
     liquidToken.burn(address(this), shares);
+    _setUniswapFeeDebt(receiver);
     
     assets = Math.mulDiv(balBefore, shares, totalSupply_); // Returns WETH value
     return assets;
@@ -284,6 +376,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     require(!retired, "Strategy already retired");
     require(address(strategy) != address(0), "No strategy set");
 
+    _syncUniswapFees();
     uint256 totalSupply_ = liquidToken.totalSupply();
     require(totalSupply_ > 0, "No shares outstanding");
 
@@ -299,6 +392,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     uint256 wethBefore = weth.balanceOf(address(this));
     strategy.withdraw(totalSupply_, totalSupply_, address(this));
     retiredWethBalance = weth.balanceOf(address(this)) - wethBefore;
+    _syncUniswapFees();
 
     retired = true;
     emit StrategyRetired(retiredPoolValue);
@@ -306,9 +400,10 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
 
   function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external onlyOwner nonReentrant {
     require(address(strategy) != address(0), "No strategy set");
-    
-    // Get pool value before retirement
+
+    _syncUniswapFees();
     IFloatStrategy(address(strategy)).changeAsset(_newAssetAddr, _newPoolV3Addr);
+    _syncUniswapFees();
     emit AssetChanged(_newAssetAddr);
   }
 
@@ -324,6 +419,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     require(shares > 0, "zero shares");
     require(retiredTotalSupply > 0, "Invalid retired total supply");
 
+    _syncUniswapFees();
     address receiver = _msgSender();
     require(shares <= liquidToken.balanceOf(receiver), "Insufficient shares");
     require(liquidToken.allowance(receiver, address(this)) >= shares, "Vault not approved");
@@ -347,6 +443,8 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable {
     }
 
     liquidToken.burn(address(this), shares);
+    _syncUniswapFees();
+    _setUniswapFeeDebt(receiver);
 
     emit RetireWithdrawal(receiver, shares, 0, wethAmount);
     return wethAmount;

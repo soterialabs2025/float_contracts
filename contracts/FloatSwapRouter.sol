@@ -61,12 +61,12 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     uint24 public immutable defaultFee = 10_000; // e.g. 10_000 on Base
     uint16 public maxSlippageBps = 1_000;      // 10% cap for safety
     uint16 public defaultSlippageBps = 100;  // 1% default
-    uint16 public fallbackSlippageBps = 300; // 3% if quoter fails
+    uint16 public fallbackSlippageBps = 200; // 2% if quoter fails
 
     /// @notice Slippage cap (bps) for `swapExactInputFromStrategyStrictQuote` only (quoter + TWAP min-out).
     /// @dev Default 200 (2%) — looser than `defaultSlippageBps` because TWAP raises the floor on large swaps;
     ///      strict path never uses `fallbackSlippageBps` (no weak quoter fallback).
-    uint16 public strictStrategySlippageBps = 300;
+    uint16 public strictStrategySlippageBps = 200;
 
     /// @dev When `amountIn` is at least this (raw units of tokenIn), `swapExactInputFromStrategyStrictQuote`
     ///      merges a TWAP-based floor with the quoter min when `strategyTwapPeriodSeconds != 0`.
@@ -74,7 +74,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     uint256 public largeSwapTwapMinAmount = 1_000_000_000_000_000;
 
     /// @notice TWAP window (seconds) for strategy strict swaps when `amountIn >= largeSwapTwapMinAmount`.
-    /// @dev Default 600 (10m): balances manipulation resistance with freshness when the system may be targeted.
+    /// @dev Default 400 (6m): balances manipulation resistance with freshness when the system may be targeted.
     ///      Set to 0 to use strict quoter only (no TWAP floor).
     uint32 public strategyTwapPeriodSeconds = 400;
 
@@ -227,18 +227,29 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         }
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+        return _strictSingleHopV3Swap(tokenIn, tokenOut, amountIn, defaultFee, recipient);
+    }
 
-        uint256 minOut = _minimumOutStrictQuote(
-            tokenIn, tokenOut, amountIn, defaultFee, strictStrategySlippageBps, strategyTwapPeriodSeconds
-        );
-
+    /// @dev Assumes `tokenIn` is already held by this contract. Quotes min-out for the amount actually swapped
+    ///      (`min(requested, balance)`), so fee-on-transfer inputs do not use an oversized minimum.
+    function _strictSingleHopV3Swap(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountInRequested,
+        uint24 fee,
+        address recipient
+    ) internal returns (uint256 amountOut) {
         IERC20 inToken = IERC20(tokenIn);
         uint256 bal = inToken.balanceOf(address(this));
-        uint256 useIn = amountIn > bal ? bal : amountIn;
+        uint256 useIn = amountInRequested > bal ? bal : amountInRequested;
         require(useIn > 0, "no balance");
 
+        uint256 minOut = _minimumOutStrictQuote(
+            tokenIn, tokenOut, useIn, fee, strictStrategySlippageBps, strategyTwapPeriodSeconds
+        );
+
         _ensureAllowance(inToken, address(v3Router), useIn);
-        bytes memory path = abi.encodePacked(tokenIn, defaultFee, tokenOut);
+        bytes memory path = abi.encodePacked(tokenIn, fee, tokenOut);
 
         amountOut = v3Router.exactInput(
             IV3SwapRouterMinimal.ExactInputParams({
@@ -314,22 +325,22 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         address tokenIn,
         uint256 amountIn,
         address recipient
-    ) external override returns (uint256 amountOut) {
+    ) external override nonReentrant returns (uint256 amountOut) {
         require(amountIn > 0, "zero in");
+        require(amountIn <= type(uint160).max, "amount>uint160");
         require(tokenIn != baseWETH, "token is WETH");
         require(recipient != address(0), "recipient=0");
 
-        // Pull tokens from caller (vault must approve this router first)
-        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+        IERC20 tIn = IERC20(tokenIn);
+        tIn.safeTransferFrom(msg.sender, address(this), amountIn);
 
-        // Try fee tiers in order of liquidity preference
         uint24[3] memory fees = [FEE_500, FEE_3000, FEE_10000];
         for (uint256 i = 0; i < fees.length; i++) {
-            uint256 bal = IERC20(tokenIn).balanceOf(address(this));
+            uint256 bal = tIn.balanceOf(address(this));
             if (bal == 0) break;
             try this._universalRouterSwapSingleFee(tokenIn, bal, recipient, fees[i]) returns (uint256 out) {
                 if (out > 0) {
-                    emit SwapExecuted(msg.sender, recipient, tokenIn, baseWETH, amountIn, out);
+                    emit SwapExecuted(msg.sender, recipient, tokenIn, baseWETH, bal, out);
                     return out;
                 }
             } catch {}
@@ -346,13 +357,14 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         uint24 fee
     ) external returns (uint256 amountOut) {
         require(msg.sender == address(this), "only self");
+        require(amountIn <= type(uint160).max, "amount>uint160");
 
         address ur = universalRouterAddr;
         require(ur != address(0), "universalRouter not set");
 
-        // Compute minimum acceptable output via the V3 quoter (falls back to slippage floor)
-        uint256 minOut = _getMinimumOutputForSwap(
-            tokenIn, baseWETH, amountIn, fee, defaultSlippageBps, fallbackSlippageBps
+        // Strict quoter + optional TWAP floor (reverts if quoter fails; no weak fallback)
+        uint256 minOut = _minimumOutStrictQuote(
+            tokenIn, baseWETH, amountIn, fee, strictStrategySlippageBps, strategyTwapPeriodSeconds
         );
 
         // Step 1: approve Permit2 to spend tokenIn from this contract

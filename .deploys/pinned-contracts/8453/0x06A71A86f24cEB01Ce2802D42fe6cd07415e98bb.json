@@ -1,7 +1,7 @@
 {
   "name": "FloatContractManager",
   "address": "0x06A71A86f24cEB01Ce2802D42fe6cd07415e98bb",
-  "timestamp": 1775360391471,
+  "timestamp": 1775532799741,
   "abi": [
     {
       "inputs": [],
@@ -279,5 +279,5 @@
     }
   ],
   "filePath": " - connect to localhost - /contracts/FloatContractManager.sol",
-  "pinnedAt": 1775360396158
+  "pinnedAt": 1775532803186
 }

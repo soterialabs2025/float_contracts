@@ -69,7 +69,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         WETH = IERC20(baseWETH);
         nonfungiblePositionManager = INonfungiblePositionManager(nonfungiblePosManAddr);
         factory = IUniswapV3Factory(v3FactoryAddr);
-        deviationBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2500, maxTokenCapBps: 9800});
+        deviationBands = StrategyManager.DeviationBands({lowerBps: 400, upperBps: 2600, maxTokenCapBps: 9600});
         emit StrategyEvent(0, uint256(uint160(_msgSender())), 0, 0);
     }
     function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {

@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IOutOfRangeStrategy.sol";  // Interface for the strategy
 import "../interfaces/IContractManager.sol";
+import "../interfaces/IFloatVault.sol";
 
 contract FloatKeeper is Ownable, ReentrancyGuard {
 
@@ -33,6 +34,7 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
         uint256 consecutiveOffensiveCount,
         uint256 defensiveEnteredAt
     );
+    event VaultPoolValueSnapshot(address indexed vault, address indexed caller);
 
     constructor(address _managerAddress) Ownable(msg.sender) {
       _managerAddr = _managerAddress;
@@ -50,10 +52,19 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
         _;
     }
 
-    function updateDemeterAddr() external onlyAuthorized {
-      demeterAddr = manager.getAddress("Demeter");
+    modifier onlyDemeter() {
+        if (_msgSender() != demeterAddr) revert Unauthorized();
+        _;
     }
 
+
+    /// @notice Demeter pulls `poolValue()` from the vault’s strategy and stores it on the vault.
+    function snapshotVaultPoolValue() external onlyAuthorized nonReentrant {
+        address vaultAddr = manager.getAddress("FloatVault");
+        require(vaultAddr != address(0), "vault=0");
+        IFloatVault(vaultAddr).recordPoolValueSnapshot();
+        emit VaultPoolValueSnapshot(vaultAddr, _msgSender());
+    }
 
     function addStrategy(address strat, uint32 minInterval) external onlyAuthorized returns (uint256 id) {
         require(strat != address(0), "zero strat");
