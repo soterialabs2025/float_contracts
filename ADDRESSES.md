@@ -1,3 +1,20 @@
+ 
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+
+- **FloatContractmanager**:`0x06A71A86f24cEB01Ce2802D42fe6cd07415e98bb`
+- **FloatVault**: `0x3B1c2FD1CdD08f0C771A5C2A519b60ffBAB8A892`
+- **FloatStrategy**: `0x2700147E1a80dE7FCe2146fC0c3799Bdf59D8995`
+- **FloatSwapRouter**: `0x03e1f7898C5149d7395215CED4f782F6eB9e29c2`
+- **FloatLiquidToken**:`0xA8d4d092cD7712845A240D2f9258502A7CB5AD76`
+- **FloatKeeper**: `0x1fEcCCEb06DC6C963472d87518B912E59F68fB0D`
+- **ASSET**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b`
+ - **AssetPoolV3**: `0xaec085e5a5ce8d96a7bdd3eb3a62445d4f6ce703` 
+ 
+ 
+ 
+ ############################################################################################################################
 
  
  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`

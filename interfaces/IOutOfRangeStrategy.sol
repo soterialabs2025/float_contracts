@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 /// @title IOutOfRangeStrategy
 /// @notice Minimal interface to interact with your Strategy
 interface IOutOfRangeStrategy {
-    /// @return 0 = NORMAL, 1 = DEFENSIVE, 2 = OFFENSIVE
+    /// @return 0 = NORMAL, 1 = DEFENSIVE, 2 = OFFENSIVE, 3 = NUETRAL
     function mode() external view returns (uint8);
     /// @return Number of consecutive times OFFENSIVE was triggered (reset on DEFENSIVE or asset change)
     function consecutiveOffensiveCount() external view returns (uint256);

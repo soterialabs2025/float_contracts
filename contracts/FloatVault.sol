@@ -33,23 +33,24 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   address public liquidTokenAddress;
   address public strategyAddr;
   address public swapRouterAddr;
+  address private demeterAddr;
   address private constant WETH_ADDR = 0x4200000000000000000000000000000000000006;
    address private constant nonfungiblePositionManagerAddr = 0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1;
   bool public contractSetUp;
-  bool public retired;
-  bool public retireWithdrawalPaused = true;
-  uint256 public retiredPoolValue;
-  uint256 public retiredTokenBalance;
-  uint256 public retiredWethBalance;
-  uint256 public retiredTotalSupply;
+  bool public neutral;
+  bool public neutralWithdrawalPaused = true;
+  uint256 public neutralPoolValue;
+  uint256 public neutralTokenBalance;
+  uint256 public neutralWethBalance;
+  uint256 public neutralTotalSupply;
   
   event ContractSetUp(address indexed caller);
   event TokenRescued(address indexed token, address indexed recipient, uint256 amount);
   event Deposit(address indexed depositor, uint256 amount, uint256 shares);
-  event StrategyRetired(uint256 poolValue);
-  event RetireWithdrawal(address indexed receiver, uint256 shares, uint256 tokenAmount, uint256 wethAmount);
+  event StrategyNeutral(uint256 poolValue);
+  event NeutralWithdrawal(address indexed receiver, uint256 shares, uint256 tokenAmount, uint256 wethAmount);
   event AssetChanged(address indexed newAsset);
-  event PoolValueSnapshotRecorded(uint256 valueWeth, uint64 timestamp, uint64 blockNumber);
+  event PoolValueSnapshotRecorded(uint256 valueWeth, uint64 timestamp);
 
   /// @dev Scaled accumulator for `UniswapFeesCollected` growth per liquid share (WETH-notional attribution, not a claim).
   uint256 public constant FEES_PER_SHARE_PRECISION = 1e18;
@@ -62,10 +63,10 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   struct PoolValueSnapshot {
     uint256 valueWeth;
     uint64 timestamp;
-    uint64 blockNumber;
   }
 
-  PoolValueSnapshot public latestPoolValueSnapshot;
+  /// @dev Index `0` is oldest recorded in this deployment; newest is `poolValueSnapshots.length - 1`.
+  PoolValueSnapshot[] public poolValueSnapshots;
   constructor(address _managerAddr) Ownable(_msgSender()) {
    require(_managerAddr != address(0), "Invalid manager address"); 
     _manager = IContractManager(_managerAddr);
@@ -77,6 +78,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     liquidTokenAddress = _manager.getAddress("FloatLiquidToken");
     strategyAddr = _manager.getAddress("FloatStrategy");
     swapRouterAddr = _manager.getAddress("FloatSwapRouter");
+    demeterAddr = _manager.getAddress("Demeter");
     strategy = IFloatStrategy(strategyAddr);
     asset = IERC20(assetAddress);
     weth = IERC20(WETH_ADDR);
@@ -92,7 +94,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
 
   modifier onlyAuthorized() {
     address s = _msgSender();
-    if (s != address(_manager) && s != owner()) revert Unauthorized();
+    if (s != address(_manager) && s != owner() && s != demeterAddr) revert Unauthorized();
     _;
   }
 
@@ -113,12 +115,15 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     require(address(strategy) != address(0), "no strategy");
     _syncUniswapFees();
     uint256 pv = IFloatStrategy(address(strategy)).poolValue();
-    latestPoolValueSnapshot = PoolValueSnapshot({
-      valueWeth: pv,
-      timestamp: uint64(block.timestamp),
-      blockNumber: uint64(block.number)
-    });
-    emit PoolValueSnapshotRecorded(pv, uint64(block.timestamp), uint64(block.number));
+    poolValueSnapshots.push(
+      PoolValueSnapshot({valueWeth: pv, timestamp: uint64(block.timestamp)})
+    );
+    emit PoolValueSnapshotRecorded(pv, uint64(block.timestamp));
+  }
+
+  /// @notice Number of stored pool value snapshots (newest at index `length - 1`).
+  function getPoolValueSnapshotCount() external view returns (uint256) {
+    return poolValueSnapshots.length;
   }
 
    function balance() public view returns (uint256) {
@@ -207,7 +212,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   /// @param amount   Amount of tokenIn to deposit (in tokenIn decimals).
   /// @return shares  Liquid-token shares minted to the caller.
   function deposit(address tokenIn, uint256 amount) external nonReentrant returns (uint256 shares) {
-    require(!retired, "Strategy retired");
+    require(!neutral, "Vault neutral");
     require(contractSetUp, "not initialized");
     require(address(liquidToken) != address(0), "liquidToken not set");
     require(address(weth) != address(0), "weth not set");
@@ -277,41 +282,36 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     emit Deposit(depositor, received, shares);
   }
 
-  /// @notice Re-deposit remaining WETH into the strategy to un-retire the vault.
-  /// @dev Only valid after retireStrategy(). Transfers the remaining retiredWethBalance
-  ///      (i.e. WETH not yet claimed via retireWithdrawal) back into the strategy.
-  ///      Existing share-holders who did NOT call retireWithdrawal retain proportional
-  ///      ownership automatically — no new shares are minted.
-  function depositRetiredTokens() external onlyOwner nonReentrant {
-    require(retired, "Strategy not retired");
+  /// @notice Re-deposit WETH held by the vault into the strategy after `neutralStrategy()`, then resume NORMAL mode.
+  /// @dev Same economics as before: no new shares; existing holders absorb the redeployed capital via higher NAV.
+  function neutralDeposit() external onlyOwner nonReentrant {
+    require(neutral, "Vault not neutral");
     require(address(strategy) != address(0), "No strategy set");
-    require(retiredWethBalance > 0, "No WETH to re-deposit");
-    require(retiredTotalSupply > 0, "Invalid retired total supply");
-    require(retiredPoolValue > 0, "Invalid retired pool value");
+    require(neutralWethBalance > 0, "No WETH to re-deposit");
+    require(neutralTotalSupply > 0, "Invalid neutral total supply");
+    require(neutralPoolValue > 0, "Invalid neutral pool value");
 
     uint256 vaultWethBal = weth.balanceOf(address(this));
-    require(vaultWethBal >= retiredWethBalance, "Insufficient WETH in vault");
+    require(vaultWethBal >= neutralWethBalance, "Insufficient WETH in vault");
 
-    uint256 wethToDeposit = retiredWethBalance;
+    uint256 wethToDeposit = neutralWethBalance;
 
     _syncUniswapFees();
     strategy.beforeDeposit();
     _syncUniswapFees();
     uint256 poolValueBefore = strategy.balanceOfIdle() + strategy.poolValue();
 
-    // Transfer WETH to strategy and deposit (matches the normal vault→strategy deposit flow)
     weth.safeTransfer(address(strategy), wethToDeposit);
     strategy.deposit(wethToDeposit);
 
     uint256 poolValueAfter = strategy.balanceOfIdle() + strategy.poolValue();
     require(poolValueAfter > poolValueBefore, "No pool value increase after deposit");
 
-    // Reset retired state before emitting
-    retired = false;
-    retiredTokenBalance = 0;
-    retiredWethBalance = 0;
-    retiredPoolValue = 0;
-    retiredTotalSupply = 0;
+    neutral = false;
+    neutralTokenBalance = 0;
+    neutralWethBalance = 0;
+    neutralPoolValue = 0;
+    neutralTotalSupply = 0;
 
     emit Deposit(address(this), wethToDeposit, 0);
   }
@@ -320,7 +320,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   /// @param shares Number of liquidToken shares to withdraw
   /// @return assets WETH value of withdrawn shares (strategy returns WETH directly to receiver)
   function withdraw(uint256 shares) external nonReentrant returns (uint256 assets) {
-    require(!retired, "Strategy retired - use retireWithdrawal()");
+    require(!neutral, "Vault neutral - use neutralWithdrawal()");
     require(shares > 0, "zero");
 
     _syncUniswapFees();
@@ -368,34 +368,29 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     return IFloatStrategy(address(strategy)).balanceOfPool();
   }
  
-  /// @notice Retire the strategy in emergency situations.
-  /// @dev Calls strategy.withdraw for 100% of shares, draining all liquidity, collecting fees,
-  ///      swapping LiquidASSET→WETH inside the strategy, and returning all WETH to this vault.
-  ///      retiredWethBalance is then used for proportional user withdrawals via retireWithdrawal().
-  function retireStrategy() external onlyOwner nonReentrant {
-    require(!retired, "Strategy already retired");
+  /// @notice Emergency: drain strategy to WETH in this vault and enter NUETRAL on the strategy.
+  /// @dev Full proportional withdraw; `neutralWethBalance` backs `neutralWithdrawal` pro-rata redemptions.
+  function neutralStrategy() external onlyOwner nonReentrant {
+    require(!neutral, "Already neutral");
     require(address(strategy) != address(0), "No strategy set");
 
     _syncUniswapFees();
     uint256 totalSupply_ = liquidToken.totalSupply();
     require(totalSupply_ > 0, "No shares outstanding");
 
-    retiredPoolValue = IFloatStrategy(address(strategy)).poolValue();
-    require(retiredPoolValue > 0, "No pool value to retire");
+    neutralPoolValue = IFloatStrategy(address(strategy)).poolValue();
+    require(neutralPoolValue > 0, "No pool value to neutralize");
 
-    // Store supply snapshot before draining
-    retiredTotalSupply = totalSupply_;
-    retiredTokenBalance = 0;
+    neutralTotalSupply = totalSupply_;
+    neutralTokenBalance = 0;
 
-    // Drain strategy: decreases all pool liquidity, swaps LiquidASSET→WETH, transfers WETH here.
-    // Passing userShares == totalSupply_ → 100% proportion withdrawn.
     uint256 wethBefore = weth.balanceOf(address(this));
     strategy.withdraw(totalSupply_, totalSupply_, address(this));
-    retiredWethBalance = weth.balanceOf(address(this)) - wethBefore;
+    neutralWethBalance = weth.balanceOf(address(this)) - wethBefore;
     _syncUniswapFees();
 
-    retired = true;
-    emit StrategyRetired(retiredPoolValue);
+    neutral = true;
+    emit StrategyNeutral(neutralPoolValue);
   }
 
   function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external onlyOwner nonReentrant {
@@ -408,16 +403,13 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   }
 
 
-  /// @notice Withdraw user's proportional WETH share after strategy retirement.
-  /// @dev retiredWethBalance is decremented on each call to keep accounting exact.
-  ///      No withdrawal fees applied — this is an emergency exit path.
-  /// @param shares Number of liquidToken shares to redeem
-  /// @return wethAmount Amount of WETH returned to caller
-  function retireWithdrawal(uint256 shares) external nonReentrant returns (uint256 wethAmount) {
-    require(!retireWithdrawalPaused, "Retire withdrawal paused");
-    require(retired, "Strategy not retired");
+  /// @notice Withdraw proportional WETH while the vault is neutral (after `neutralStrategy`).
+  /// @dev `neutralTotalSupply` is fixed at neutralization; `neutralWethBalance` tracks remaining WETH.
+  function neutralWithdrawal(uint256 shares) external nonReentrant returns (uint256 wethAmount) {
+    require(!neutralWithdrawalPaused, "Neutral withdrawal paused");
+    require(neutral, "Vault not neutral");
     require(shares > 0, "zero shares");
-    require(retiredTotalSupply > 0, "Invalid retired total supply");
+    require(neutralTotalSupply > 0, "Invalid neutral total supply");
 
     _syncUniswapFees();
     address receiver = _msgSender();
@@ -426,17 +418,12 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
 
     liquidToken.transferFrom(receiver, address(this), shares);
 
-    // Proportional share of WETH held at time of retirement.
-    // retiredTotalSupply is fixed at retirement so each user's entitlement stays
-    // consistent regardless of how many others have already withdrawn.
-    wethAmount = Math.mulDiv(retiredWethBalance, shares, retiredTotalSupply);
+    wethAmount = Math.mulDiv(neutralWethBalance, shares, neutralTotalSupply);
 
-    // Cap against actual vault WETH balance (guards against dust rounding)
     uint256 vaultWethBal = weth.balanceOf(address(this));
     if (wethAmount > vaultWethBal) wethAmount = vaultWethBal;
 
-    // Decrement the tracking balance so subsequent callers get accurate entitlements
-    retiredWethBalance -= wethAmount;
+    neutralWethBalance -= wethAmount;
 
     if (wethAmount > 0) {
       weth.safeTransfer(receiver, wethAmount);
@@ -446,7 +433,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     _syncUniswapFees();
     _setUniswapFeeDebt(receiver);
 
-    emit RetireWithdrawal(receiver, shares, 0, wethAmount);
+    emit NeutralWithdrawal(receiver, shares, 0, wethAmount);
     return wethAmount;
   }
   
@@ -505,12 +492,12 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     emit TokenRescued(_token, _recipient, amount);
   }
 
-  function unpauseRetireWithdrawal() external onlyOwner {
-    retireWithdrawalPaused = false;
+  function unpauseNeutralWithdrawal() external onlyOwner {
+    neutralWithdrawalPaused = false;
   }
 
-  function pauseRetireWithdrawal() external onlyOwner {
-    retireWithdrawalPaused = true;
+  function pauseNeutralWithdrawal() external onlyOwner {
+    neutralWithdrawalPaused = true;
   }
 
 

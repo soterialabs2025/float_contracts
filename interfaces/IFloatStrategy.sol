@@ -5,6 +5,9 @@ interface IFloatStrategy {
   /// @notice Cumulative WETH-notional LP fees recorded by the strategy (drives vault fee-per-share accounting).
   function UniswapFeesCollected() external view returns (uint256);
 
+  function enterNeutralFromVault() external;
+  function resumeNormalFromVault() external;
+
   function getPositionId() external view returns (uint256);
   function beforeDeposit() external;
   function deposit(uint256 amount) external;
