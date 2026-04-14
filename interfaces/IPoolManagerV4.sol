@@ -6,7 +6,7 @@ pragma solidity ^0.8.24;
  * @notice Minimal interface for the Uniswap V4 PoolManager, limited to the
  *         state-read functions used by RouletteStrategyV4 and LiquidityLibraryV4.
  * @dev Full interface: @uniswap/v4-core/src/interfaces/IPoolManager.sol
- *      Base mainnet: 0x498581fF718922c3f8e6A244956aF099B2652b2b
+ *      Deployed addresses: https://docs.uniswap.org/contracts/v4/deployments
  *
  *      getSlot0 is exposed via StateLibrary in v4-core.
  *      The function signature used here matches StateLibrary.getSlot0:

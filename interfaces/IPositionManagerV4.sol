@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
  * @title IPositionManagerV4
  * @notice Minimal interface for the Uniswap V4 PositionManager.
  * @dev Full interface: @uniswap/v4-periphery/src/interfaces/IPositionManager.sol
- *      Base mainnet: 0x7C5f5A4bBd8fD63184577525326123B519429bDc
+ *      Deployed addresses: https://docs.uniswap.org/contracts/v4/deployments
  */
 interface IPositionManagerV4 {
     /**
