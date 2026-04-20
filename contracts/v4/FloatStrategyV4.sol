@@ -1,20 +1,25 @@
-// SPDX-License-Identifier: MIT 
-pragma solidity ^0.8.20;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
 
-import "../interfaces/INonfungiblePositionManager.sol";
-import "../interfaces/IUniswapV3PoolMinimal.sol";
-import "../interfaces/IUniswapV3Factory.sol";
-import "./StrategyManager.sol";
-import "../interfaces/ISwapRouter.sol";
+import "../../interfaces/IPositionManagerV4.sol";
+import "../../interfaces/IPoolManagerV4.sol";
+import "../StrategyManager.sol";
+import "./interfaces/IFloatV4StrategySwapRouter.sol";
+import "../../interfaces/IOutOfRangeStrategy.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "../libraries/LiquidityLibrary.sol";
-import "../interfaces/IFloatStrategy.sol";
+import "../../libraries/LiquidityLibrary.sol";
+import "../../libraries/LiquidityLibraryV4.sol";
+import "../../interfaces/IFloatStrategy.sol";
+import {PoolKey as CorePoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 
-contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC721Receiver {         
+contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategy {         
     error Unauthorized();
     error ZeroValue();
     error ZeroAddress();
@@ -22,20 +27,16 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     error PositionExists();
     error MustBeNeutral();
     using SafeERC20 for IERC20;
-    using LiquidityLibrary for LiquidityLibrary.PositionState;
-    INonfungiblePositionManager public immutable nonfungiblePositionManager;
-    LiquidityLibrary.PositionState private liqPos;
-    IUniswapV3PoolMinimal private pool;
-    IUniswapV3Factory private factory;
-    ISwapRouter private swapRouter;
+    using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
+    IPositionManagerV4 public immutable positionManager;
+    LiquidityLibraryV4.PositionState private liqPos;
+    IPoolManagerV4 private poolManager;
+    LiquidityLibraryV4.PoolKey public poolKey;
+    IFloatV4StrategySwapRouter private swapRouterV4;
     address public managerAddress;
     IERC20 private ASSET;
     IERC20 private WETH;
-    address private immutable v3FactoryAddr = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD;
-    address private immutable baseWETH = 0x4200000000000000000000000000000000000006;
-    address private immutable nonfungiblePosManAddr = 0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1;
     address private vaultAddr;
-    address private assetPoolV3;
     address private swapRouterAddr; 
     address public assetAddr;
     address private demeterAddr;
@@ -51,7 +52,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
     mapping(uint256 => Deposit) public deposits;
     enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NUETRAL }
-    Mode public mode;
+    Mode internal stratMode;
     uint256 public lastRebalanceTime;
     uint256 public defensiveEnteredAt;
     uint256 public consecutiveOffensiveCount;
@@ -59,17 +60,41 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     event ContractSetUp(address indexed caller);
     bool public contractSetUp;
     function _lpModeActive() internal view returns (bool) {
-        return mode == Mode.NORMAL || mode == Mode.OFFENSIVE;
+        return stratMode == Mode.NORMAL || stratMode == Mode.OFFENSIVE;
     }
+    function tickRange() external view returns (int24 lower, int24 upper) {
+        return (liqPos.tickLower, liqPos.tickUpper);
+    }
+
+    /// @inheritdoc IOutOfRangeStrategy
+    function mode() external view override returns (uint8) {
+        return uint8(uint256(stratMode));
+    }
+
+    function _readSlot0() internal view returns (uint160 sqrtPriceX96, int24 tick) {
+        (sqrtPriceX96, tick) = LiquidityLibraryV4.getSlot0(poolManager, poolKey);
+    }
+
+    function _toCorePoolKey() internal view returns (CorePoolKey memory k) {
+        k = CorePoolKey({
+            currency0: Currency.wrap(poolKey.currency0),
+            currency1: Currency.wrap(poolKey.currency1),
+            fee: poolKey.fee,
+            tickSpacing: poolKey.tickSpacing,
+            hooks: IHooks(poolKey.hooks)
+        });
+    }
+
     modifier onlyAuthorized() {
         address s = _msgSender();
         if (s != vaultAddr && s != demeterAddr && s != keeperStratAddr && s != managerAddress && s != owner()) revert Unauthorized();
         _;
     }
-    constructor() StrategyManager() {
-        WETH = IERC20(baseWETH);
-        nonfungiblePositionManager = INonfungiblePositionManager(nonfungiblePosManAddr);
-        factory = IUniswapV3Factory(v3FactoryAddr);
+    constructor(address weth_, address positionManager_, address poolManager_) StrategyManager() {
+        if (weth_ == address(0) || positionManager_ == address(0) || poolManager_ == address(0)) revert ZeroAddress();
+        WETH = IERC20(weth_);
+        positionManager = IPositionManagerV4(positionManager_);
+        poolManager = IPoolManagerV4(poolManager_);
         deviationBands = StrategyManager.DeviationBands({lowerBps: 400, upperBps: 2600, maxTokenCapBps: 9600});
         emit StrategyEvent(0, uint256(uint160(_msgSender())), 0, 0);
     }
@@ -77,17 +102,25 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         managerAddress = _managerAddr;
         assetAddr = _assetAddr;
         swapRouterAddr = _swapRouterAddr;
-        assetPoolV3 = _assetPoolV3Addr;
         vaultAddr = _vaultAddr;
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
-        pool = IUniswapV3PoolMinimal(assetPoolV3);
-        swapRouter = ISwapRouter(swapRouterAddr);
+        swapRouterV4 = IFloatV4StrategySwapRouter(_swapRouterAddr);
         ASSET = IERC20(assetAddr);
+        address a = address(ASSET);
+        address w = address(WETH);
+        poolKey = LiquidityLibraryV4.PoolKey({
+            currency0: a < w ? a : w,
+            currency1: a < w ? w : a,
+            fee: v3Fee,
+            tickSpacing: tickSpacing,
+            hooks: address(0)
+        });
         _giveAllowances();
         contractSetUp = true;
         lastRebalanceTime = block.timestamp;
         emit ContractSetUp(_msgSender());
+        (_assetPoolV3Addr);
     }
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
@@ -113,7 +146,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _deposit();
             return;
         }
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) {
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) {
             (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
             if (assetBal > 0 || wethBal > 0) {
                 _balanceTokens(assetBal, wethBal);
@@ -174,7 +207,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
             return;
         }
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) {
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) {
             if (liqPos.positionId != 0) {
                 uint256 beforeValDefensive = balanceOfIdle();
                 (, , uint256 valueInWethDefensive) = _collectAllFees(true);
@@ -210,15 +243,15 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function _inRange() internal view returns (bool) {
         if (liqPos.positionId == 0) return false;
-        (, int24 poolTick, , , , , ) = pool.slot0();
-        (, , , int24 posTickLower, int24 posTickUpper, ) = liqPos.getPositionData(nonfungiblePositionManager);
+        (, int24 poolTick) = _readSlot0();
+        (int24 posTickLower, int24 posTickUpper) = (liqPos.tickLower, liqPos.tickUpper);
         return poolTick >= posTickLower && poolTick < posTickUpper;
     }
     function readInRange() external view override returns (bool) {
         return _inRange();
     }
     function _checkInRange() internal returns (bool) {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) return true;
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
         if (_inRange()) return false;
         if (liqPos.positionId == 0) {
             _enterDefensive();
@@ -226,13 +259,13 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         }
         uint128 remainingLiq = _drainPositionLiquidity(6);
         if (remainingLiq != 0) return true;
-        (, , , , int24 posTickUpper, ) = liqPos.getPositionData(nonfungiblePositionManager);
+        (int24 posTickUpper) = (liqPos.tickUpper);
         liqPos.positionId = 0;
         _enterOffensiveOrDefensiveByTick(posTickUpper);
         return true;
     }
     function keeperCheck() external nonReentrant returns (bool) {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) return true;
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
         bool floorHit = _checkTrailingPriceFloor();
         bool outOfRange = _checkInRange();
         bool tokenShareIssue = _checkTokenShare();
@@ -250,7 +283,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             floorTick = 0;
             return false;
         }
-        (, int24 poolTick, , , , , ) = pool.slot0();
+        (, int24 poolTick) = _readSlot0();
         if (baselineTick == 0) {
             baselineTick = poolTick;
             floorTick = 0;
@@ -293,10 +326,10 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         consecutiveOffensiveCount = 0;
         baselineTick = 0;
         defensiveEnteredAt = block.timestamp;
-        mode = Mode.DEFENSIVE;
+        stratMode = Mode.DEFENSIVE;
     }
     function _enterOffensiveOrDefensiveByTick(int24 posTickUpper) internal {
-        (, int24 poolTick, , , , , ) = pool.slot0();
+        (, int24 poolTick) = _readSlot0();
         if (poolTick >= posTickUpper) _enterOffensive();
         else _enterDefensive();
     }
@@ -310,7 +343,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _enterDefensive();
             return;
         }
-        mode = Mode.OFFENSIVE;
+        stratMode = Mode.OFFENSIVE;
         _balanceTokens(assetBal, wethBal);
         _mintNewPosition(startM);
         if (liqPos.positionId != 0) {
@@ -326,13 +359,19 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function _mintNewPosition(int24 mValue) internal {
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (assetBal == 0 && wethBal == 0) return;
-        LiquidityLibrary.MintContext memory ctx = LiquidityLibrary.MintContext({npm: nonfungiblePositionManager, factory: factory, pool: pool, weth: address(WETH), tokens: address(ASSET), assetPoolV3: assetPoolV3, fee: v3Fee, tickSpacing: tickSpacing, m: mValue, slippageBps: slippageBps, dust: 1_000_000_000_000});
+        LiquidityLibraryV4.MintContext memory ctx = LiquidityLibraryV4.MintContext({
+            posm: positionManager,
+            poolManager: poolManager,
+            poolKey: poolKey,
+            m: mValue,
+            slippageBps: slippageBps,
+            dust: 1_000_000_000_000
+        });
         (uint256 newId, uint128 liq) = liqPos.mintNewPosition(ctx, assetBal, wethBal);
         if (newId != 0 && liq > 0) {
-            (address token0, address token1, , , , uint128 liquidity) = liqPos.getPositionData(nonfungiblePositionManager);
-            deposits[newId] = Deposit(address(this), liquidity, token0, token1);
+            deposits[newId] = Deposit(address(this), liq, poolKey.currency0, poolKey.currency1);
             emit StrategyEvent(4, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
-            (, int24 poolTickAfterMint, , , , , ) = pool.slot0();
+            (, int24 poolTickAfterMint) = _readSlot0();
             baselineTick = poolTickAfterMint;
             floorTick = 0;
             (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
@@ -349,7 +388,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
 
     function _deposit() internal {
-        if (liqPos.positionId != 0 && (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL)) {
+        if (liqPos.positionId != 0 && (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL)) {
             return;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
@@ -365,14 +404,18 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
         if (liqPos.positionId == 0) return (0, 0, 0);
-        if (nonfungiblePositionManager.ownerOf(liqPos.positionId) != address(this)) {
+        if (IERC721(address(positionManager)).ownerOf(liqPos.positionId) != address(this)) {
             revert Unauthorized();
         }
-        INonfungiblePositionManager.CollectParams memory params = INonfungiblePositionManager.CollectParams({tokenId: liqPos.positionId, recipient: address(this), amount0Max: type(uint128).max, amount1Max: type(uint128).max});
-        (amount0, amount1) = nonfungiblePositionManager.collect(params);
+        LiquidityLibraryV4.DecreaseContext memory dctx = LiquidityLibraryV4.DecreaseContext({
+            posm: positionManager,
+            poolManager: poolManager,
+            poolKey: poolKey
+        });
+        (amount0, amount1) = LiquidityLibraryV4.collectAllFees(liqPos, dctx, address(this));
         valueInWeth = 0;
         if (amount0 > 0 || amount1 > 0) {
-            address p0 = pool.token0();
+            address p0 = poolKey.currency0;
             uint256 feesWeth  = p0 == address(WETH) ? amount0 : amount1;
             uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
             uint256 p = _spotPrice1e18();
@@ -388,8 +431,8 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         }
     }
     function _spotPrice1e18() internal view returns (uint256) {
-        (uint160 sqrtP, , , , , , ) = pool.slot0();
-        address p0 = pool.token0();
+        (uint160 sqrtP, ) = _readSlot0();
+        address p0 = poolKey.currency0;
         uint256 price = Math.mulDiv(uint256(sqrtP), uint256(sqrtP), (uint256(1) << 192) / 1e18);
         if (p0 == address(WETH)) {
             return price;
@@ -410,7 +453,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint256 totalValue   = assetBal + wethAsTokens;
         if (totalValue == 0) return;
         uint256 targetAssetBps = 5_000;
-        if (mode == Mode.OFFENSIVE && offensiveTargetAssetBps != 0) {
+        if (stratMode == Mode.OFFENSIVE && offensiveTargetAssetBps != 0) {
             targetAssetBps = offensiveTargetAssetBps;
         }
         uint256 target = Math.mulDiv(totalValue, targetAssetBps, 10_000);
@@ -426,9 +469,15 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function _increaseLiquidityInternal() internal returns (uint128 liqAdded) {
         if (liqPos.positionId == 0) return 0;
-        address p0 = pool.token0();
-        address p1 = pool.token1();
-        LiquidityLibrary.IncreaseContext memory ctx = LiquidityLibrary.IncreaseContext({npm: nonfungiblePositionManager, pool: pool, fee: v3Fee, slippageBps: slippageBps, dust: 1_000_000_000_000});
+        address p0 = poolKey.currency0;
+        address p1 = poolKey.currency1;
+        LiquidityLibraryV4.IncreaseContext memory ctx = LiquidityLibraryV4.IncreaseContext({
+            posm: positionManager,
+            poolManager: poolManager,
+            poolKey: poolKey,
+            slippageBps: slippageBps,
+            dust: 1_000_000_000_000
+        });
         liqAdded = liqPos.increaseLiquidityInternal(ctx, IERC20(p0), IERC20(p1));
         if (liqAdded > 0) {
             deposits[liqPos.positionId].liquidity += liqAdded;
@@ -458,7 +507,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (liqPos.positionId == 0) return 0;
         for (uint256 i = 0; i < maxRounds; ++i) {
             _decreaseAllLiquidity();
-            remainingLiq = liqPos.getPositionLiquidity(nonfungiblePositionManager);
+            remainingLiq = liqPos.getPositionLiquidity(positionManager);
             if (remainingLiq == 0) return 0;
         }
     }
@@ -470,13 +519,17 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function _decreaseLiquidityInternal(uint128 liquidityToRemove, bool removeAll) internal {
         if (liqPos.positionId == 0) return;
 
-        LiquidityLibrary.DecreaseContext memory ctx = LiquidityLibrary.DecreaseContext({npm: nonfungiblePositionManager, pool: pool});
+        LiquidityLibraryV4.DecreaseContext memory ctx = LiquidityLibraryV4.DecreaseContext({
+            posm: positionManager,
+            poolManager: poolManager,
+            poolKey: poolKey
+        });
         uint128 removed;
         uint256 positionId = liqPos.positionId; 
         if (removeAll) {
             removed = liqPos.decreaseAllLiquidity(ctx);
             deposits[positionId].liquidity = 0;
-            uint128 remainingLiq = liqPos.getPositionLiquidity(nonfungiblePositionManager);
+            uint128 remainingLiq = liqPos.getPositionLiquidity(positionManager);
             if (remainingLiq > 0) {
                 removed = liqPos.decreaseAllLiquidity(ctx);
                 deposits[positionId].liquidity = 0;
@@ -484,7 +537,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         } else {
             if (liquidityToRemove == 0) return;
             removed = liqPos.decreaseLiquidityByAmount(ctx, liquidityToRemove);
-            deposits[positionId].liquidity = liqPos.getPositionLiquidity(nonfungiblePositionManager);
+            deposits[positionId].liquidity = liqPos.getPositionLiquidity(positionManager);
         }
         _collectAllFees(false);
         emit StrategyEvent(6, positionId, removed, 0);
@@ -501,7 +554,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function _checkTokenShare() internal returns (bool) {
         if (liqPos.positionId == 0) return false;
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) return true;
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
         (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
         uint256 p = _spotPrice1e18();
         if (p == 0) return false;
@@ -533,7 +586,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint256 bal = tokenIn.balanceOf(address(this));
         if (amount > bal) amount = bal;
         if (amount == 0) return;
-        swapRouter.swapExactInputFromStrategyStrictQuote(address(tokenIn), address(tokenOut), amount, address(this));
+        swapRouterV4.swapExactInputSingleFromStrategy(_toCorePoolKey(), address(tokenIn) == poolKey.currency0, amount, 0);
     }
     function poolValue() public view override returns (uint256) {
         (uint256 assetInPool, uint256 wethInPool) = balanceOfPool();
@@ -549,22 +602,22 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function balanceOfPool() public view override returns (uint256 assetAmt, uint256 wethAmt) {
         if (liqPos.positionId == 0) return (0, 0);
-        uint128 liquidity = liqPos.getPositionLiquidity(nonfungiblePositionManager);
-        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
-        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = LiquidityLibrary.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
-        (uint256 amount0, uint256 amount1) = LiquidityLibrary.getAmountsForLiquidity(sqrtPriceX96, sqrtLowerX96, sqrtUpperX96, liquidity);
-        address p0 = pool.token0();
+        uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
+        (uint160 sqrtPriceX96, ) = _readSlot0();
+        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = LiquidityLibraryV4.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
+        (uint256 amount0, uint256 amount1) = LiquidityLibraryV4.getAmountsForLiquidity(sqrtPriceX96, sqrtLowerX96, sqrtUpperX96, liquidity);
+        address p0 = poolKey.currency0;
         return p0 == address(WETH) ? (amount1, amount0) : (amount0, amount1);
     }
-      function totalLiquidity() external view override returns (uint128) { return liqPos.getPositionLiquidity(nonfungiblePositionManager); }
+      function totalLiquidity() external view override returns (uint128) { return liqPos.getPositionLiquidity(positionManager); }
     function _calculateLiquidityToRemove(uint256 amount) internal view returns (uint256) {
         if (liqPos.positionId == 0) return 0;
-        (,,,int24 _tickLower,int24 _tickUpper,uint128 liquidity) = liqPos.getPositionData(nonfungiblePositionManager);
-        (uint160 sqrtP, , , , , , ) = pool.slot0();
-        uint128 positionLiquidity = liqPos.getPositionLiquidity(nonfungiblePositionManager);
-        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = LiquidityLibrary.getSqrtRatios(_tickLower, _tickUpper);
-        (uint256 amount0, uint256 amount1) = LiquidityLibrary.getAmountsForLiquidity(sqrtP, sqrtLowerX96, sqrtUpperX96, positionLiquidity);
-        address p0 = pool.token0();
+        (int24 _tickLower, int24 _tickUpper, uint128 liquidity) = (liqPos.tickLower, liqPos.tickUpper, LiquidityLibraryV4.getPositionLiquidity(liqPos, positionManager));
+        (uint160 sqrtP, ) = _readSlot0();
+        uint128 positionLiquidity = liqPos.getPositionLiquidity(positionManager);
+        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) = LiquidityLibraryV4.getSqrtRatios(_tickLower, _tickUpper);
+        (uint256 amount0, uint256 amount1) = LiquidityLibraryV4.getAmountsForLiquidity(sqrtP, sqrtLowerX96, sqrtUpperX96, positionLiquidity);
+        address p0 = poolKey.currency0;
         (uint256 assetAmt, uint256 wethAmt) = p0 == address(WETH) ? (amount1, amount0) : (amount0, amount1);
         uint256 p = _spotPrice1e18();
         uint256 assetAsWeth = p != 0 ? Math.mulDiv(assetAmt, 1e18, p) : 0;
@@ -574,7 +627,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint256 targetTokenAmt = Math.mulDiv(assetAmt, proportion, 1e18);
         uint256 targetWethAmt = Math.mulDiv(wethAmt,  proportion, 1e18);
         (uint256 bal0, uint256 bal1) = p0 == address(WETH) ? (targetWethAmt, targetTokenAmt) : (targetTokenAmt, targetWethAmt);
-        uint128 liqNeeded = LiquidityLibrary.getLiquidityForAmounts(sqrtP, sqrtLowerX96, sqrtUpperX96, bal0, bal1);
+        uint128 liqNeeded = LiquidityLibraryV4.getLiquidityForAmounts(sqrtP, sqrtLowerX96, sqrtUpperX96, bal0, bal1);
         if (liqNeeded > liquidity) return liquidity;
         return liqNeeded;
     }
@@ -590,22 +643,26 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     /// @dev Uses `forceApprove` so tokens that require allowance 0 before a new non-zero value (e.g. USDT-style) do not revert.
     function _giveAllowances() internal {
         if (address(ASSET) != address(0)) {
-            ASSET.forceApprove(address(nonfungiblePositionManager), type(uint256).max);
-            ASSET.forceApprove(address(swapRouter), type(uint256).max);
+            ASSET.forceApprove(address(positionManager), type(uint256).max);
+            ASSET.forceApprove(address(swapRouterV4), type(uint256).max);
         }
-        WETH.forceApprove(address(nonfungiblePositionManager), type(uint256).max);
-        WETH.forceApprove(address(swapRouter), type(uint256).max);
+        WETH.forceApprove(address(positionManager), type(uint256).max);
+        WETH.forceApprove(address(swapRouterV4), type(uint256).max);
     }
     function _removeAllowances() internal {
-        if (address(ASSET) != address(0)) ASSET.forceApprove(address(nonfungiblePositionManager), 0);
-        WETH.forceApprove(address(nonfungiblePositionManager), 0);
+        if (address(ASSET) != address(0)) {
+            ASSET.forceApprove(address(positionManager), 0);
+            ASSET.forceApprove(address(swapRouterV4), 0);
+        }
+        WETH.forceApprove(address(positionManager), 0);
+        WETH.forceApprove(address(swapRouterV4), 0);
     }
     function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external override onlyAuthorized {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
         consecutiveOffensiveCount = 0;
         _decreaseAllLiquidity();
         uint256 oldPositionId = liqPos.positionId;
-        if (oldPositionId != 0 && liqPos.getPositionLiquidity(nonfungiblePositionManager) == 0) {
+        if (oldPositionId != 0 && liqPos.getPositionLiquidity(positionManager) == 0) {
             delete deposits[oldPositionId];
             liqPos.positionId = 0;
         }
@@ -613,11 +670,19 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (assetBal > 0) _swap(ASSET, WETH, assetBal);
         assetAddr = _newAssetAddr;
         ASSET = IERC20(_newAssetAddr);
-        assetPoolV3 = _newPoolV3Addr;
-        pool = IUniswapV3PoolMinimal(_newPoolV3Addr);
+        address a2 = _newAssetAddr;
+        address w2 = address(WETH);
+        poolKey = LiquidityLibraryV4.PoolKey({
+            currency0: a2 < w2 ? a2 : w2,
+            currency1: a2 < w2 ? w2 : a2,
+            fee: v3Fee,
+            tickSpacing: tickSpacing,
+            hooks: address(0)
+        });
+        (_newPoolV3Addr);
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
-        mode = Mode.NORMAL;
+        stratMode = Mode.NORMAL;
         defensiveEnteredAt = 0;
         baselineTick = 0;
         floorTick = 0;
@@ -636,7 +701,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
 
     /// @notice Vault-only: strategy fully drained to vault; LP mode paused (mirrors defensive idle handling).
     function enterNeutralFromVault() external onlyAuthorized {
-        mode = Mode.NUETRAL;
+        stratMode = Mode.NUETRAL;
         defensiveEnteredAt = block.timestamp;
         consecutiveOffensiveCount = 0;
         floorTick = 0;
@@ -646,8 +711,8 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
 
     /// @notice Vault-only: after `neutralDeposit`, resume NORMAL LP lifecycle.
     function resumeNormalFromVault() external onlyAuthorized {
-        if (mode != Mode.NUETRAL) revert MustBeNeutral();
-        mode = Mode.NORMAL;
+        if (stratMode != Mode.NUETRAL) revert MustBeNeutral();
+        stratMode = Mode.NORMAL;
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
         emit StrategyEvent(13, uint256(uint8(Mode.NORMAL)), 0, 0);

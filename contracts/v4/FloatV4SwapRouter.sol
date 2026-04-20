@@ -19,16 +19,20 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 
 import "./interfaces/ISwapRouterV4.sol";
+import "./interfaces/IFloatV4StrategySwapRouter.sol";
 
 /// @title FloatV4SwapRouter
 /// @notice Float-facing router: token → WETH via Universal Router `V4_SWAP` (see Uniswap v4 swap routing guide).
-contract FloatV4SwapRouter is ISwapRouterV4, Ownable, ReentrancyGuard {
+contract FloatV4SwapRouter is ISwapRouterV4, IFloatV4StrategySwapRouter, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IUniversalRouter public immutable universalRouter;
     IAllowanceTransfer public immutable permit2;
     IV4Quoter public immutable quoterV4;
     IERC20 public immutable WETH;
+
+    /// @notice Strategy allowed to call `swapExactInputSingleFromStrategy` (set after deploy).
+    address public strategy;
 
     uint16 public defaultSlippageBps = 100;
 
@@ -62,6 +66,43 @@ contract FloatV4SwapRouter is ISwapRouterV4, Ownable, ReentrancyGuard {
         require(bps < 10_000, "slippage");
         defaultSlippageBps = bps;
         emit DefaultSlippageBpsUpdated(bps);
+    }
+
+    function setStrategy(address s) external override onlyOwner {
+        strategy = s;
+    }
+
+    /// @inheritdoc IFloatV4StrategySwapRouter
+    function swapExactInputSingleFromStrategy(
+        PoolKey calldata key,
+        bool zeroForOne,
+        uint256 amountIn,
+        uint128 minOutIfNoQuoter
+    ) external override nonReentrant returns (uint256 amountOut) {
+        require(msg.sender == strategy && strategy != address(0), "strategy");
+        require(amountIn > 0 && amountIn <= type(uint128).max, "amount");
+
+        IERC20 tokenIn = IERC20(Currency.unwrap(zeroForOne ? key.currency0 : key.currency1));
+        IERC20 tokenOut = IERC20(Currency.unwrap(zeroForOne ? key.currency1 : key.currency0));
+
+        tokenIn.safeTransferFrom(msg.sender, address(this), amountIn);
+
+        uint128 minOut = _minOut(key, zeroForOne, uint128(amountIn), minOutIfNoQuoter);
+
+        address ur = address(universalRouter);
+        _ensureAllowance(tokenIn, address(permit2), amountIn);
+        permit2.approve(address(tokenIn), ur, uint160(amountIn), uint48(block.timestamp + 300));
+
+        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = _encodeV4SwapPayload(key, zeroForOne, uint128(amountIn), minOut);
+
+        uint256 balBefore = tokenOut.balanceOf(address(this));
+        IUniversalRouter(ur).execute(commands, inputs, block.timestamp + 300);
+        amountOut = tokenOut.balanceOf(address(this)) - balBefore;
+        if (amountOut > 0) {
+            tokenOut.safeTransfer(msg.sender, amountOut);
+        }
     }
 
     /// @inheritdoc ISwapRouterV4

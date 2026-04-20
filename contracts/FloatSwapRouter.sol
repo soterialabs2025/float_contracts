@@ -71,7 +71,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     /// @dev When `amountIn` is at least this (raw units of tokenIn), `swapExactInputFromStrategyStrictQuote`
     ///      merges a TWAP-based floor with the quoter min when `strategyTwapPeriodSeconds != 0`.
     ///      Set to `type(uint256).max` to never apply the TWAP branch (strict quoter only). Default 1e15 ≈ 0.001 tokens at 18 decimals.
-    uint256 public largeSwapTwapMinAmount = 1_000_000_000_000_000;
+    uint256 public largeSwapTwapMinAmount = 10_000_000_000_000_000;
 
     /// @notice TWAP window (seconds) for strategy strict swaps when `amountIn >= largeSwapTwapMinAmount`.
     /// @dev Default 400 (6m): balances manipulation resistance with freshness when the system may be targeted.
