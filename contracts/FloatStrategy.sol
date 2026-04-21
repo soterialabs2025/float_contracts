@@ -42,6 +42,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     address private keeperStratAddr;
     int24 public baselineTick;
     int24 public floorTick;
+    uint256 public minFloorTickCount = 2;
     bool public harvestOnDeposit = true;
     uint256 public lastHarvest; 
     uint256 public PrevHarvestTime;
@@ -282,7 +283,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         int24 rawFloor = LiquidityLibrary.floorTickBelowCurrentByBps(poolTick, depthBps);
         int24 candidate = LiquidityLibrary.alignDown(rawFloor, tickSpacing);
         // High-water mark: floor only ratchets up as price rallies, never drops.
-        if (floorTick == 0 || candidate > floorTick) {
+        if (floorTick == 0 || candidate > floorTick && consecutiveOffensiveCount < minFloorTickCount) {
             floorTick = candidate;
         }
         return false;

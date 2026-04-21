@@ -315,7 +315,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         int24 rawFloor = LiquidityLibrary.floorTickBelowCurrentByBps(poolTick, depthBps);
         int24 candidate = LiquidityLibrary.alignDown(rawFloor, tickSpacing);
         // High-water mark: floor only ratchets up as price rallies, never drops.
-        if (floorTick == 0 || candidate > floorTick) {
+        if (floorTick == 0 || candidate > floorTick && consecutiveOffensiveCount < minFloorTickCount) {
             floorTick = candidate;
         }
         return false;
