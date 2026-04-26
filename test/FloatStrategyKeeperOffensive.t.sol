@@ -8,15 +8,17 @@ import "../contracts/FloatStrategy.sol";
 
 /// @notice Documents behavior when `mode == OFFENSIVE` (enum value 2).
 /// @dev `_enterOffensive()` sets `mode = Mode.OFFENSIVE` before rebalancing/mint, then on success keeps
-///      OFFENSIVE, sets `baseTokenShareBps = offensiveTargetAssetBps`, clears floor/defensive anchors,
-///      bumps `consecutiveOffensiveCount`, and emits `StrategyEvent` type 11. On failure it calls
+///      OFFENSIVE and sets `baseTokenShareBps = offensiveTargetAssetBps` (policy). Drift checks use a
+///      separate realized anchor inside the strategy. Clears floor/defensive anchors, bumps
+///      `consecutiveOffensiveCount`, and emits `StrategyEvent` type 11. On failure it calls
 ///      `_enterDefensive()` (mode DEFENSIVE). OFFENSIVE shares LP rules with NORMAL via `_lpModeActive()`.
 ///      Tests that force OFFENSIVE via `stdstore` cover keeper/deposit edges without full pool setup.
 contract FloatStrategyKeeperOffensiveTest is Test {
     using stdStorage for StdStorage;
 
-    /// @dev `LiquidityLibrary.PositionState liqPos` — first word is `positionId` (forge storage layout).
-    uint256 internal constant LIQ_POS_SLOT = 10;
+    /// @dev `LiquidityLibrary.PositionState liqPos.positionId` — packed struct starts at storage slot 13
+    ///      (`forge inspect FloatStrategy storageLayout`); first word is `positionId`.
+    uint256 internal constant LIQ_POS_SLOT = 13;
     /// @dev Base WETH — immutable on `FloatStrategy`; local anvil has no bytecode here unless forked.
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
 

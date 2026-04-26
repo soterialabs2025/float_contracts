@@ -14,28 +14,28 @@ contract StrategyManager is Ownable {
     uint256 public constant DIVISOR = 10000;
     uint24 public v3Fee = 10000;
     int24 public tickSpacing = 200;
-    int8 public startM = 5;
+    int8 public startM = 4;
+    int8 public offensiveM = 6;
     uint256 public withdrawalFeeBps = 0;
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
     DeviationBands public deviationBands;
+    DeviationBands public offensiveBands;
     uint256 public offensiveTargetAssetBps = 4500;  
     uint32 public floorSlopeNumerator = 1;
-    uint32 public floorSlopeDenominator = 4;
-    uint16 public minFloorDeviationBps = 100;
-    uint256 public minFloorTickCount = 2;
-    event ParamUpdated(bytes32 indexed param, uint256 val1, uint256 val2);
+    uint32 public floorSlopeDenominator = 5;
+    uint16 public minFloorDeviationBps = 80;
+    uint256 public minFloorTickCount = 1;
 
-    function setDeviationBands(uint256 _lowerBps, uint256 _upperBps, uint256 _maxTokenCapBps, int8 _startM) external onlyOwner {
+    function setDeviationBands(uint256 _lowerBps, uint256 _upperBps, uint256 _maxTokenCapBps, int8 _startM, int8 _offensiveM, uint256 _oLowerBps, uint256 _oUpperBps, uint256 _oMaxTokenCapBps) external onlyOwner {
         deviationBands = DeviationBands({lowerBps: _lowerBps, upperBps: _upperBps, maxTokenCapBps: _maxTokenCapBps});
+        offensiveBands = DeviationBands({lowerBps: _oLowerBps, upperBps: _oUpperBps, maxTokenCapBps: _oMaxTokenCapBps});
         startM = _startM;
-        emit ParamUpdated(bytes32("deviationBands"), _maxTokenCapBps, _lowerBps);
-        emit ParamUpdated(bytes32("startM"), uint256(int256(_startM)), 0);
+        offensiveM = _offensiveM;
     }
     function setOffensiveTargetAssetBps(uint256 _offensiveTargetAssetBps) external onlyOwner {
         require(_offensiveTargetAssetBps <= DIVISOR, ">100%");
         offensiveTargetAssetBps = _offensiveTargetAssetBps;
-        emit ParamUpdated(bytes32("offensiveTargetBps"), _offensiveTargetAssetBps, 0);
     }
     function setFloorTrailingParams(uint32 _numerator, uint32 _denominator, uint16 _minDeviationBps, uint256 _minFloorTickCount) external onlyOwner {
         require(_denominator > 0, "denom");
@@ -43,8 +43,5 @@ contract StrategyManager is Ownable {
         floorSlopeDenominator = _denominator;
         minFloorDeviationBps = _minDeviationBps;
         minFloorTickCount = _minFloorTickCount;
-        emit ParamUpdated(bytes32("minFloorTickCount"), _minFloorTickCount, 0);
-        emit ParamUpdated(bytes32("floorTrail"), uint256(_numerator), uint256(_denominator));
-        emit ParamUpdated(bytes32("minFloorDeviationBps"), _minDeviationBps, 0);
     }
 }

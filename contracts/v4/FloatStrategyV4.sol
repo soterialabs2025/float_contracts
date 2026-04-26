@@ -23,7 +23,6 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     error Unauthorized();
     error ZeroValue();
     error ZeroAddress();
-    error InvalidManager();
     error PositionExists();
     error MustBeNeutral();
     using SafeERC20 for IERC20;
@@ -44,9 +43,12 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     int24 public baselineTick;
     int24 public floorTick;
     bool public harvestOnDeposit = true;
+    uint256 public lastOffensiveTime;
+    uint256 public prevOffensiveTime;
     uint256 public lastHarvest; 
     uint256 public PrevHarvestTime;
-    uint256 public baseTokenShareBps; 
+    uint256 public baseTokenShareBps = 5_000;
+    uint256 private tokenShareAnchorBps;
     uint256 public UniswapFeesCollected; 
     uint256 public lastUniswapFeeTotal;
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
@@ -56,6 +58,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     uint256 public lastRebalanceTime;
     uint256 public defensiveEnteredAt;
     uint256 public consecutiveOffensiveCount;
+    uint256 public prevConsecutiveOffensiveCount;
     event StrategyEvent(uint8 indexed eventType, uint256 indexed data1, uint256 data2, uint256 data3);
     event ContractSetUp(address indexed caller);
     bool public contractSetUp;
@@ -95,7 +98,8 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         WETH = IERC20(weth_);
         positionManager = IPositionManagerV4(positionManager_);
         poolManager = IPoolManagerV4(poolManager_);
-        deviationBands = StrategyManager.DeviationBands({lowerBps: 400, upperBps: 2600, maxTokenCapBps: 9600});
+        deviationBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2400, maxTokenCapBps: 9800});
+        offensiveBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 3200, maxTokenCapBps: 9800});
         emit StrategyEvent(0, uint256(uint160(_msgSender())), 0, 0);
     }
     function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {
@@ -230,6 +234,15 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         }
         emit StrategyEvent(7, liqPos.positionId, valueInWeth, 0);
         if (!skipIncreaseLiquidity && _lpModeActive()) {
+            if (stratMode == Mode.OFFENSIVE
+                && block.timestamp - lastOffensiveTime > 7 hours + 55 minutes
+                && consecutiveOffensiveCount == prevConsecutiveOffensiveCount + 1) {
+                _decreaseAllLiquidity();
+                liqPos.positionId = 0;
+                _mintNewPosition(startM);
+                _noteHarvestActivity();
+                return;
+            }
             (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
             _balanceTokens(assetBal, wethBal);
             uint128 added = _increaseLiquidityInternal();
@@ -279,10 +292,6 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             }
             return false;
         }
-        if (minFloorDeviationBps == 0) {
-            floorTick = 0;
-            return false;
-        }
         (, int24 poolTick) = _readSlot0();
         if (baselineTick == 0) {
             baselineTick = poolTick;
@@ -327,6 +336,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         baselineTick = 0;
         defensiveEnteredAt = block.timestamp;
         stratMode = Mode.DEFENSIVE;
+        tokenShareAnchorBps = 0;
     }
     function _enterOffensiveOrDefensiveByTick(int24 posTickUpper) internal {
         (, int24 poolTick) = _readSlot0();
@@ -335,6 +345,9 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     }
     function _enterOffensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();
+        prevOffensiveTime = lastOffensiveTime;
+        lastOffensiveTime = block.timestamp;
+        prevConsecutiveOffensiveCount = consecutiveOffensiveCount;
         consecutiveOffensiveCount++;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         uint256 p = _spotPrice1e18();
@@ -345,7 +358,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         }
         stratMode = Mode.OFFENSIVE;
         _balanceTokens(assetBal, wethBal);
-        _mintNewPosition(startM);
+        _mintNewPosition(offensiveM); 
         if (liqPos.positionId != 0) {
             baseTokenShareBps = offensiveTargetAssetBps;
             floorTick = 0;
@@ -374,15 +387,8 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             (, int24 poolTickAfterMint) = _readSlot0();
             baselineTick = poolTickAfterMint;
             floorTick = 0;
-            (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
-            uint256 p = _spotPrice1e18();
-            if (p != 0) {
-                uint256 wethAsTokens = Math.mulDiv(wethAmt, p, 1e18);
-                uint256 totalValue = assetAmt + wethAsTokens;
-                if (totalValue != 0) {
-                    baseTokenShareBps = Math.mulDiv(assetAmt, 10_000, totalValue);
-                }
-            }
+            (bool ok, uint256 currentBps) = _poolTokenShareBps();
+            if (ok) tokenShareAnchorBps = currentBps;
         }
         _handleLeftoverTokensWithLimit(0);
     }
@@ -481,15 +487,8 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         liqAdded = liqPos.increaseLiquidityInternal(ctx, IERC20(p0), IERC20(p1));
         if (liqAdded > 0) {
             deposits[liqPos.positionId].liquidity += liqAdded;
-            (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
-            uint256 p = _spotPrice1e18();
-            if (p != 0) {
-                uint256 wethAsTokens = Math.mulDiv(wethAmt, p, 1e18);
-                uint256 totalValue = assetAmt + wethAsTokens;
-                if (totalValue != 0) {
-                    baseTokenShareBps = Math.mulDiv(assetAmt, 10_000, totalValue);
-                }
-            }
+            (bool ok, uint256 currentBps) = _poolTokenShareBps();
+            if (ok) tokenShareAnchorBps = currentBps;
             emit StrategyEvent(5, liqPos.positionId, liqAdded, 0);
         }
         return liqAdded;
@@ -555,23 +554,19 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     function _checkTokenShare() internal returns (bool) {
         if (liqPos.positionId == 0) return false;
         if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
-        (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
-        uint256 p = _spotPrice1e18();
-        if (p == 0) return false;
-        uint256 wethAsTokens = Math.mulDiv(wethAmt, p, 1e18);
-        uint256 totalValue   = assetAmt + wethAsTokens;
-        if (totalValue == 0) return false;
-        uint256 currentBps = Math.mulDiv(assetAmt, 10_000, totalValue);
-        uint256 baseline   = baseTokenShareBps == 0 ? currentBps : baseTokenShareBps;
-        if (currentBps >= deviationBands.maxTokenCapBps || currentBps <= deviationBands.lowerBps) {
+        (bool ok, uint256 currentBps) = _poolTokenShareBps();
+        if (!ok) return false;
+        uint256 baseline   = tokenShareAnchorBps == 0 ? currentBps : tokenShareAnchorBps;
+        DeviationBands storage bands = stratMode == Mode.OFFENSIVE ? offensiveBands : deviationBands;
+        if (currentBps >= bands.maxTokenCapBps || currentBps <= bands.lowerBps) {
             _decreaseAllLiquidity();
             liqPos.positionId = 0;
-            if (currentBps >= deviationBands.maxTokenCapBps) _enterDefensive();
+            if (currentBps >= bands.maxTokenCapBps) _enterDefensive();
             else _enterOffensive();
             return true;
         }
         uint256 delta = currentBps > baseline ? (currentBps - baseline) : (baseline - currentBps);
-        uint256 maxDev = currentBps > baseline ? deviationBands.upperBps : deviationBands.lowerBps;
+        uint256 maxDev = currentBps > baseline ? bands.upperBps : bands.lowerBps;
         if (delta >= maxDev) {
             _decreaseAllLiquidity();
             liqPos.positionId = 0;
@@ -580,6 +575,14 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             return true;
         }
         return false;
+    }
+    function _poolTokenShareBps() internal view returns (bool ok, uint256 currentBps) {
+        (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
+        uint256 p = _spotPrice1e18();
+        if (p == 0) return (false, 0);
+        uint256 totalValue = assetAmt + Math.mulDiv(wethAmt, p, 1e18);
+        if (totalValue == 0) return (false, 0);
+        return (true, Math.mulDiv(assetAmt, 10_000, totalValue));
     }
     function _swap(IERC20 tokenIn, IERC20 tokenOut, uint256 amount) internal {
         if (amount == 0) return;
@@ -686,7 +689,8 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         defensiveEnteredAt = 0;
         baselineTick = 0;
         floorTick = 0;
-        baseTokenShareBps = 0;
+        baseTokenShareBps = 5_000;
+        tokenShareAnchorBps = 0;
         if (wethBal == 0 && assetBal == 0) {
             emit StrategyEvent(10, liqPos.positionId, 0, 0);
             return;
@@ -713,6 +717,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     function resumeNormalFromVault() external onlyAuthorized {
         if (stratMode != Mode.NUETRAL) revert MustBeNeutral();
         stratMode = Mode.NORMAL;
+        baseTokenShareBps = 5_000;
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
         emit StrategyEvent(13, uint256(uint8(Mode.NORMAL)), 0, 0);
