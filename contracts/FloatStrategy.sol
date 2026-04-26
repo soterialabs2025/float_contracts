@@ -120,7 +120,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             if (assetBal > 0 || wethBal > 0) {
                 _balanceTokens(assetBal, wethBal);
             }
-            emit StrategyEvent(1, poolValue(), 0, 0);
+            emit StrategyEvent(0, poolValue(), 0, 0);
             return;
         }
     }
@@ -162,7 +162,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             WETH.safeTransfer(owner(), wethFee);
         }
         WETH.safeTransfer(receiver, totalUserWeth);
-        emit StrategyEvent(2, poolValue(), 0, 0);
+        emit StrategyEvent(1, poolValue(), 0, 0);
     }
     function harvestBoolean(bool skipIncreaseLiquidity) external onlyAuthorized nonReentrant returns (uint256 newAssets) {
         _harvest(skipIncreaseLiquidity);
@@ -181,7 +181,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
                 uint256 beforeValDefensive = balanceOfIdle();
                 (, , uint256 valueInWethDefensive) = _collectAllFees(true);
                 if (valueInWethDefensive > 0) {
-                    emit StrategyEvent(7, liqPos.positionId, valueInWethDefensive, 0);
+                    emit StrategyEvent(2, liqPos.positionId, valueInWethDefensive, 0);
                 }
                 uint256 afterValDefensive = balanceOfIdle();
                 uint256 wantHarvestedDefensive = afterValDefensive > beforeValDefensive ? (afterValDefensive - beforeValDefensive) : 0;
@@ -196,18 +196,19 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (valueInWeth == 0) {
             return;
         }
-        emit StrategyEvent(7, liqPos.positionId, valueInWeth, 0);
+        emit StrategyEvent(4, liqPos.positionId, valueInWeth, 0);
         if (!skipIncreaseLiquidity && _lpModeActive()) {
             if (mode == Mode.OFFENSIVE
-                && block.timestamp - lastOffensiveTime > 7 hours + 55 minutes
+                && block.timestamp - lastOffensiveTime > offensiveStaleDuration  
                 && consecutiveOffensiveCount == prevConsecutiveOffensiveCount + 1) {
                 _decreaseAllLiquidity();
                 liqPos.positionId = 0;
-                Mode prevMode = mode;
                 mode = Mode.NORMAL;
+                baseTokenShareBps = 5_000;
+                consecutiveOffensiveCount = 0;
+                prevConsecutiveOffensiveCount = 0;
                 (uint256 staleAssetBal, uint256 staleWethBal) = _getTokenBalances();
                 _balanceTokens(staleAssetBal, staleWethBal);
-                mode = prevMode;
                 _mintNewPosition(startM);
                 _noteHarvestActivity();
                 return;
@@ -329,7 +330,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             floorTick = 0;
             defensiveEnteredAt = 0;
             lastRebalanceTime = block.timestamp;
-            emit StrategyEvent(11, liqPos.positionId, offensiveTargetAssetBps, 0);
+            emit StrategyEvent(5, liqPos.positionId, offensiveTargetAssetBps, 0);
         } else {
             _enterDefensive();
         }
@@ -342,7 +343,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (newId != 0 && liq > 0) {
             (address token0, address token1, , , , uint128 liquidity) = liqPos.getPositionData(nonfungiblePositionManager);
             deposits[newId] = Deposit(address(this), liquidity, token0, token1);
-            emit StrategyEvent(4, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
+            emit StrategyEvent(6, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
             (, int24 poolTickAfterMint, , , , , ) = pool.slot0();
             baselineTick = poolTickAfterMint;
             floorTick = 0;
@@ -365,7 +366,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _increaseLiquidityInternal();
             _handleLeftoverTokensWithLimit(0);
         }
-        emit StrategyEvent(1, poolValue(), 0, 0);
+        emit StrategyEvent(0, poolValue(), 0, 0);
     }
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
         if (liqPos.positionId == 0) return (0, 0, 0);
@@ -479,7 +480,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             deposits[positionId].liquidity = liqPos.getPositionLiquidity(nonfungiblePositionManager);
         }
         _collectAllFees(false);
-        emit StrategyEvent(6, positionId, removed, 0);
+        emit StrategyEvent(7, positionId, removed, 0);
     }
     function _handleLeftoverTokensWithLimit(uint256 iter) internal {
         if (iter >= 1) return;
@@ -619,7 +620,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         baseTokenShareBps = 5_000;
         tokenShareAnchorBps = 0;
         if (wethBal == 0 && assetBal == 0) {
-            emit StrategyEvent(10, liqPos.positionId, 0, 0);
+            emit StrategyEvent(8, liqPos.positionId, 0, 0);
             return;
         }
         _balanceTokens(assetBal, wethBal);
@@ -627,7 +628,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (liqPos.positionId != 0) {
             lastRebalanceTime = block.timestamp;
         }
-        emit StrategyEvent(10, liqPos.positionId, 0, 0);
+        emit StrategyEvent(8, liqPos.positionId, 0, 0);
     }
     function enterNeutralFromVault() external onlyAuthorized {
         mode = Mode.NUETRAL;
@@ -635,7 +636,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         consecutiveOffensiveCount = 0;
         floorTick = 0;
         baselineTick = 0;
-        emit StrategyEvent(12, uint256(uint8(Mode.NUETRAL)), 0, 0);
+        emit StrategyEvent(9, uint256(uint8(Mode.NUETRAL)), 0, 0);
     }
     function resumeNormalFromVault() external onlyAuthorized {
         if (mode != Mode.NUETRAL) revert MustBeNeutral();

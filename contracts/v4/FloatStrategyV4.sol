@@ -98,9 +98,8 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         WETH = IERC20(weth_);
         positionManager = IPositionManagerV4(positionManager_);
         poolManager = IPoolManagerV4(poolManager_);
-        deviationBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2400, maxTokenCapBps: 9800});
-        offensiveBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 3200, maxTokenCapBps: 9800});
-        emit StrategyEvent(0, uint256(uint160(_msgSender())), 0, 0);
+        deviationBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2500, maxTokenCapBps: 9800});
+        offensiveBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 3000, maxTokenCapBps: 9800});
     }
     function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {
         managerAddress = _managerAddr;
@@ -123,7 +122,6 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         _giveAllowances();
         contractSetUp = true;
         lastRebalanceTime = block.timestamp;
-        emit ContractSetUp(_msgSender());
         (_assetPoolV3Addr);
     }
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -155,7 +153,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             if (assetBal > 0 || wethBal > 0) {
                 _balanceTokens(assetBal, wethBal);
             }
-            emit StrategyEvent(1, poolValue(), 0, 0);
+            emit StrategyEvent(0, poolValue(), 0, 0);
             return;
         }
     }
@@ -197,7 +195,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             WETH.safeTransfer(owner(), wethFee);
         }
         WETH.safeTransfer(receiver, totalUserWeth);
-        emit StrategyEvent(2, poolValue(), 0, 0);
+        emit StrategyEvent(1, poolValue(), 0, 0);
     }
     function harvestBoolean(bool skipIncreaseLiquidity) external onlyAuthorized nonReentrant returns (uint256 newAssets) {
         _harvest(skipIncreaseLiquidity);
@@ -216,7 +214,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
                 uint256 beforeValDefensive = balanceOfIdle();
                 (, , uint256 valueInWethDefensive) = _collectAllFees(true);
                 if (valueInWethDefensive > 0) {
-                    emit StrategyEvent(7, liqPos.positionId, valueInWethDefensive, 0);
+                    emit StrategyEvent(2, liqPos.positionId, valueInWethDefensive, 0);
                 }
                 uint256 afterValDefensive = balanceOfIdle();
                 uint256 wantHarvestedDefensive = afterValDefensive > beforeValDefensive ? (afterValDefensive - beforeValDefensive) : 0;
@@ -227,18 +225,23 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         if (liqPos.positionId == 0) {
             return;
         }
-        uint256 beforeVal = balanceOfIdle();
         (, , uint256 valueInWeth) = _collectAllFees(true);
         if (valueInWeth == 0) {
             return;
         }
-        emit StrategyEvent(7, liqPos.positionId, valueInWeth, 0);
+        emit StrategyEvent(4, liqPos.positionId, valueInWeth, 0);
         if (!skipIncreaseLiquidity && _lpModeActive()) {
             if (stratMode == Mode.OFFENSIVE
-                && block.timestamp - lastOffensiveTime > 7 hours + 55 minutes
+                && block.timestamp - lastOffensiveTime > offensiveStaleDuration 
                 && consecutiveOffensiveCount == prevConsecutiveOffensiveCount + 1) {
                 _decreaseAllLiquidity();
                 liqPos.positionId = 0;
+                stratMode = Mode.NORMAL;
+                baseTokenShareBps = 5_000;
+                consecutiveOffensiveCount = 0;
+                prevConsecutiveOffensiveCount = 0;
+                (uint256 staleAssetBal, uint256 staleWethBal) = _getTokenBalances();
+                _balanceTokens(staleAssetBal, staleWethBal);
                 _mintNewPosition(startM);
                 _noteHarvestActivity();
                 return;
@@ -250,9 +253,6 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
                 _noteHarvestActivity();
             }
         }
-        uint256 afterVal      = balanceOfIdle();
-        uint256 wantHarvested = afterVal > beforeVal ? (afterVal - beforeVal) : 0;
-        emit StrategyEvent(3, uint256(uint160(_msgSender())), wantHarvested, poolValue());
     }
     function _inRange() internal view returns (bool) {
         if (liqPos.positionId == 0) return false;
@@ -323,7 +323,6 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         }
         int24 rawFloor = LiquidityLibrary.floorTickBelowCurrentByBps(poolTick, depthBps);
         int24 candidate = LiquidityLibrary.alignDown(rawFloor, tickSpacing);
-        // High-water mark: floor only ratchets up as price rallies, never drops.
         if (floorTick == 0 || candidate > floorTick && consecutiveOffensiveCount < minFloorTickCount) {
             floorTick = candidate;
         }
@@ -364,7 +363,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             floorTick = 0;
             defensiveEnteredAt = 0;
             lastRebalanceTime = block.timestamp;
-            emit StrategyEvent(11, liqPos.positionId, offensiveTargetAssetBps, 0);
+            emit StrategyEvent(5, liqPos.positionId, offensiveTargetAssetBps, 0);
         } else {
             _enterDefensive();
         }
@@ -383,7 +382,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         (uint256 newId, uint128 liq) = liqPos.mintNewPosition(ctx, assetBal, wethBal);
         if (newId != 0 && liq > 0) {
             deposits[newId] = Deposit(address(this), liq, poolKey.currency0, poolKey.currency1);
-            emit StrategyEvent(4, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
+            emit StrategyEvent(6, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
             (, int24 poolTickAfterMint) = _readSlot0();
             baselineTick = poolTickAfterMint;
             floorTick = 0;
@@ -406,7 +405,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             _increaseLiquidityInternal();
             _handleLeftoverTokensWithLimit(0);
         }
-        emit StrategyEvent(1, poolValue(), 0, 0);
+        emit StrategyEvent(0, poolValue(), 0, 0);
     }
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
         if (liqPos.positionId == 0) return (0, 0, 0);
@@ -433,7 +432,6 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
               lastUniswapFeeTotal = UniswapFeesCollected;
               UniswapFeesCollected += valueInWeth;
             }
-            emit StrategyEvent(8, liqPos.positionId, valueInWeth, 0);
         }
     }
     function _spotPrice1e18() internal view returns (uint256) {
@@ -489,16 +487,12 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             deposits[liqPos.positionId].liquidity += liqAdded;
             (bool ok, uint256 currentBps) = _poolTokenShareBps();
             if (ok) tokenShareAnchorBps = currentBps;
-            emit StrategyEvent(5, liqPos.positionId, liqAdded, 0);
         }
         return liqAdded;
     }
     function _decreaseAllLiquidity() internal {
         if (liqPos.positionId != 0) {
-            (, , uint256 valueInWeth) = _collectAllFees(true);
-            if (valueInWeth > 0) {
-                emit StrategyEvent(7, liqPos.positionId, valueInWeth, 0);
-            }
+            _collectAllFees(true);
         }
         _decreaseLiquidityInternal(0, true);
     }
@@ -539,7 +533,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             deposits[positionId].liquidity = liqPos.getPositionLiquidity(positionManager);
         }
         _collectAllFees(false);
-        emit StrategyEvent(6, positionId, removed, 0);
+        emit StrategyEvent(7, positionId, removed, 0);
     }
     function _handleLeftoverTokensWithLimit(uint256 iter) internal {
         if (iter >= 1) return;
@@ -692,7 +686,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         baseTokenShareBps = 5_000;
         tokenShareAnchorBps = 0;
         if (wethBal == 0 && assetBal == 0) {
-            emit StrategyEvent(10, liqPos.positionId, 0, 0);
+            emit StrategyEvent(8, liqPos.positionId, 0, 0);
             return;
         }
         _balanceTokens(assetBal, wethBal);
@@ -700,7 +694,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         if (liqPos.positionId != 0) {
             lastRebalanceTime = block.timestamp;
         }
-        emit StrategyEvent(10, liqPos.positionId, 0, 0);
+        emit StrategyEvent(8, liqPos.positionId, 0, 0);
     }
 
     /// @notice Vault-only: strategy fully drained to vault; LP mode paused (mirrors defensive idle handling).
@@ -710,7 +704,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         consecutiveOffensiveCount = 0;
         floorTick = 0;
         baselineTick = 0;
-        emit StrategyEvent(12, uint256(uint8(Mode.NUETRAL)), 0, 0);
+        emit StrategyEvent(9, uint256(uint8(Mode.NUETRAL)), 0, 0);
     }
 
     /// @notice Vault-only: after `neutralDeposit`, resume NORMAL LP lifecycle.
@@ -720,6 +714,5 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         baseTokenShareBps = 5_000;
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
-        emit StrategyEvent(13, uint256(uint8(Mode.NORMAL)), 0, 0);
     }
 }

@@ -22,6 +22,7 @@ contract StrategyManager is Ownable {
     DeviationBands public deviationBands;
     DeviationBands public offensiveBands;
     uint256 public offensiveTargetAssetBps = 4500;  
+    uint256 public offensiveStaleDuration = 7 hours + 55 minutes;
     uint32 public floorSlopeNumerator = 1;
     uint32 public floorSlopeDenominator = 5;
     uint16 public minFloorDeviationBps = 80;
@@ -33,9 +34,10 @@ contract StrategyManager is Ownable {
         startM = _startM;
         offensiveM = _offensiveM;
     }
-    function setOffensiveTargetAssetBps(uint256 _offensiveTargetAssetBps) external onlyOwner {
+    function setOffensiveTargetAssetBps(uint256 _offensiveTargetAssetBps, uint256 _offensiveStaleDuration) external onlyOwner {
         require(_offensiveTargetAssetBps <= DIVISOR, ">100%");
         offensiveTargetAssetBps = _offensiveTargetAssetBps;
+        offensiveStaleDuration = _offensiveStaleDuration;
     }
     function setFloorTrailingParams(uint32 _numerator, uint32 _denominator, uint16 _minDeviationBps, uint256 _minFloorTickCount) external onlyOwner {
         require(_denominator > 0, "denom");

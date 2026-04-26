@@ -10,7 +10,7 @@ import "../contracts/FloatStrategy.sol";
 /// @dev `_enterOffensive()` sets `mode = Mode.OFFENSIVE` before rebalancing/mint, then on success keeps
 ///      OFFENSIVE and sets `baseTokenShareBps = offensiveTargetAssetBps` (policy). Drift checks use a
 ///      separate realized anchor inside the strategy. Clears floor/defensive anchors, bumps
-///      `consecutiveOffensiveCount`, and emits `StrategyEvent` type 11. On failure it calls
+///      `consecutiveOffensiveCount`, and emits `StrategyEvent` type 5. On failure it calls
 ///      `_enterDefensive()` (mode DEFENSIVE). OFFENSIVE shares LP rules with NORMAL via `_lpModeActive()`.
 ///      Tests that force OFFENSIVE via `stdstore` cover keeper/deposit edges without full pool setup.
 contract FloatStrategyKeeperOffensiveTest is Test {
@@ -74,7 +74,7 @@ contract FloatStrategyKeeperOffensiveTest is Test {
     }
 
     /// @notice After OFFENSIVE + no NFT, `deposit` still hits `_deposit` first (positionId check) and exits
-    ///         quietly when there are no idle tokens (no `StrategyEvent` 1).
+    ///         quietly when there are no idle tokens (no `StrategyEvent` 0).
     function test_deposit_OFFENSIVE_noPosition_idleEmpty_noop() public {
         _mockIdleBalancesZero();
         stdstore.target(address(strat)).sig("mode()").checked_write(uint256(uint8(FloatStrategy.Mode.OFFENSIVE)));
