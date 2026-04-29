@@ -32,6 +32,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     IERC20 private WETH;
     address private immutable v3FactoryAddr = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD;
     address private immutable baseWETH = 0x4200000000000000000000000000000000000006;
+    address private constant baseUSDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address private immutable nonfungiblePosManAddr = 0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1;
     address private vaultAddr;
     address private assetPoolV3;
@@ -85,6 +86,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
         pool = IUniswapV3PoolMinimal(assetPoolV3);
+        _syncPoolFeeParamsFromPool();
         swapRouter = ISwapRouter(swapRouterAddr);
         ASSET = IERC20(assetAddr);
         _giveAllowances();
@@ -171,6 +173,13 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function _noteHarvestActivity() internal {
         PrevHarvestTime = lastHarvest;
         lastHarvest = block.timestamp;
+    }
+    function _syncPoolFeeParamsFromPool() internal {
+        v3Fee = pool.fee();
+        tickSpacing = pool.tickSpacing();
+    }
+    function _liquidityDust() private view returns (uint256) {
+        return address(ASSET) == baseUSDC ? 1_000_000 : 1_000_000_000_000;
     }
     function _harvest(bool skipIncreaseLiquidity) internal  {
         if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
@@ -342,7 +351,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function _mintNewPosition(int24 mValue) internal {
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (assetBal == 0 && wethBal == 0) return;
-        LiquidityLibrary.MintContext memory ctx = LiquidityLibrary.MintContext({npm: nonfungiblePositionManager, factory: factory, pool: pool, weth: address(WETH), tokens: address(ASSET), assetPoolV3: assetPoolV3, fee: v3Fee, tickSpacing: tickSpacing, m: mValue, slippageBps: slippageBps, dust: 1_000_000_000_000});
+        LiquidityLibrary.MintContext memory ctx = LiquidityLibrary.MintContext({npm: nonfungiblePositionManager, factory: factory, pool: pool, weth: address(WETH), tokens: address(ASSET), assetPoolV3: assetPoolV3, fee: v3Fee, tickSpacing: tickSpacing, m: mValue, slippageBps: slippageBps, dust: _liquidityDust()});
         (uint256 newId, uint128 liq) = liqPos.mintNewPosition(ctx, assetBal, wethBal);
         if (newId != 0 && liq > 0) {
             (address token0, address token1, , , , uint128 liquidity) = liqPos.getPositionData(nonfungiblePositionManager);
@@ -436,7 +445,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (liqPos.positionId == 0) return 0;
         address p0 = pool.token0();
         address p1 = pool.token1();
-        LiquidityLibrary.IncreaseContext memory ctx = LiquidityLibrary.IncreaseContext({npm: nonfungiblePositionManager, pool: pool, fee: v3Fee, slippageBps: slippageBps, dust: 1_000_000_000_000});
+        LiquidityLibrary.IncreaseContext memory ctx = LiquidityLibrary.IncreaseContext({npm: nonfungiblePositionManager, pool: pool, fee: v3Fee, slippageBps: slippageBps, dust: _liquidityDust()});
         liqAdded = liqPos.increaseLiquidityInternal(ctx, IERC20(p0), IERC20(p1));
         if (liqAdded > 0) {
             deposits[liqPos.positionId].liquidity += liqAdded;
@@ -484,12 +493,12 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             deposits[positionId].liquidity = liqPos.getPositionLiquidity(nonfungiblePositionManager);
         }
         _collectAllFees(false);
-        emit StrategyEvent(7, positionId, removed, 0);
     }
     function _handleLeftoverTokensWithLimit(uint256 iter) internal {
         if (iter >= 1) return;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal <= 1_000_000_000_000 && wethBal <= 1_000_000_000_000) return;
+        uint256 d = _liquidityDust();
+        if (assetBal <= d && wethBal <= d) return;
         _balanceTokens(assetBal, wethBal);
         if (liqPos.positionId != 0) {
             _increaseLiquidityInternal();
@@ -615,6 +624,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         ASSET = IERC20(_newAssetAddr);
         assetPoolV3 = _newPoolV3Addr;
         pool = IUniswapV3PoolMinimal(_newPoolV3Addr);
+        _syncPoolFeeParamsFromPool();
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
         mode = Mode.NORMAL;
@@ -624,7 +634,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         baseTokenShareBps = 5_000;
         tokenShareAnchorBps = 0;
         if (wethBal == 0 && assetBal == 0) {
-            emit StrategyEvent(8, liqPos.positionId, 0, 0);
             return;
         }
         _balanceTokens(assetBal, wethBal);
@@ -632,7 +641,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (liqPos.positionId != 0) {
             lastRebalanceTime = block.timestamp;
         }
-        emit StrategyEvent(8, liqPos.positionId, 0, 0);
     }
     function enterNeutralFromVault() external onlyAuthorized {
         mode = Mode.NEUTRAL;
@@ -640,7 +648,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         consecutiveOffensiveCount = 0;
         floorTick = 0;
         baselineTick = 0;
-        emit StrategyEvent(9, uint256(uint8(Mode.NEUTRAL)), 0, 0);
     }
     function resumeNormalFromVault() external onlyAuthorized {
         if (mode != Mode.NEUTRAL) revert MustBeNeutral();

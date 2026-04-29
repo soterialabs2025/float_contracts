@@ -111,6 +111,8 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     uint24 private constant FEE_500 = 500;
     uint24 private constant FEE_3000 = 3000;
     uint24 private constant FEE_10000 = 10000;
+    /// @dev Base canonical USDC — WETH/USDC swaps use the 0.3% (3000) pool tier.
+    address private constant baseUsdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address public universalRouterAddr;
     address public demeterAddr;
 
@@ -203,7 +205,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
             tokenIn,
             tokenOut,
             amountIn,
-            defaultFee,
+            _feeForSingleHop(tokenIn, tokenOut),
             recipient,
             defaultSlippageBps,
             fallbackSlippageBps
@@ -213,7 +215,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     /// @notice Like `swapExactInputFromStrategy` but **never** uses the weak quoter `catch` fallback.
     /// @dev If QuoterV2 reverts, the whole call reverts. When `strategyTwapPeriodSeconds > 0` and
     ///      `amountIn >= largeSwapTwapMinAmount`, `amountOutMinimum` is the max of (quoter-based min, TWAP-based min),
-    ///      each discounted by `strictStrategySlippageBps`. Pool: `getPool(token0, token1, defaultFee)` on the Base V3 factory.
+    ///      each discounted by `strictStrategySlippageBps`. Fee tier: WETH/USDC uses 3000; otherwise `defaultFee`.
     ///      TWAP length is `strategyTwapPeriodSeconds` (owner-tunable; default 10 minutes).
     function swapExactInputFromStrategyStrictQuote(
         address tokenIn,
@@ -227,7 +229,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         }
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        return _strictSingleHopV3Swap(tokenIn, tokenOut, amountIn, defaultFee, recipient);
+        return _strictSingleHopV3Swap(tokenIn, tokenOut, amountIn, _feeForSingleHop(tokenIn, tokenOut), recipient);
     }
 
     /// @dev Assumes `tokenIn` is already held by this contract. Quotes min-out for the amount actually swapped
@@ -294,7 +296,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
             oldAssetAddr,
             baseWETH,
             amountIn,
-            defaultFee,
+            _feeForSingleHop(oldAssetAddr, baseWETH),
             address(this), // Intermediate recipient (this router)
             defaultSlippageBps,
             fallbackSlippageBps
@@ -305,7 +307,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
             baseWETH,
             newAssetAddr,
             wethReceived,
-            defaultFee,
+            _feeForSingleHop(baseWETH, newAssetAddr),
             recipient, // Final recipient (strategy)
             defaultSlippageBps,
             fallbackSlippageBps
@@ -406,6 +408,16 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
     // -----------------------------
     // Internal core swap logic
     // -----------------------------
+
+    function _feeForSingleHop(address tokenIn, address tokenOut) private view returns (uint24) {
+        if (
+            (tokenIn == baseWETH && tokenOut == baseUsdc) ||
+            (tokenIn == baseUsdc && tokenOut == baseWETH)
+        ) {
+            return FEE_3000;
+        }
+        return defaultFee;
+    }
 
     function _swapExactInput(
         address tokenIn,

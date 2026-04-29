@@ -43,7 +43,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   uint256 public neutralTokenBalance;
   uint256 public neutralWethBalance;
   uint256 public neutralTotalSupply;
-  
+   
   event ContractSetUp(address indexed caller);
   event TokenRescued(address indexed token, address indexed recipient, uint256 amount);
   event Deposit(address indexed depositor, uint256 amount, uint256 shares);
