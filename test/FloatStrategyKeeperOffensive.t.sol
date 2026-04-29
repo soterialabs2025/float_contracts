@@ -16,9 +16,9 @@ import "../contracts/FloatStrategy.sol";
 contract FloatStrategyKeeperOffensiveTest is Test {
     using stdStorage for StdStorage;
 
-    /// @dev `LiquidityLibrary.PositionState liqPos.positionId` — packed struct starts at storage slot 13
-    ///      (`forge inspect FloatStrategy storageLayout`); first word is `positionId`.
-    uint256 internal constant LIQ_POS_SLOT = 13;
+    /// @dev `LiquidityLibrary.PositionState liqPos.positionId` — packed struct starts at storage slot 14
+    ///      (`forge inspect FloatStrategy storageLayout --via-ir`); first word is `positionId`.
+    uint256 internal constant LIQ_POS_SLOT = 14;
     /// @dev Base WETH — immutable on `FloatStrategy`; local anvil has no bytecode here unless forked.
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
 

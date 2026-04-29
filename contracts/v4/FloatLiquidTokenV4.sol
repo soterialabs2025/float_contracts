@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "../../interfaces/IContractManager.sol";
+import "./interfaces/IFloatV4ContractManager.sol";
 
 /**
  * @title FloatLiquidTokenV4
@@ -11,7 +11,7 @@ import "../../interfaces/IContractManager.sol";
  */
 contract FloatLiquidTokenV4 is ERC20, Ownable {
     address public floatVaultV4;
-    IContractManager public manager;
+    IFloatV4ContractManager public manager;
     bool public contractSetUp;
 
     event VaultUpdated(address indexed floatVaultV4);
@@ -19,7 +19,7 @@ contract FloatLiquidTokenV4 is ERC20, Ownable {
 
     constructor(address _managerAddr) ERC20("Liquid Token V4", "LTOKV4") Ownable(msg.sender) {
         require(_managerAddr != address(0), "Invalid manager address");
-        manager = IContractManager(_managerAddr);
+        manager = IFloatV4ContractManager(_managerAddr);
     }
 
     function setUpContract() external onlyOwner {

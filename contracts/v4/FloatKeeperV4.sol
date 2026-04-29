@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../../interfaces/IOutOfRangeStrategy.sol";
-import "../../interfaces/IContractManager.sol";
-import "../../interfaces/IFloatVault.sol";
+import "./interfaces/IOutOfRangeStrategyV4.sol";
+import "./interfaces/IFloatV4ContractManager.sol";
+import "./interfaces/IFloatVaultV4.sol";
 
 /// @title FloatKeeperV4
 /// @notice Same keeper/orchestration as `FloatKeeper`, wired to `FloatVaultV4` via manager key `FloatVaultV4`.
@@ -21,7 +21,7 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
 
     address public demeterAddr;
     address public _managerAddr;
-    IContractManager public manager;
+    IFloatV4ContractManager public manager;
 
     error Unauthorized();
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
@@ -39,7 +39,7 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
 
     constructor(address _managerAddress) Ownable(msg.sender) {
         _managerAddr = _managerAddress;
-        manager = IContractManager(_managerAddress);
+        manager = IFloatV4ContractManager(_managerAddress);
         demeterAddr = manager.getAddress("Demeter");
     }
 
@@ -52,7 +52,7 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
     function snapshotVaultPoolValue() external onlyAuthorized nonReentrant {
         address vaultAddr = manager.getAddress("FloatVaultV4");
         require(vaultAddr != address(0), "vault=0");
-        IFloatVault(vaultAddr).recordPoolValueSnapshot();
+        IFloatVaultV4(vaultAddr).recordPoolValueSnapshot();
         emit VaultPoolValueSnapshot(vaultAddr, _msgSender());
     }
 
@@ -89,14 +89,14 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            IOutOfRangeStrategy s0 = IOutOfRangeStrategy(stratAddr);
+            IOutOfRangeStrategyV4 s0 = IOutOfRangeStrategyV4(stratAddr);
             emit UpkeepPerformed(
                 id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt()
             );
             return;
         }
 
-        IOutOfRangeStrategy strat = IOutOfRangeStrategy(stratAddr);
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
 
         bool keeperCheck = strat.keeperCheck();
 
@@ -136,14 +136,14 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            IOutOfRangeStrategy s0 = IOutOfRangeStrategy(stratAddr);
+            IOutOfRangeStrategyV4 s0 = IOutOfRangeStrategyV4(stratAddr);
             emit UpkeepPerformed(
                 id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt()
             );
             return;
         }
 
-        IOutOfRangeStrategy strat = IOutOfRangeStrategy(stratAddr);
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
 
         try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {} catch {
             emit UpkeepPerformed(

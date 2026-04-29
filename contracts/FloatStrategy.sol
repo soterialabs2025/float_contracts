@@ -52,7 +52,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     uint256 public lastUniswapFeeTotal;
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
     mapping(uint256 => Deposit) public deposits;
-    enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NUETRAL }
+    enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NEUTRAL }
     Mode public mode;
     uint256 public lastRebalanceTime;
     uint256 public defensiveEnteredAt;
@@ -115,7 +115,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _deposit();
             return;
         }
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) {
+        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) {
             (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
             if (assetBal > 0 || wethBal > 0) {
                 _balanceTokens(assetBal, wethBal);
@@ -176,7 +176,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
             return;
         }
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) {
+        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) {
             if (liqPos.positionId != 0) {
                 uint256 beforeValDefensive = balanceOfIdle();
                 (, , uint256 valueInWethDefensive) = _collectAllFees(true);
@@ -198,21 +198,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         }
         emit StrategyEvent(4, liqPos.positionId, valueInWeth, 0);
         if (!skipIncreaseLiquidity && _lpModeActive()) {
-            if (mode == Mode.OFFENSIVE
-                && block.timestamp - lastOffensiveTime > offensiveStaleDuration  
-                && consecutiveOffensiveCount == prevConsecutiveOffensiveCount + 1) {
-                _decreaseAllLiquidity();
-                liqPos.positionId = 0;
-                mode = Mode.NORMAL;
-                baseTokenShareBps = 5_000;
-                consecutiveOffensiveCount = 0;
-                prevConsecutiveOffensiveCount = 0;
-                (uint256 staleAssetBal, uint256 staleWethBal) = _getTokenBalances();
-                _balanceTokens(staleAssetBal, staleWethBal);
-                _mintNewPosition(startM);
-                _noteHarvestActivity();
-                return;
-            }
             (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
             _balanceTokens(assetBal, wethBal);
             uint128 added = _increaseLiquidityInternal();
@@ -220,6 +205,24 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
                 _noteHarvestActivity();
             }
         }
+    }
+    function _handleOffensiveStale() internal returns (bool) {
+        if (mode == Mode.OFFENSIVE
+                && block.timestamp - lastOffensiveTime > offensiveStaleDuration
+                && consecutiveOffensiveCount == prevConsecutiveOffensiveCount + 1) {
+            _decreaseAllLiquidity();
+            liqPos.positionId = 0;
+            mode = Mode.NORMAL;
+            baseTokenShareBps = 5_000;
+            consecutiveOffensiveCount = 0;
+            prevConsecutiveOffensiveCount = 0;
+            (uint256 staleAssetBal, uint256 staleWethBal) = _getTokenBalances();
+            _balanceTokens(staleAssetBal, staleWethBal);
+            _mintNewPosition(startM);
+            _noteHarvestActivity();
+            return true;
+        }
+        return false;
     }
     function _inRange() internal view returns (bool) {
         if (liqPos.positionId == 0) return false;
@@ -231,7 +234,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         return _inRange();
     }
     function _checkInRange() internal returns (bool) {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) return true;
+        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return true;
         if (_inRange()) return false;
         if (liqPos.positionId == 0) {
             _enterDefensive();
@@ -245,11 +248,12 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         return true;
     }
     function keeperCheck() external nonReentrant returns (bool) {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) return true;
+        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return true;
+        bool offensiveStale = _handleOffensiveStale();
         bool floorHit = _checkTrailingPriceFloor();
         bool outOfRange = _checkInRange();
         bool tokenShareIssue = _checkTokenShare();
-        return floorHit || outOfRange || tokenShareIssue;
+        return offensiveStale || floorHit || outOfRange || tokenShareIssue;
     }
     function _checkTrailingPriceFloor() internal returns (bool) {
         if (!_lpModeActive() || liqPos.positionId == 0) {
@@ -354,7 +358,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
 
     function _deposit() internal {
-        if (liqPos.positionId != 0 && (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL)) {
+        if (liqPos.positionId != 0 && (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL)) {
             return;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
@@ -494,7 +498,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function _checkTokenShare() internal returns (bool) {
         if (liqPos.positionId == 0) return false;
-        if (mode == Mode.DEFENSIVE || mode == Mode.NUETRAL) return true;
+        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return true;
         (bool ok, uint256 currentBps) = _poolTokenShareBps();
         if (!ok) return false;
         uint256 baseline   = tokenShareAnchorBps == 0 ? currentBps : tokenShareAnchorBps;
@@ -631,15 +635,15 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         emit StrategyEvent(8, liqPos.positionId, 0, 0);
     }
     function enterNeutralFromVault() external onlyAuthorized {
-        mode = Mode.NUETRAL;
+        mode = Mode.NEUTRAL;
         defensiveEnteredAt = block.timestamp;
         consecutiveOffensiveCount = 0;
         floorTick = 0;
         baselineTick = 0;
-        emit StrategyEvent(9, uint256(uint8(Mode.NUETRAL)), 0, 0);
+        emit StrategyEvent(9, uint256(uint8(Mode.NEUTRAL)), 0, 0);
     }
     function resumeNormalFromVault() external onlyAuthorized {
-        if (mode != Mode.NUETRAL) revert MustBeNeutral();
+        if (mode != Mode.NEUTRAL) revert MustBeNeutral();
         mode = Mode.NORMAL;
         baseTokenShareBps = 5_000;
         defensiveEnteredAt = 0;

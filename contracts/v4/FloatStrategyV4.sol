@@ -3,23 +3,23 @@ pragma solidity ^0.8.24;
 
 import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
-import "../StrategyManager.sol";
+import "./StrategyManagerV4.sol";
 import "./interfaces/IFloatV4StrategySwapRouter.sol";
-import "../../interfaces/IOutOfRangeStrategy.sol";
+import "./interfaces/IOutOfRangeStrategyV4.sol";
+import "./interfaces/IFloatStrategyV4.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "../../libraries/LiquidityLibrary.sol";
+import "./libraries/TrailingFloorLib.sol";
 import "../../libraries/LiquidityLibraryV4.sol";
-import "../../interfaces/IFloatStrategy.sol";
 import {PoolKey as CorePoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 
-contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategy {         
+contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategyV4 {
     error Unauthorized();
     error ZeroValue();
     error ZeroAddress();
@@ -53,7 +53,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     uint256 public lastUniswapFeeTotal;
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
     mapping(uint256 => Deposit) public deposits;
-    enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NUETRAL }
+    enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NEUTRAL }
     Mode internal stratMode;
     uint256 public lastRebalanceTime;
     uint256 public defensiveEnteredAt;
@@ -69,7 +69,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         return (liqPos.tickLower, liqPos.tickUpper);
     }
 
-    /// @inheritdoc IOutOfRangeStrategy
+    /// @inheritdoc IOutOfRangeStrategyV4
     function mode() external view override returns (uint8) {
         return uint8(uint256(stratMode));
     }
@@ -93,15 +93,25 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         if (s != vaultAddr && s != demeterAddr && s != keeperStratAddr && s != managerAddress && s != owner()) revert Unauthorized();
         _;
     }
-    constructor(address weth_, address positionManager_, address poolManager_) StrategyManager() {
+    constructor(address weth_, address positionManager_, address poolManager_) StrategyManagerV4() {
         if (weth_ == address(0) || positionManager_ == address(0) || poolManager_ == address(0)) revert ZeroAddress();
         WETH = IERC20(weth_);
         positionManager = IPositionManagerV4(positionManager_);
         poolManager = IPoolManagerV4(poolManager_);
-        deviationBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2500, maxTokenCapBps: 9800});
-        offensiveBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 3000, maxTokenCapBps: 9800});
+        deviationBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2500, maxTokenCapBps: 9800});
+        offensiveBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2600, maxTokenCapBps: 9800});
     }
-    function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {
+    function setUpContract(
+        address _assetAddr,
+        uint24 _poolFeePips,
+        int24 _tickSpacing,
+        address _hooks,
+        address _managerAddr,
+        address _swapRouterAddr,
+        address _vaultAddr,
+        address _demeterAddr,
+        address _keeperStrategyAddr
+    ) external onlyOwner {
         managerAddress = _managerAddr;
         assetAddr = _assetAddr;
         swapRouterAddr = _swapRouterAddr;
@@ -110,19 +120,25 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         keeperStratAddr = _keeperStrategyAddr;
         swapRouterV4 = IFloatV4StrategySwapRouter(_swapRouterAddr);
         ASSET = IERC20(assetAddr);
+        _applyV4PoolParams(_poolFeePips, _tickSpacing, _hooks);
+        _giveAllowances();
+        contractSetUp = true;
+        lastRebalanceTime = block.timestamp;
+    }
+
+    /// @dev Writes `poolKey` for `ASSET`/`WETH` and syncs `StrategyManagerV4` fee/spacing for views and trailing math.
+    function _applyV4PoolParams(uint24 fee_, int24 spacing_, address hooks_) internal {
+        poolFeePips = fee_;
+        tickSpacing = spacing_;
         address a = address(ASSET);
         address w = address(WETH);
         poolKey = LiquidityLibraryV4.PoolKey({
             currency0: a < w ? a : w,
             currency1: a < w ? w : a,
-            fee: v3Fee,
-            tickSpacing: tickSpacing,
-            hooks: address(0)
+            fee: fee_,
+            tickSpacing: spacing_,
+            hooks: hooks_
         });
-        _giveAllowances();
-        contractSetUp = true;
-        lastRebalanceTime = block.timestamp;
-        (_assetPoolV3Addr);
     }
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
@@ -148,7 +164,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             _deposit();
             return;
         }
-        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) {
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL) {
             (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
             if (assetBal > 0 || wethBal > 0) {
                 _balanceTokens(assetBal, wethBal);
@@ -209,7 +225,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
             return;
         }
-        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) {
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL) {
             if (liqPos.positionId != 0) {
                 uint256 beforeValDefensive = balanceOfIdle();
                 (, , uint256 valueInWethDefensive) = _collectAllFees(true);
@@ -264,7 +280,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         return _inRange();
     }
     function _checkInRange() internal returns (bool) {
-        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL) return true;
         if (_inRange()) return false;
         if (liqPos.positionId == 0) {
             _enterDefensive();
@@ -278,7 +294,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         return true;
     }
     function keeperCheck() external nonReentrant returns (bool) {
-        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL) return true;
         bool floorHit = _checkTrailingPriceFloor();
         bool outOfRange = _checkInRange();
         bool tokenShareIssue = _checkTokenShare();
@@ -313,16 +329,16 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
             _enterDefensive();
             return true;
         }
-        uint256 rallyBps = LiquidityLibrary.priceDeviationBpsAbove(baselineTick, poolTick);
+        uint256 rallyBps = TrailingFloorLib.priceDeviationBpsAbove(baselineTick, poolTick);
         if (rallyBps < minFloorDeviationBps) {
             return false;
         }
-        uint256 depthBps = LiquidityLibrary.trailingFloorDepthBps(rallyBps, floorSlopeNumerator, floorSlopeDenominator);
+        uint256 depthBps = TrailingFloorLib.trailingFloorDepthBps(rallyBps, floorSlopeNumerator, floorSlopeDenominator);
         if (depthBps == 0) {
             return false;
         }
-        int24 rawFloor = LiquidityLibrary.floorTickBelowCurrentByBps(poolTick, depthBps);
-        int24 candidate = LiquidityLibrary.alignDown(rawFloor, tickSpacing);
+        int24 rawFloor = TrailingFloorLib.floorTickBelowCurrentByBps(poolTick, depthBps);
+        int24 candidate = TrailingFloorLib.alignDown(rawFloor, poolKey.tickSpacing);
         if (floorTick == 0 || candidate > floorTick && consecutiveOffensiveCount < minFloorTickCount) {
             floorTick = candidate;
         }
@@ -393,7 +409,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     }
 
     function _deposit() internal {
-        if (liqPos.positionId != 0 && (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL)) {
+        if (liqPos.positionId != 0 && (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL)) {
             return;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
@@ -547,7 +563,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
     }
     function _checkTokenShare() internal returns (bool) {
         if (liqPos.positionId == 0) return false;
-        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NUETRAL) return true;
+        if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL) return true;
         (bool ok, uint256 currentBps) = _poolTokenShareBps();
         if (!ok) return false;
         uint256 baseline   = tokenShareAnchorBps == 0 ? currentBps : tokenShareAnchorBps;
@@ -654,7 +670,11 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         WETH.forceApprove(address(positionManager), 0);
         WETH.forceApprove(address(swapRouterV4), 0);
     }
-    function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external override onlyAuthorized {
+    function changeAsset(address _newAssetAddr, uint24 poolFeePips_, int24 tickSpacing_, address hooks_)
+        external
+        override
+        onlyAuthorized
+    {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
         consecutiveOffensiveCount = 0;
         _decreaseAllLiquidity();
@@ -667,16 +687,7 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
         if (assetBal > 0) _swap(ASSET, WETH, assetBal);
         assetAddr = _newAssetAddr;
         ASSET = IERC20(_newAssetAddr);
-        address a2 = _newAssetAddr;
-        address w2 = address(WETH);
-        poolKey = LiquidityLibraryV4.PoolKey({
-            currency0: a2 < w2 ? a2 : w2,
-            currency1: a2 < w2 ? w2 : a2,
-            fee: v3Fee,
-            tickSpacing: tickSpacing,
-            hooks: address(0)
-        });
-        (_newPoolV3Addr);
+        _applyV4PoolParams(poolFeePips_, tickSpacing_, hooks_);
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
         stratMode = Mode.NORMAL;
@@ -699,17 +710,17 @@ contract FloatStrategyV4 is IFloatStrategy, StrategyManager, ReentrancyGuard, IE
 
     /// @notice Vault-only: strategy fully drained to vault; LP mode paused (mirrors defensive idle handling).
     function enterNeutralFromVault() external onlyAuthorized {
-        stratMode = Mode.NUETRAL;
+        stratMode = Mode.NEUTRAL;
         defensiveEnteredAt = block.timestamp;
         consecutiveOffensiveCount = 0;
         floorTick = 0;
         baselineTick = 0;
-        emit StrategyEvent(9, uint256(uint8(Mode.NUETRAL)), 0, 0);
+        emit StrategyEvent(9, uint256(uint8(Mode.NEUTRAL)), 0, 0);
     }
 
     /// @notice Vault-only: after `neutralDeposit`, resume NORMAL LP lifecycle.
     function resumeNormalFromVault() external onlyAuthorized {
-        if (stratMode != Mode.NUETRAL) revert MustBeNeutral();
+        if (stratMode != Mode.NEUTRAL) revert MustBeNeutral();
         stratMode = Mode.NORMAL;
         baseTokenShareBps = 5_000;
         defensiveEnteredAt = 0;

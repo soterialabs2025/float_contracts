@@ -2,20 +2,15 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "../../interfaces/IUniswapV3Factory.sol";
 
 /**
  * @title FloatContractManagerV4
  * @notice Registry for v4 stack deployments (`FloatVaultV4`, `FloatStrategyV4`, `FloatV4SwapRouter`, …).
- * @dev `changeStrategyAsset` mirrors `FloatContractManager` but targets v4 manager keys. Optional v3 pool
- *      address is stored under `AssetPoolV3` for tooling; the v4 strategy ignores it when rebuilding `poolKey`.
+ * @dev `changeStrategyAsset` updates the liquid asset key and forwards to `FloatStrategyV4.changeAsset`.
+ *      Pool identity (`fee`, `tickSpacing`, `hooks`) comes from strategy configuration — not looked up here.
  *      Does not call `FloatV4SwapRouter` (no stored asset; swaps are per `tokenIn`).
  */
 contract FloatContractManagerV4 is Ownable {
-    address private constant v3FactoryAddr = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD;
-    address private constant baseWETH = 0x4200000000000000000000000000000000000006;
-    uint24 private constant V3_FEE = 10_000;
-
     mapping(string => address) public addresses;
 
     event AddressSet(string indexed name, address indexed contractAddress);
@@ -66,8 +61,13 @@ contract FloatContractManagerV4 is Ownable {
         emit AddressDeleted(_name);
     }
 
-    /// @notice Rotates strategy asset for the v4 stack and syncs vault + optional swap router.
-    function changeStrategyAsset(address _newAssetAddr) external {
+    address private constant baseWETH = 0x4200000000000000000000000000000000000006;
+
+    /// @notice Rotates strategy asset and v4 pool tier for the v4 stack; syncs vault.
+    /// @param poolFeePips Uniswap v4 pool `fee` (hundredths of a bip) for ASSET/WETH.
+    /// @param tickSpacing Must match the pool initialized for that fee/hooks pair.
+    /// @param hooks Pool hooks, or `address(0)`.
+    function changeStrategyAsset(address _newAssetAddr, uint24 poolFeePips, int24 tickSpacing, address hooks) external {
         address demeterAddr = addresses["Demeter"];
         require(owner() == _msgSender() || demeterAddr == _msgSender(), "Unauthorized");
 
@@ -79,18 +79,12 @@ contract FloatContractManagerV4 is Ownable {
 
         require(strategyAddr != address(0), "Strategy address not set");
 
-        address newPoolV3Addr = IUniswapV3Factory(v3FactoryAddr).getPool(_newAssetAddr, baseWETH, V3_FEE);
-        if (newPoolV3Addr == address(0)) {
-            newPoolV3Addr = IUniswapV3Factory(v3FactoryAddr).getPool(baseWETH, _newAssetAddr, V3_FEE);
-        }
-        require(newPoolV3Addr != address(0), "Pool does not exist for asset/WETH");
-
-        (bool success,) =
-            strategyAddr.call(abi.encodeWithSignature("changeAsset(address,address)", _newAssetAddr, newPoolV3Addr));
+        (bool success,) = strategyAddr.call(
+            abi.encodeWithSignature("changeAsset(address,uint24,int24,address)", _newAssetAddr, poolFeePips, tickSpacing, hooks)
+        );
         require(success, "changeAsset call failed");
 
         addresses["LiquidASSET"] = _newAssetAddr;
-        addresses["AssetPoolV3"] = newPoolV3Addr;
 
         if (vaultAddr != address(0)) {
             (bool ok,) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));

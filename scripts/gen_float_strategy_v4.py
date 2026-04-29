@@ -1,4 +1,8 @@
-"""Generate contracts/v4/FloatStrategyV4.sol from contracts/FloatStrategy.sol"""
+"""Generate contracts/v4/FloatStrategyV4.sol from contracts/FloatStrategy.sol.
+
+Out of date: the v4 stack now uses IFloatStrategyV4, StrategyManagerV4, TrailingFloorLib, and
+single-argument changeAsset. Update this script before re-running or edit FloatStrategyV4.sol directly.
+"""
 from pathlib import Path
 
 p = Path("contracts/FloatStrategy.sol").read_text(encoding="utf-8")
@@ -111,7 +115,14 @@ old_setup = """    function setUpContract(address _assetAddr, address _assetPool
         emit ContractSetUp(_msgSender());
     }"""
 
-new_setup = """    function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {
+new_setup = """    function setUpContract(
+        address _assetAddr,
+        address _managerAddr,
+        address _swapRouterAddr,
+        address _vaultAddr,
+        address _demeterAddr,
+        address _keeperStrategyAddr
+    ) external onlyOwner {
         managerAddress = _managerAddr;
         assetAddr = _assetAddr;
         swapRouterAddr = _swapRouterAddr;
@@ -133,7 +144,6 @@ new_setup = """    function setUpContract(address _assetAddr, address _assetPool
         contractSetUp = true;
         lastRebalanceTime = block.timestamp;
         emit ContractSetUp(_msgSender());
-        (_assetPoolV3Addr);
     }"""
 
 p = p.replace(old_setup, new_setup)

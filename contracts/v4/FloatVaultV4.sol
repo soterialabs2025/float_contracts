@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "../../interfaces/IContractManager.sol";
-import "../../interfaces/IFloatStrategy.sol";
-import "../../interfaces/IFloatVault.sol";
+import "./interfaces/IFloatV4ContractManager.sol";
+import "./interfaces/IFloatStrategyV4.sol";
+import "./interfaces/IFloatVaultV4.sol";
 import "../../interfaces/IPositionManagerV4.sol";
 import "./interfaces/IFloatLiquidTokenVault.sol";
 import "./interfaces/IFloatStrategyV4Ticks.sol";
@@ -19,15 +19,15 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title FloatVaultV4
 /// @notice Same economics as `FloatVault`, but deposits swap via `ISwapRouterV4` (UR `V4_SWAP`) and position details read v4 PM + strategy ticks.
 /// @dev Register `FloatV4SwapRouter` / `FloatStrategyV4` (or your chosen names) on the contract manager. `positionManagerV4` uses Base (8453) deployment constant from `V4Deployments8453`.
-contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
+contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
    
   using SafeERC20 for IERC20;
 
   IERC20 public asset;
   IERC20 public weth;
-  IFloatStrategy public strategy;
+  IFloatStrategyV4 public strategy;
   IFloatLiquidTokenVault public liquidToken;
-  IContractManager public immutable _manager;
+  IFloatV4ContractManager public immutable _manager;
   ISwapRouterV4 public swapRouter;
 
   /// @notice Uniswap v4 PositionManager (for `getPositionDetails` liquidity); Base mainnet address from deployments doc.
@@ -62,7 +62,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   uint256 public uniswapFeesCollectedSynced;
   mapping(address => uint256) public uniswapFeeDebt;
 
-  /// @notice WETH-denominated Uniswap position value from the strategy at snapshot time (see `IFloatStrategy.poolValue()`).
+  /// @notice WETH-denominated Uniswap position value from the strategy at snapshot time (see `IFloatStrategyV4.poolValue()`).
   struct PoolValueSnapshot {
     uint256 valueWeth;
     uint64 timestamp;
@@ -72,7 +72,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   PoolValueSnapshot[] public poolValueSnapshots;
   constructor(address _managerAddr) Ownable(_msgSender()) {
    require(_managerAddr != address(0), "Invalid manager address"); 
-    _manager = IContractManager(_managerAddr);
+    _manager = IFloatV4ContractManager(_managerAddr);
     positionManagerV4 = IPositionManagerV4(V4Deployments8453.POSITION_MANAGER);
     contractSetUp = false;
   } 
@@ -83,7 +83,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     strategyAddr = _manager.getAddress("FloatStrategyV4");
     swapRouterAddr = _manager.getAddress("FloatV4SwapRouter");
     demeterAddr = _manager.getAddress("Demeter");
-    strategy = IFloatStrategy(strategyAddr);
+    strategy = IFloatStrategyV4(strategyAddr);
     asset = IERC20(assetAddress);
     weth = IERC20(WETH_ADDR);
     liquidToken = IFloatLiquidTokenVault(liquidTokenAddress);
@@ -112,13 +112,13 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     asset = IERC20(assetAddress);
   }
 
-  /// @inheritdoc IFloatVault
-  /// @dev Callable only by `FloatKeeper` (per manager). Demeter triggers via `FloatKeeper.snapshotVaultPoolValue()`.
+  /// @inheritdoc IFloatVaultV4
+  /// @dev Callable only by `FloatKeeperV4` (per manager). Demeter triggers via `FloatKeeperV4.snapshotVaultPoolValue()`.
   function recordPoolValueSnapshot() external override onlyFloatKeeper {
     require(contractSetUp, "not initialized");
     require(address(strategy) != address(0), "no strategy");
     _syncUniswapFees();
-    uint256 pv = IFloatStrategy(address(strategy)).poolValue();
+    uint256 pv = IFloatStrategyV4(address(strategy)).poolValue();
     poolValueSnapshots.push(
       PoolValueSnapshot({valueWeth: pv, timestamp: uint64(block.timestamp)})
     );
@@ -167,7 +167,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   function pendingUniswapFees(address user) public view returns (uint256) {
     if (address(strategy) == address(0)) return 0;
     uint256 acc = accUniswapFeesPerShare;
-    uint256 g = IFloatStrategy(address(strategy)).UniswapFeesCollected();
+    uint256 g = IFloatStrategyV4(address(strategy)).UniswapFeesCollected();
     uint256 last = uniswapFeesCollectedSynced;
     if (g > last) {
       uint256 delta = g - last;
@@ -184,7 +184,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
 
   function _syncUniswapFees() internal {
     if (address(strategy) == address(0)) return;
-    uint256 g = IFloatStrategy(address(strategy)).UniswapFeesCollected();
+    uint256 g = IFloatStrategyV4(address(strategy)).UniswapFeesCollected();
     if (g <= uniswapFeesCollectedSynced) return;
     uint256 delta = g - uniswapFeesCollectedSynced;
     uint256 s = liquidToken.totalSupply();
@@ -341,7 +341,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     liquidToken.transferFrom(receiver, address(this), shares);
     
     uint256 balBefore = balance(); // WETH-denominated value
-    IFloatStrategy(address(strategy)).withdraw(shares, totalSupply_, receiver);
+    IFloatStrategyV4(address(strategy)).withdraw(shares, totalSupply_, receiver);
     // Collect during withdraw can bump `UniswapFeesCollected`; sync before burn while supply is unchanged.
     _syncUniswapFees();
     liquidToken.burn(address(this), shares);
@@ -356,14 +356,14 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   /// @return True if position is in range, false otherwise
   function isInRange() external view returns (bool) {
     if (address(strategy) == address(0)) return false;
-    return IFloatStrategy(address(strategy)).readInRange();
+    return IFloatStrategyV4(address(strategy)).readInRange();
   } 
  
   /// @notice Get the idle balance (tokens not in pool)
   /// @return The idle balance in WETH equivalent
   function getIdleBalance() external view returns (uint256) {
     if (address(strategy) == address(0)) return 0;
-    return IFloatStrategy(address(strategy)).balanceOfIdle();
+    return IFloatStrategyV4(address(strategy)).balanceOfIdle();
   }
 
   /// @notice Get the balance of tokens in the pool
@@ -371,10 +371,10 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   /// @return wethAmt Amount of WETH in pool
   function getPoolBalance() external view returns (uint256 tokenAmt, uint256 wethAmt) {
     if (address(strategy) == address(0)) return (0, 0);
-    return IFloatStrategy(address(strategy)).balanceOfPool();
+    return IFloatStrategyV4(address(strategy)).balanceOfPool();
   }
  
-  /// @notice Emergency: drain strategy to WETH in this vault and enter NUETRAL on the strategy.
+  /// @notice Emergency: drain strategy to WETH in this vault and enter NEUTRAL on the strategy.
   /// @dev Full proportional withdraw; `neutralWethBalance` backs `neutralWithdrawal` pro-rata redemptions.
   function neutralStrategy() external onlyOwner nonReentrant {
     require(!neutral, "Already neutral");
@@ -384,7 +384,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     uint256 totalSupply_ = liquidToken.totalSupply();
     require(totalSupply_ > 0, "No shares outstanding");
 
-    neutralPoolValue = IFloatStrategy(address(strategy)).poolValue();
+    neutralPoolValue = IFloatStrategyV4(address(strategy)).poolValue();
     require(neutralPoolValue > 0, "No pool value to neutralize");
 
     neutralTotalSupply = totalSupply_;
@@ -399,11 +399,18 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     emit StrategyNeutral(neutralPoolValue);
   }
 
-  function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external onlyOwner nonReentrant {
+  /// @param poolFeePips Uniswap v4 `fee` for the ASSET/WETH pool (e.g. 3000 = 0.30%, 10_000 = 1%).
+  /// @param tickSpacing Must match the initialized pool for that fee (and `hooks`).
+  /// @param hooks Pool hooks address, or `address(0)`.
+  function changeAsset(address _newAssetAddr, uint24 poolFeePips, int24 tickSpacing, address hooks)
+    external
+    onlyOwner
+    nonReentrant
+  {
     require(address(strategy) != address(0), "No strategy set");
 
     _syncUniswapFees();
-    IFloatStrategy(address(strategy)).changeAsset(_newAssetAddr, _newPoolV3Addr);
+    strategy.changeAsset(_newAssetAddr, poolFeePips, tickSpacing, hooks);
     _syncUniswapFees();
     emit AssetChanged(_newAssetAddr);
   }
@@ -475,7 +482,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVault {
   function getPositionDetails() external view returns (int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1) {
     if (address(strategy) == address(0)) return (0, 0, 0, 0, 0, 0, 0);
     
-    uint256 positionId_ = IFloatStrategy(address(strategy)).getPositionId();
+    uint256 positionId_ = IFloatStrategyV4(address(strategy)).getPositionId();
     if (positionId_ == 0) return (0, 0, 0, 0, 0, 0, 0);
     
     (tickLower, tickUpper) = IFloatStrategyV4Ticks(address(strategy)).tickRange();

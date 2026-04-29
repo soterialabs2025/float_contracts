@@ -368,7 +368,7 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
     return IFloatStrategy(address(strategy)).balanceOfPool();
   }
  
-  /// @notice Emergency: drain strategy to WETH in this vault and enter NUETRAL on the strategy.
+  /// @notice Emergency: drain strategy to WETH in this vault and enter NEUTRAL on the strategy.
   /// @dev Full proportional withdraw; `neutralWethBalance` backs `neutralWithdrawal` pro-rata redemptions.
   function neutralStrategy() external onlyOwner nonReentrant {
     require(!neutral, "Already neutral");
