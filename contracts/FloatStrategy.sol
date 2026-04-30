@@ -53,7 +53,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     uint256 public lastUniswapFeeTotal;
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
     mapping(uint256 => Deposit) public deposits;
-    enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NEUTRAL }
+    enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NEUTRAL, STABLE}
     Mode public mode;
     uint256 public lastRebalanceTime;
     uint256 public defensiveEnteredAt;
@@ -81,10 +81,10 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         managerAddress = _managerAddr;
         assetAddr = _assetAddr;
         swapRouterAddr = _swapRouterAddr;
-        assetPoolV3 = _assetPoolV3Addr;
         vaultAddr = _vaultAddr;
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
+        assetPoolV3 = _assetPoolV3Addr;
         pool = IUniswapV3PoolMinimal(assetPoolV3);
         _syncPoolFeeParamsFromPool();
         swapRouter = ISwapRouter(swapRouterAddr);
@@ -122,7 +122,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             if (assetBal > 0 || wethBal > 0) {
                 _balanceTokens(assetBal, wethBal);
             }
-            emit StrategyEvent(0, poolValue(), 0, 0);
             return;
         }
     }
@@ -164,7 +163,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             WETH.safeTransfer(owner(), wethFee);
         }
         WETH.safeTransfer(receiver, totalUserWeth);
-        emit StrategyEvent(1, poolValue(), 0, 0);
     }
     function harvestBoolean(bool skipIncreaseLiquidity) external onlyAuthorized nonReentrant returns (uint256 newAssets) {
         _harvest(skipIncreaseLiquidity);
@@ -379,7 +377,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _increaseLiquidityInternal();
             _handleLeftoverTokensWithLimit(0);
         }
-        emit StrategyEvent(0, poolValue(), 0, 0);
     }
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
         if (liqPos.positionId == 0) return (0, 0, 0);
@@ -623,11 +620,15 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         assetAddr = _newAssetAddr;
         ASSET = IERC20(_newAssetAddr);
         assetPoolV3 = _newPoolV3Addr;
-        pool = IUniswapV3PoolMinimal(_newPoolV3Addr);
+        pool = IUniswapV3PoolMinimal(assetPoolV3);
         _syncPoolFeeParamsFromPool();
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
-        mode = Mode.NORMAL;
+        if (assetAddr == baseUSDC) {
+            mode = Mode.STABLE;
+        } else {
+            mode = Mode.NORMAL;
+        }
         defensiveEnteredAt = 0;
         baselineTick = 0;
         floorTick = 0;

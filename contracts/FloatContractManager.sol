@@ -20,6 +20,9 @@ contract FloatContractManager is Ownable {
 
     address private constant v3FactoryAddr = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD;
     address private constant baseWETH = 0x4200000000000000000000000000000000000006;
+    address private constant baseUSDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+    /// @dev Base Uniswap v3 WETH/USDC 0.3% — used when strategy ASSET is USDC (not `V3_FEE` / 1% factory lookup).
+    address private constant wethUsdcPoolV3_03 = 0x6c561B446416E1A00E8E93E221854d6eA4171372;
     uint24 private constant V3_FEE = 10_000;
 
     /// @notice Mapping of contract names to their addresses
@@ -124,12 +127,7 @@ contract FloatContractManager is Ownable {
 
         require(strategyAddr != address(0), "Strategy address not set");
 
-        // Check both token orderings - getPool returns same pool either way
-        address newPoolV3Addr = IUniswapV3Factory(v3FactoryAddr).getPool(_newAssetAddr, baseWETH, V3_FEE);
-        if (newPoolV3Addr == address(0)) {
-            newPoolV3Addr = IUniswapV3Factory(v3FactoryAddr).getPool(baseWETH, _newAssetAddr, V3_FEE);
-        }
-        require(newPoolV3Addr != address(0), "Pool does not exist for asset/WETH");
+        address newPoolV3Addr = _poolV3ForAsset(_newAssetAddr);
 
         // Call changeAsset on Strategy first; only persist new asset when it succeeds
         (bool success, ) = strategyAddr.call(
@@ -151,5 +149,17 @@ contract FloatContractManager is Ownable {
             (bool ok,) = swapRouterAddr.call(abi.encodeWithSignature("updateAsset()"));
             require(ok, "SwapRouter updateAsset failed");
         }
+    }
+
+    function _poolV3ForAsset(address asset) private view returns (address) {
+        if (asset == baseUSDC) {
+            return wethUsdcPoolV3_03;
+        }
+        address p = IUniswapV3Factory(v3FactoryAddr).getPool(asset, baseWETH, V3_FEE);
+        if (p == address(0)) {
+            p = IUniswapV3Factory(v3FactoryAddr).getPool(baseWETH, asset, V3_FEE);
+        }
+        require(p != address(0), "Pool does not exist for asset/WETH");
+        return p;
     }
 }    

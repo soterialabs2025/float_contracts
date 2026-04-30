@@ -136,7 +136,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         _;
     }
     function setUpContract() external onlyOwner {
-        address _tokenAddr = manager.getAddress("LiquidASSET");
+        address _tokenAddr = manager.getAddress("ASSET");
         address _strategyAddr = manager.getAddress("FloatStrategy");
         demeterAddr = manager.getAddress("Demeter");
         address _ur = manager.getAddress("UniversalRouter");
