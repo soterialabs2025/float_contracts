@@ -52,11 +52,6 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
         _;
     }
 
-    modifier onlyDemeter() {
-        if (_msgSender() != demeterAddr) revert Unauthorized();
-        _;
-    }
-
 
     /// @notice Demeter pulls `poolValue()` from the vault’s strategy and stores it on the vault.
     function snapshotVaultPoolValue() external onlyAuthorized nonReentrant {

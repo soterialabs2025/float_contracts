@@ -84,7 +84,7 @@ contract FloatContractManagerV4 is Ownable {
         );
         require(success, "changeAsset call failed");
 
-        addresses["LiquidASSET"] = _newAssetAddr;
+        addresses["ASSET"] = _newAssetAddr;
 
         if (vaultAddr != address(0)) {
             (bool ok,) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));

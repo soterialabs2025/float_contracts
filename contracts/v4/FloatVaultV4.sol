@@ -108,7 +108,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   }
 
   function updateAsset() external onlyAuthorized {
-    assetAddress = _manager.getAddress("LiquidASSET");
+    assetAddress = _manager.getAddress("ASSET");
     asset = IERC20(assetAddress);
   }
 
@@ -146,8 +146,8 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     return address(weth) != address(0) ? weth.balanceOf(address(this)) : 0;
   }
   
-  /// @notice Get available LiquidASSET balance in vault
-  /// @return Available LiquidASSET balance
+  /// @notice Get available ASSET balance in vault
+  /// @return Available ASSET balance
   function availableAsset() public view returns (uint256) {
     return asset.balanceOf(address(this));
   }
@@ -367,7 +367,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   }
 
   /// @notice Get the balance of tokens in the pool
-  /// @return tokenAmt Amount of LiquidASSET in pool
+  /// @return tokenAmt Amount of ASSET in pool
   /// @return wethAmt Amount of WETH in pool
   function getPoolBalance() external view returns (uint256 tokenAmt, uint256 wethAmt) {
     if (address(strategy) == address(0)) return (0, 0);

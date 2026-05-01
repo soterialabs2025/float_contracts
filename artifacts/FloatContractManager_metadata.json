@@ -435,11 +435,11 @@
 	},
 	"sources": {
 		"contracts/FloatContractManager.sol": {
-			"keccak256": "0x38991572ed31f8dbead35481fe28ef3b481541a87d077a8169f76d3479db39f3",
+			"keccak256": "0xe3fad3747712d2e1006bee1304cc7da2fc098b006477eb89d79dcaedad2081f1",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://1f6e85756d4c16163223940bc47c30115ea584f2871d8b1a73c298b9a416ac0a",
-				"dweb:/ipfs/Qmag1LzXUcA25MPRQJQW1HeUX9JPFoJixzmCoj1GuygURW"
+				"bzz-raw://65083fc8e5079e80644b75589670b5c1d87754b6c0e4f4be4fb9a3c949e55119",
+				"dweb:/ipfs/QmbnadrX6dzg47uYnjtLhoB5wkK1qvrcwsmyYFfByzrozc"
 			]
 		},
 		"interfaces/IUniswapV3Factory.sol": {

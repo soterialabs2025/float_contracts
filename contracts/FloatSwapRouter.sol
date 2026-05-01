@@ -139,8 +139,7 @@ contract FloatSwapRouter is ISwapRouter, Ownable, ReentrancyGuard {
         address _tokenAddr = manager.getAddress("ASSET");
         address _strategyAddr = manager.getAddress("FloatStrategy");
         demeterAddr = manager.getAddress("Demeter");
-        address _ur = manager.getAddress("UniversalRouter");
-        universalRouterAddr = _ur != address(0) ? _ur : UNIVERSAL_ROUTER_BASE;
+        universalRouterAddr = UNIVERSAL_ROUTER_BASE;
         require(_tokenAddr != address(0), "token=0");
         require(_strategyAddr != address(0), "strategy=0");
         TOKEN = IERC20(_tokenAddr);
