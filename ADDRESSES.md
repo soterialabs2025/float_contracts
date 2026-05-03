@@ -1,5 +1,26 @@
 
  
+ 
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+- **FloatContractmanager**:`0xE2A28e5305840D4bD65eD9B0F35Fdfc6359F8652`
+- **FloatStrategyV4**: `0x5C33B9c28c93B9B9c572FFF86200d72D9090Ab68`
+- **FloatVaultV4**: `0x2286C1d948C64fc27Bf77A2d8Dd201d592969eCb`
+- **FloatSwapRouterV4**: `0xFfEf442cE71edf20b09c38bF91a2b211D2c18DF6`
+- **FloatLiquidTokenV4**:`0x2631DD0910f0C3140342e96f9Ff4537Ac7a98B59`
+- **FloatKeeperV4**: `0x648AbC356B4aDA18bEC3A8E7d1660A0Fa73b574B`
+- **ASSET**:`0xab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3`
+- **AssetPoolV3**: `0x55a4f7a23c4c2616cf848e639a08bd4283d13e66f5fcf34f828b5ca7e4e96324` 
+- **Fee**: `1.2%`
+- **HookAddress**: `0x0000000000000000000000000000000000000000`
+- **Tick_Spacking**: `240`
+ 
+############################################################################################################################
+
  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
  
   **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`

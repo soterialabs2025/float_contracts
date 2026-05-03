@@ -18,7 +18,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title FloatVaultV4
 /// @notice Same economics as `FloatVault`, but deposits swap via `ISwapRouterV4` (UR `V4_SWAP`) and position details read v4 PM + strategy ticks.
-/// @dev Register `FloatV4SwapRouter` / `FloatStrategyV4` (or your chosen names) on the contract manager. `positionManagerV4` uses Base (8453) deployment constant from `V4Deployments8453`.
+/// @dev Register `FloatSwapRouterV4` / `FloatStrategyV4` (or your chosen names) on the contract manager. `positionManagerV4` uses Base (8453) deployment constant from `V4Deployments8453`.
 contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
    
   using SafeERC20 for IERC20;
@@ -81,7 +81,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     assetAddress = _manager.getAddress("ASSET");
     liquidTokenAddress = _manager.getAddress("FloatLiquidTokenV4");
     strategyAddr = _manager.getAddress("FloatStrategyV4");
-    swapRouterAddr = _manager.getAddress("FloatV4SwapRouter");
+    swapRouterAddr = _manager.getAddress("FloatSwapRouterV4");
     demeterAddr = _manager.getAddress("Demeter");
     strategy = IFloatStrategyV4(strategyAddr);
     asset = IERC20(assetAddress);
@@ -211,7 +211,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   
 
   /// @notice Deposit tokens into the vault. If tokenIn is not WETH it is swapped to WETH
-  ///         via `FloatV4SwapRouter` / Universal Router `V4_SWAP` before being forwarded to the strategy.
+  ///         via `FloatSwapRouterV4` / Universal Router `V4_SWAP` before being forwarded to the strategy.
   /// @param tokenIn  Token the caller is depositing. Pass WETH_ADDR to deposit WETH directly.
   /// @param amount   Amount of tokenIn to deposit (in tokenIn decimals).
   /// @param minOutIfNoQuoter When `tokenIn` is not WETH, minimum WETH out if the router has no working quoter (else slippage comes from router defaults + quote).

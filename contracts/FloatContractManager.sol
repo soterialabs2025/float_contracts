@@ -163,3 +163,4 @@ contract FloatContractManager is Ownable {
         return p;
     }
 }    
+

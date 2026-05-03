@@ -21,15 +21,19 @@ import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol"
 import "./interfaces/ISwapRouterV4.sol";
 import "./interfaces/IFloatV4StrategySwapRouter.sol";
 
-/// @title FloatV4SwapRouter
+/// @title FloatSwapRouterV4
 /// @notice Float-facing router: token → WETH via Universal Router `V4_SWAP` (see Uniswap v4 swap routing guide).
-contract FloatV4SwapRouter is ISwapRouterV4, IFloatV4StrategySwapRouter, Ownable, ReentrancyGuard {
+/// @dev Base (8453) only: infra addresses match `V4Deployments8453` (Permit2, Universal Router, Quoter, WETH).
+contract FloatSwapRouterV4 is ISwapRouterV4, IFloatV4StrategySwapRouter, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    IUniversalRouter public immutable universalRouter;
-    IAllowanceTransfer public immutable permit2;
-    IV4Quoter public immutable quoterV4;
-    IERC20 public immutable WETH;
+    IUniversalRouter public immutable universalRouter =
+        IUniversalRouter(0x6fF5693b99212Da76ad316178A184AB56D299b43);
+    IAllowanceTransfer public immutable permit2 =
+        IAllowanceTransfer(0x000000000022D473030F116dDEE9F6B43aC78BA3);
+    IV4Quoter public immutable quoterV4 =
+        IV4Quoter(0x0d5e0F971ED27FBfF6c2837bf31316121532048D);
+    IERC20 public immutable WETH = IERC20(0x4200000000000000000000000000000000000006);
 
     /// @notice Strategy allowed to call `swapExactInputSingleFromStrategy` (set after deploy).
     address public strategy;
@@ -46,21 +50,8 @@ contract FloatV4SwapRouter is ISwapRouterV4, IFloatV4StrategySwapRouter, Ownable
     error TokenIsWETH();
     error NoV4Pool();
 
-    constructor(
-        address universalRouter_,
-        address permit2_,
-        address quoterV4_,
-        address weth_,
-        address initialOwner
-    ) Ownable(initialOwner) {
-        if (universalRouter_ == address(0) || permit2_ == address(0) || weth_ == address(0) || initialOwner == address(0)) {
-            revert ZeroAddress();
-        }
-        universalRouter = IUniversalRouter(universalRouter_);
-        permit2 = IAllowanceTransfer(permit2_);
-        quoterV4 = IV4Quoter(quoterV4_);
-        WETH = IERC20(weth_);
-    }
+    /// @dev Owner is the account that deploys (`_msgSender()`); use `transferOwnership` if that must differ.
+    constructor() Ownable(_msgSender()) {}
 
     function setDefaultSlippageBps(uint16 bps) external onlyOwner {
         require(bps < 10_000, "slippage");

@@ -226,6 +226,19 @@ library LiquidityLibraryV4 {
         (sqrtPriceX96, tick, , ) = poolManager.getSlot0(poolId(key));
     }
 
+    /// @notice Same as `getSlot0`, but returns `(0, 0)` if the pool is uninitialized or `getSlot0` reverts.
+    /// @dev Used by strategy **view** helpers (`balanceOfIdle`, `poolValue`) before the first mint so vault
+    ///      `deposit` gas estimation does not revert when `sqrtPriceX96` is not yet readable for the key.
+    function getSlot0Safe(IPoolManagerV4 poolManager, PoolKey memory key)
+        internal view returns (uint160 sqrtPriceX96, int24 tick)
+    {
+        try poolManager.getSlot0(poolId(key)) returns (uint160 s, int24 t, uint24, uint24) {
+            return (s, t);
+        } catch {
+            return (0, 0);
+        }
+    }
+
     /// @notice Read the liquidity of our position from the V4 PoolManager.
     /// @dev In V4, position liquidity is keyed by (poolId, owner, tickLower, tickUpper, salt).
     ///      The salt is the tokenId cast to bytes32, matching the PositionManager convention.
