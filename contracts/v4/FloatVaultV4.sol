@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "./interfaces/IFloatV4ContractManager.sol";
 import "./interfaces/IFloatStrategyV4.sol";
@@ -15,6 +15,8 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 /// @title FloatVaultV4
 /// @notice Same economics as `FloatVault`, but deposits swap via `ISwapRouterV4` (UR `V4_SWAP`) and position details read v4 PM + strategy ticks.
@@ -208,15 +210,26 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
       strategy.deposit(wethAmount);
     }
   }
-  
 
-  /// @notice Deposit tokens into the vault. If tokenIn is not WETH it is swapped to WETH
-  ///         via `FloatSwapRouterV4` / Universal Router `V4_SWAP` before being forwarded to the strategy.
-  /// @param tokenIn  Token the caller is depositing. Pass WETH_ADDR to deposit WETH directly.
-  /// @param amount   Amount of tokenIn to deposit (in tokenIn decimals).
-  /// @param minOutIfNoQuoter When `tokenIn` is not WETH, minimum WETH out if the router has no working quoter (else slippage comes from router defaults + quote).
-  /// @return shares  Liquid-token shares minted to the caller.
-  function deposit(address tokenIn, uint256 amount, uint128 minOutIfNoQuoter) external nonReentrant returns (uint256 shares) {
+  /// @notice Deposit WETH only (no `PoolKey`; no router swap).
+  function depositWeth(uint256 amount) external nonReentrant returns (uint256 shares) {
+    PoolKey memory unused;
+    return _deposit(WETH_ADDR, amount, unused);
+  }
+
+  /// @notice Deposit an ERC20 by swapping **tokenIn → WETH** on `swapKey` via `FloatSwapRouterV4` (quoter min-out on the router).
+  /// @dev `swapKey` must be the initialized **tokenIn / WETH** pool (`currency0 < currency1`). Use `depositWeth` for native WETH deposits.
+  function depositErc20(address tokenIn, uint256 amount, PoolKey calldata swapKey) external nonReentrant returns (uint256 shares) {
+    require(tokenIn != WETH_ADDR, "use depositWeth");
+    return _deposit(tokenIn, amount, swapKey);
+  }
+
+  /// @notice `tokenIn == WETH` → same as `depositWeth` (ignore `swapKey`); otherwise same as `depositErc20`.
+  function deposit(address tokenIn, uint256 amount, PoolKey calldata swapKey) external nonReentrant returns (uint256 shares) {
+    return _deposit(tokenIn, amount, swapKey);
+  }
+
+  function _deposit(address tokenIn, uint256 amount, PoolKey memory swapKey) internal returns (uint256 shares) {
     require(!neutral, "Vault neutral");
     require(contractSetUp, "not initialized");
     require(address(liquidToken) != address(0), "liquidToken not set");
@@ -239,7 +252,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     uint256 balBefore = weth.balanceOf(address(this));
     uint256 received;
 
-    if (tokenIn == WETH_ADDR) { 
+    if (tokenIn == WETH_ADDR) {
       // ── Direct WETH deposit ──────────────────────────────────────────────
       weth.safeTransferFrom(depositor, address(this), amount);
       received = weth.balanceOf(address(this)) - balBefore;
@@ -247,40 +260,33 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     } else {
       // ── Non-WETH: pull token then swap to WETH via UniversalRouter ───────
       require(address(swapRouter) != address(0), "swapRouter not set");
-      // Pull tokenIn from depositor into this vault
       IERC20(tokenIn).safeTransferFrom(depositor, address(this), amount);
-      // Approve swapRouter to pull tokenIn
       uint256 currentAllowance = IERC20(tokenIn).allowance(address(this), address(swapRouter));
       if (currentAllowance < amount) {
         IERC20(tokenIn).approve(address(swapRouter), type(uint256).max);
       }
-      // Swap tokenIn → WETH; WETH lands directly in this vault (recipient = address(this))
-      uint256 wethOut =
-        swapRouter.swapToWethViaUniversalRouterV4(tokenIn, amount, address(this), minOutIfNoQuoter);
+      address c0 = Currency.unwrap(swapKey.currency0);
+      address c1 = Currency.unwrap(swapKey.currency1);
+      require(
+        (c0 == tokenIn && c1 == address(weth)) || (c1 == tokenIn && c0 == address(weth)),
+        "swapKey"
+      );
+      uint256 wethOut = swapRouter.swapToWethViaUniversalRouterV4(swapKey, amount, address(this));
       require(wethOut > 0, "swap returned 0");
       received = weth.balanceOf(address(this)) - balBefore;
       require(received > 0, "no WETH after swap");
     }
 
-    // Transfer WETH to strategy
     _earn(received);
-    
-    // Share calculation uses only strategy accounting views (idle + pool WETH value). It does not use
-    // FloatStrategy._checkTokenShare() — that function is for LP deviation / keeper risk, not mint math.
-    // Both received and poolValueBefore are WETH-denominated.
+
     if (supply == 0) {
-        // First deposit: mint 1:1 with deposited WETH amount
-        shares = received;
+      shares = received;
     } else if (poolValueBefore == 0) {
-        // Edge case: supply exists but pool value is 0 (shouldn't happen normally)
-        // Use received amount to maintain consistency
-        shares = received;
+      shares = received;
     } else {
-        // Subsequent deposits: calculate shares based on WETH-denominated pool value
-        // Formula: shares = (depositedWETH * totalSupply) / poolValueBefore
-        shares = Math.mulDiv(received, supply, poolValueBefore);
+      shares = Math.mulDiv(received, supply, poolValueBefore);
     }
-    
+
     require(shares > 0, "zero shares");
 
     liquidToken.mint(depositor, shares);

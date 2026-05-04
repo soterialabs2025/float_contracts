@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 /// @notice Minimal vault-facing ERC20 API for FloatLiquidToken (avoids pulling full `FloatLiquidToken.sol` into v4 profile).
 interface IFloatLiquidTokenVault {

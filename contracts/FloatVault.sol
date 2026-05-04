@@ -204,7 +204,6 @@ contract FloatVault is Ownable, ReentrancyGuard, Pausable, IFloatVault {
       strategy.deposit(wethAmount);
     }
   }
-  
 
   /// @notice Deposit tokens into the vault. If tokenIn is not WETH it is swapped to WETH
   ///         via the Uniswap UniversalRouter before being forwarded to the strategy.

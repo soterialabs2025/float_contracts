@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
@@ -151,7 +151,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
     }
-    function beforeDeposit() external override onlyAuthorized  {
+    function beforeDeposit() external override onlyAuthorized {
         if (harvestOnDeposit) {
             try this.harvestBoolean(true) returns (uint256) {
             } catch {
@@ -219,7 +219,16 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         }
         WETH.safeTransfer(receiver, totalUserWeth);
     }
-    function harvestBoolean(bool skipIncreaseLiquidity) external onlyAuthorized nonReentrant returns (uint256 newAssets) {
+    /// @notice Harvest / compound fees. Callable by vault / keeper / manager / owner, or via `this` from `beforeDeposit`.
+    /// @dev `beforeDeposit` uses `this.harvestBoolean(...)`; that external self-call sets `msg.sender` to `address(this)`,
+    ///      which must be allowed here — it is not covered by `onlyAuthorized` alone.
+    function harvestBoolean(bool skipIncreaseLiquidity) external nonReentrant returns (uint256 newAssets) {
+        if (msg.sender != address(this)) {
+            address s = _msgSender();
+            if (s != vaultAddr && s != demeterAddr && s != keeperStratAddr && s != managerAddress && s != owner()) {
+                revert Unauthorized();
+            }
+        }
         _harvest(skipIncreaseLiquidity);
         return poolValue();
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 /// @title V4Deployments8453
 /// @notice Uniswap v4 stack on Base mainnet (chainId 8453). Wrapped native is chain-specific — supply at deploy time, not here.

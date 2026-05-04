@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -7,6 +7,10 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../interfaces/IPositionManagerV4.sol";
 import "../interfaces/IPoolManagerV4.sol";
 import "./TickMath.sol";
+import {PoolKey as CorePoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 /**
  * @title LiquidityLibraryV4
@@ -213,9 +217,16 @@ library LiquidityLibraryV4 {
     // V4 pool state helpers
     // ---------------------------------------------------------------
 
-    /// @notice Compute the V4 PoolId (keccak256 of ABI-encoded PoolKey).
+    /// @notice Canonical v4 `PoolId` (must match `PoolIdLibrary.toId` / PoolManager state keys).
     function poolId(PoolKey memory key) internal pure returns (bytes32) {
-        return keccak256(abi.encode(key));
+        CorePoolKey memory ck = CorePoolKey({
+            currency0: Currency.wrap(key.currency0),
+            currency1: Currency.wrap(key.currency1),
+            fee: key.fee,
+            tickSpacing: key.tickSpacing,
+            hooks: IHooks(key.hooks)
+        });
+        return PoolId.unwrap(PoolIdLibrary.toId(ck));
     }
 
     /// @notice Read (sqrtPriceX96, currentTick) from the V4 PoolManager.

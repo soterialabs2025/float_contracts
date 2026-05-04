@@ -7,7 +7,7 @@ from pathlib import Path
 
 p = Path("contracts/FloatStrategy.sol").read_text(encoding="utf-8")
 
-p = p.replace("pragma solidity ^0.8.20;", "pragma solidity ^0.8.24;")
+p = p.replace("pragma solidity ^0.8.20;", "pragma solidity ^0.8.20;")
 
 old_imports = '''import "../interfaces/INonfungiblePositionManager.sol";
 import "../interfaces/IUniswapV3PoolMinimal.sol";
