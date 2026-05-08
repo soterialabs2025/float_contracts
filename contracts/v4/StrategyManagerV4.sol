@@ -25,12 +25,12 @@ contract StrategyManagerV4 is Ownable {
     uint256 public minHarvestDelay = 2 hours;
     DeviationBands public deviationBands;
     DeviationBands public offensiveBands;
-    uint256 public offensiveTargetAssetBps = 4500;
-    uint256 public offensiveStaleDuration = 6 hours;
+    uint256 public offensiveTargetAssetBps = 4000;
+    uint256 public offensiveStaleDuration = 3 hours;
     uint32 public floorSlopeNumerator = 1;
-    uint32 public floorSlopeDenominator = 6;
-    uint16 public minFloorDeviationBps = 80;
-    uint256 public minFloorTickCount = 1;
+    uint32 public floorSlopeDenominator = 9;
+    uint16 public minFloorDeviationBps = 60;
+    uint256 public minFloorTickCount = 0;
 
     function setDeviationBands(
         uint256 _lowerBps,

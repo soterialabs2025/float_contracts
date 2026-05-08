@@ -15,17 +15,16 @@ contract StrategyManager is Ownable {
     uint24 public v3Fee = 10000;
     int24 public tickSpacing = 200;
     int8 public startM = 4;
-    int8 public offensiveM = 6;
+    int8 public offensiveM = 5;
     uint256 public withdrawalFeeBps = 0;
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
     DeviationBands public deviationBands;
-    DeviationBands public offensiveBands;
-    uint256 public offensiveTargetAssetBps = 4500;  
+    DeviationBands public offensiveBands;4000;  
     uint256 public offensiveStaleDuration = 6 hours;
     uint32 public floorSlopeNumerator = 1;
-    uint32 public floorSlopeDenominator = 6;
-    uint16 public minFloorDeviationBps = 80;
+    uint32 public floorSlopeDenominator = 9;
+    uint16 public minFloorDeviationBps = 60;
     uint256 public minFloorTickCount = 1;
 
     function setDeviationBands(uint256 _lowerBps, uint256 _upperBps, uint256 _maxTokenCapBps, int8 _startM, int8 _offensiveM, uint256 _oLowerBps, uint256 _oUpperBps, uint256 _oMaxTokenCapBps) external onlyOwner {
