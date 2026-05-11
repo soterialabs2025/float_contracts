@@ -19,8 +19,9 @@ contract StrategyManager is Ownable {
     uint256 public withdrawalFeeBps = 0;
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
+    uint256 public offensiveTargetAssetBps;
     DeviationBands public deviationBands;
-    DeviationBands public offensiveBands;4000;  
+    DeviationBands public offensiveBands;
     uint256 public offensiveStaleDuration = 6 hours;
     uint32 public floorSlopeNumerator = 1;
     uint32 public floorSlopeDenominator = 9;

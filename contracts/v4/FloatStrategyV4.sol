@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
 import "./StrategyManagerV4.sol";
-import "./interfaces/IFloatV4StrategySwapRouter.sol";
+import {IV4StrategySwapRouterStrict} from "./interfaces/IFloatV4StrategySwapRouter.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
 import "./interfaces/IFloatStrategyV4.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -15,9 +15,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
 import "../../libraries/LiquidityLibraryV4.sol";
-import {PoolKey as CorePoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import "../../interfaces/IAllowanceTransfer.sol";
+
 
 contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategyV4 {
     error Unauthorized();
@@ -31,15 +30,13 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     LiquidityLibraryV4.PositionState private liqPos;
     IPoolManagerV4 private poolManager;
     LiquidityLibraryV4.PoolKey public poolKey;
-    IFloatV4StrategySwapRouter private swapRouterV4;
+    IV4StrategySwapRouterStrict private swapRouterV4;
     address public managerAddress;
-    IERC20 private ASSET;
+    /// @dev `public` so external callers replace the previous `assetAddr` getter via `address(ASSET)`.
+    IERC20 public ASSET;
     IERC20 private WETH;
     address private vaultAddr;
-    address private swapRouterAddr;
-    address public assetAddr;
-    /// @dev Base canonical USDC — `changeAsset` sets `Mode.STABLE` when asset is USDC (same policy as v3).
-    address private constant baseUSDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+    address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private demeterAddr;
     address private keeperStratAddr;
     int24 public baselineTick;
@@ -61,55 +58,39 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     uint256 public defensiveEnteredAt;
     uint256 public consecutiveOffensiveCount;
     uint256 public prevConsecutiveOffensiveCount;
-    event StrategyEvent(uint8 indexed eventType, uint256 indexed data1, uint256 data2, uint256 data3);
-    event ContractSetUp(address indexed caller);
-    bool public contractSetUp;
     function _lpModeActive() internal view returns (bool) {
         return stratMode == Mode.NORMAL || stratMode == Mode.OFFENSIVE;
     }
     function tickRange() external view returns (int24 lower, int24 upper) {
         return (liqPos.tickLower, liqPos.tickUpper);
     }
-
-    /// @inheritdoc IOutOfRangeStrategyV4
     function mode() external view override returns (uint8) {
         return uint8(uint256(stratMode));
     }
-
     function _readSlot0() internal view returns (uint160 sqrtPriceX96, int24 tick) {
-        // No NFT yet: allow `balanceOfIdle` / `poolValue` (vault mint math) without reverting when the
-        // pool is still uninitialized — `mintNewPosition` still uses strict `getSlot0` in the library.
         if (liqPos.positionId == 0) {
             (sqrtPriceX96, tick) = LiquidityLibraryV4.getSlot0Safe(poolManager, poolKey);
         } else {
             (sqrtPriceX96, tick) = LiquidityLibraryV4.getSlot0(poolManager, poolKey);
         }
     }
-
-    function _toCorePoolKey() internal view returns (CorePoolKey memory k) {
-        k = CorePoolKey({
-            currency0: Currency.wrap(poolKey.currency0),
-            currency1: Currency.wrap(poolKey.currency1),
-            fee: poolKey.fee,
-            tickSpacing: poolKey.tickSpacing,
-            hooks: IHooks(poolKey.hooks)
-        });
+    function _poolHookData() internal view returns (bytes memory) {
+        (, bytes memory hookData) = swapRouterV4.getV4PoolConfig(address(ASSET));
+        return hookData;
     }
-
     modifier onlyAuthorized() {
         address s = _msgSender();
         if (s != vaultAddr && s != demeterAddr && s != keeperStratAddr && s != managerAddress && s != owner()) revert Unauthorized();
         _;
     }
-    constructor(address weth_, address positionManager_, address poolManager_) StrategyManagerV4() {
-        if (weth_ == address(0) || positionManager_ == address(0) || poolManager_ == address(0)) revert ZeroAddress();
-        WETH = IERC20(weth_);
-        positionManager = IPositionManagerV4(positionManager_);
-        poolManager = IPoolManagerV4(poolManager_);
-        deviationBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2500, maxTokenCapBps: 9800});
-        offensiveBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 3000, maxTokenCapBps: 9800});
-    }
-    function setUpContract(
+    /// @dev All wiring (asset / pool / managers / approvals) happens here — there is no separate
+    ///      `setUpContract` step. Saves ~bytecode by moving SSTOREs / struct-literal logic into
+    ///      init code (which doesn't count toward EIP-170). Trade-off: every dependency address must
+    ///      be known at deploy time; re-wiring requires redeploy.
+    constructor(
+        address weth_,
+        address positionManager_,
+        address poolManager_,
         address _assetAddr,
         uint24 _poolFeePips,
         int24 _tickSpacing,
@@ -119,34 +100,34 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         address _vaultAddr,
         address _demeterAddr,
         address _keeperStrategyAddr
-    ) external onlyOwner {
+    ) StrategyManagerV4() {
+        if (weth_ == address(0) || positionManager_ == address(0) || poolManager_ == address(0)) revert ZeroAddress();
+        WETH = IERC20(weth_);
+        positionManager = IPositionManagerV4(positionManager_);
+        poolManager = IPoolManagerV4(poolManager_);
+        deviationBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2000, maxTokenCapBps: 9800});
+        offensiveBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2400, maxTokenCapBps: 9800});
+
         managerAddress = _managerAddr;
-        assetAddr = _assetAddr;
-        swapRouterAddr = _swapRouterAddr;
         vaultAddr = _vaultAddr;
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
-        swapRouterV4 = IFloatV4StrategySwapRouter(_swapRouterAddr);
-        ASSET = IERC20(assetAddr);
-        _applyV4PoolParams(_poolFeePips, _tickSpacing, _hooks);
+        swapRouterV4 = IV4StrategySwapRouterStrict(_swapRouterAddr);
+        ASSET = IERC20(_assetAddr);
+        _setPoolKey(LiquidityLibraryV4.PoolKey({
+            currency0: _assetAddr < weth_ ? _assetAddr : weth_,
+            currency1: _assetAddr < weth_ ? weth_ : _assetAddr,
+            fee: _poolFeePips,
+            tickSpacing: _tickSpacing,
+            hooks: _hooks
+        }));
         _giveAllowances();
-        contractSetUp = true;
         lastRebalanceTime = block.timestamp;
     }
-
-    /// @dev Writes `poolKey` for `ASSET`/`WETH` and syncs `StrategyManagerV4` fee/spacing for views and trailing math.
-    function _applyV4PoolParams(uint24 fee_, int24 spacing_, address hooks_) internal {
-        poolFeePips = fee_;
-        tickSpacing = spacing_;
-        address a = address(ASSET);
-        address w = address(WETH);
-        poolKey = LiquidityLibraryV4.PoolKey({
-            currency0: a < w ? a : w,
-            currency1: a < w ? w : a,
-            fee: fee_,
-            tickSpacing: spacing_,
-            hooks: hooks_
-        });
+    function _setPoolKey(LiquidityLibraryV4.PoolKey memory key) internal {
+        poolKey = key;
+        poolFeePips = key.fee;
+        tickSpacing = key.tickSpacing;
     }
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
@@ -208,7 +189,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         totalUserAsset -= assetFee;
         totalUserWeth -= wethFee;
         uint256 wethBeforeSwap = WETH.balanceOf(address(this));
-        _swap(ASSET, WETH, totalUserAsset);
+        _swap(ASSET, totalUserAsset);
         uint256 wethFromAsset = WETH.balanceOf(address(this)) - wethBeforeSwap;
         totalUserWeth += wethFromAsset;
         if (assetFee > 0) {
@@ -219,9 +200,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         }
         WETH.safeTransfer(receiver, totalUserWeth);
     }
-    /// @notice Harvest / compound fees. Callable by vault / keeper / manager / owner, or via `this` from `beforeDeposit`.
-    /// @dev `beforeDeposit` uses `this.harvestBoolean(...)`; that external self-call sets `msg.sender` to `address(this)`,
-    ///      which must be allowed here — it is not covered by `onlyAuthorized` alone.
     function harvestBoolean(bool skipIncreaseLiquidity) external nonReentrant returns (uint256 newAssets) {
         if (msg.sender != address(this)) {
             address s = _msgSender();
@@ -236,12 +214,9 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         PrevHarvestTime = lastHarvest;
         lastHarvest = block.timestamp;
     }
-
     function _liquidityDust() private view returns (uint256) {
-        return address(ASSET) == baseUSDC ? 1_000_000 : 1_000_000_000_000;
+        return address(ASSET) == 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 ? 1_000_000 : 1_000_000_000_000;
     }
-
-    /// @dev Same policy as `FloatStrategy._handleOffensiveStale`: reset offensive streak and re-mint after stale window.
     function _handleOffensiveStale() internal returns (bool) {
         if (stratMode == Mode.OFFENSIVE
                 && block.timestamp - lastOffensiveTime > offensiveStaleDuration
@@ -260,21 +235,13 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         }
         return false;
     }
-
     function _harvest(bool skipIncreaseLiquidity) internal  {
         if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
             return;
         }
         if (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL) {
             if (liqPos.positionId != 0) {
-                uint256 beforeValDefensive = balanceOfIdle();
-                (, , uint256 valueInWethDefensive) = _collectAllFees(true);
-                if (valueInWethDefensive > 0) {
-                    emit StrategyEvent(2, liqPos.positionId, valueInWethDefensive, 0);
-                }
-                uint256 afterValDefensive = balanceOfIdle();
-                uint256 wantHarvestedDefensive = afterValDefensive > beforeValDefensive ? (afterValDefensive - beforeValDefensive) : 0;
-                emit StrategyEvent(3, uint256(uint160(_msgSender())), wantHarvestedDefensive, poolValue());
+                _collectAllFees(true);
             }
             return;
         }
@@ -285,7 +252,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         if (valueInWeth == 0) {
             return;
         }
-        emit StrategyEvent(4, liqPos.positionId, valueInWeth, 0);
         if (!skipIncreaseLiquidity && _lpModeActive()) {
             (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
             _balanceTokens(assetBal, wethBal);
@@ -405,7 +371,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             floorTick = 0;
             defensiveEnteredAt = 0;
             lastRebalanceTime = block.timestamp;
-            emit StrategyEvent(5, liqPos.positionId, offensiveTargetAssetBps, 0);
         } else {
             _enterDefensive();
         }
@@ -420,12 +385,12 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             poolKey: poolKey,
             m: mValue,
             slippageBps: slippageBps,
-            dust: d
+            dust: d,
+            hookData: _poolHookData()
         });
         (uint256 newId, uint128 liq) = liqPos.mintNewPosition(ctx, assetBal, wethBal);
         if (newId != 0 && liq > 0) {
             deposits[newId] = Deposit(address(this), liq, poolKey.currency0, poolKey.currency1);
-            emit StrategyEvent(6, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
             (, int24 poolTickAfterMint) = _readSlot0();
             baselineTick = poolTickAfterMint;
             floorTick = 0;
@@ -434,7 +399,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         }
         _handleLeftoverTokensWithLimit(0);
     }
-
     function _deposit() internal {
         if (liqPos.positionId != 0 && (stratMode == Mode.DEFENSIVE || stratMode == Mode.NEUTRAL)) {
             return;
@@ -451,13 +415,18 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     }
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
         if (liqPos.positionId == 0) return (0, 0, 0);
+        // v4-core's `Position.update` reverts with `CannotUpdateEmptyPosition` if the zero-liquidity fee-snapshot
+        // trick (`modifyLiquidities` with `liquidityDelta = 0`) is called on a position whose on-chain liquidity
+        // is already 0 (e.g. drained but `positionId` not yet cleared). Match v3 `NPM.collect`'s benign no-op.
+        if (liqPos.getPositionLiquidity(positionManager) == 0) return (0, 0, 0);
         if (IERC721(address(positionManager)).ownerOf(liqPos.positionId) != address(this)) {
             revert Unauthorized();
         }
         LiquidityLibraryV4.DecreaseContext memory dctx = LiquidityLibraryV4.DecreaseContext({
             posm: positionManager,
             poolManager: poolManager,
-            poolKey: poolKey
+            poolKey: poolKey,
+            hookData: _poolHookData()
         });
         (amount0, amount1) = LiquidityLibraryV4.collectAllFees(liqPos, dctx, address(this));
         valueInWeth = 0;
@@ -505,12 +474,12 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         uint256 target = Math.mulDiv(totalValue, targetAssetBps, 10_000);
         if (assetBal > target) {
             uint256 toSell = assetBal - target;
-            if (toSell > 0) _swap(ASSET, WETH, toSell);
+            if (toSell > 0) _swap(ASSET, toSell);
         } else if (assetBal < target) {
             uint256 deficit    = target - assetBal;
             uint256 wethToSell = Math.mulDiv(deficit, 1e18, p);
             if (wethToSell > wethBal) wethToSell = wethBal;
-            if (wethToSell > 0) _swap(WETH, ASSET, wethToSell);
+            if (wethToSell > 0) _swap(WETH, wethToSell);
         }
     }
     function _increaseLiquidityInternal() internal returns (uint128 liqAdded) {
@@ -522,7 +491,8 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             poolManager: poolManager,
             poolKey: poolKey,
             slippageBps: slippageBps,
-            dust: _liquidityDust()
+            dust: _liquidityDust(),
+            hookData: _poolHookData()
         });
         liqAdded = liqPos.increaseLiquidityInternal(ctx, IERC20(p0), IERC20(p1));
         if (liqAdded > 0) {
@@ -553,11 +523,11 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     }
     function _decreaseLiquidityInternal(uint128 liquidityToRemove, bool removeAll) internal {
         if (liqPos.positionId == 0) return;
-
         LiquidityLibraryV4.DecreaseContext memory ctx = LiquidityLibraryV4.DecreaseContext({
             posm: positionManager,
             poolManager: poolManager,
-            poolKey: poolKey
+            poolKey: poolKey,
+            hookData: _poolHookData()
         });
         uint128 removed;
         uint256 positionId = liqPos.positionId; 
@@ -620,12 +590,21 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         if (totalValue == 0) return (false, 0);
         return (true, Math.mulDiv(assetAmt, 10_000, totalValue));
     }
-    function _swap(IERC20 tokenIn, IERC20, uint256 amount) internal {
+    function _swap(IERC20 tokenIn, uint256 amount) internal {
         if (amount == 0) return;
         uint256 bal = tokenIn.balanceOf(address(this));
         if (amount > bal) amount = bal;
         if (amount == 0) return;
-        swapRouterV4.swapExactInputSingleFromStrategy(_toCorePoolKey(), address(tokenIn) == poolKey.currency0, amount, 0);
+        require(
+            address(tokenIn) == poolKey.currency0 || address(tokenIn) == poolKey.currency1,
+            "!"
+        );
+        require(amount <= type(uint128).max, ">");
+        swapRouterV4.swapExactInputSingleStrict(
+            address(ASSET),
+            address(tokenIn) == poolKey.currency0,
+            uint128(amount)
+        );
     }
     function poolValue() public view override returns (uint256) {
         (uint256 assetInPool, uint256 wethInPool) = balanceOfPool();
@@ -679,29 +658,31 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     function getPositionId() external view override returns (uint256) {
         return liqPos.positionId;
     }
-    /// @dev Uses `forceApprove` so tokens that require allowance 0 before a new non-zero value (e.g. USDT-style) do not revert.
+    /// @dev Max-approve `token` to the swap router (ERC20) and to PERMIT2 (ERC20 + AllowanceTransfer for `pm`).
+    function _approveTriple(IERC20 token, address router, address pm) private {
+        token.forceApprove(router, type(uint256).max);
+        token.forceApprove(PERMIT2, type(uint256).max);
+        IAllowanceTransfer(PERMIT2).approve(address(token), pm, type(uint160).max, type(uint48).max);
+    }
     function _giveAllowances() internal {
-        if (address(ASSET) != address(0)) {
-            ASSET.forceApprove(address(positionManager), type(uint256).max);
-            ASSET.forceApprove(address(swapRouterV4), type(uint256).max);
-        }
-        WETH.forceApprove(address(positionManager), type(uint256).max);
-        WETH.forceApprove(address(swapRouterV4), type(uint256).max);
+        address pm = address(positionManager);
+        address router = address(swapRouterV4);
+        if (address(ASSET) != address(0)) _approveTriple(ASSET, router, pm);
+        _approveTriple(WETH, router, pm);
     }
-    function _removeAllowances() internal {
-        if (address(ASSET) != address(0)) {
-            ASSET.forceApprove(address(positionManager), 0);
-            ASSET.forceApprove(address(swapRouterV4), 0);
-        }
-        WETH.forceApprove(address(positionManager), 0);
-        WETH.forceApprove(address(swapRouterV4), 0);
-    }
-    function changeAsset(address _newAssetAddr, uint24 poolFeePips_, int24 tickSpacing_, address hooks_)
+    function changeAsset(address _newAssetAddr, LiquidityLibraryV4.PoolKey calldata key)
         external
         override
         onlyAuthorized
     {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
+        address w = address(WETH);
+        require(key.currency0 < key.currency1, ">=");
+        require(
+            (key.currency0 == _newAssetAddr && key.currency1 == w) ||
+            (key.currency1 == _newAssetAddr && key.currency0 == w),
+            "!="
+        );
         consecutiveOffensiveCount = 0;
         _decreaseAllLiquidity();
         uint256 oldPositionId = liqPos.positionId;
@@ -710,13 +691,12 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             liqPos.positionId = 0;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal > 0) _swap(ASSET, WETH, assetBal);
-        assetAddr = _newAssetAddr;
+        if (assetBal > 0) _swap(ASSET, assetBal);
         ASSET = IERC20(_newAssetAddr);
-        _applyV4PoolParams(poolFeePips_, tickSpacing_, hooks_);
+        _setPoolKey(key);
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
-        if (assetAddr == baseUSDC) {
+        if (_newAssetAddr == 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913) {
             stratMode = Mode.STABLE;
         } else {
             stratMode = Mode.NORMAL;
@@ -735,8 +715,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             lastRebalanceTime = block.timestamp;
         }
     }
-
-    /// @notice Vault-only: strategy fully drained to vault; LP mode paused (mirrors defensive idle handling).
     function enterNeutralFromVault() external onlyAuthorized {
         stratMode = Mode.NEUTRAL;
         defensiveEnteredAt = block.timestamp;
@@ -744,8 +722,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         floorTick = 0;
         baselineTick = 0;
     }
-
-    /// @notice Vault-only: after `neutralDeposit`, resume NORMAL LP lifecycle.
     function resumeNormalFromVault() external onlyAuthorized {
         if (stratMode != Mode.NEUTRAL) revert MustBeNeutral();
         stratMode = Mode.NORMAL;

@@ -1,5 +1,53 @@
 
  
+
+ 
+ 
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+
+- **FloatContractmanager**:`0xD9fB0426cCBf9F0085B83D14e19876C2a98779a0`
+- **FloatStrategyV4**: `0x49B8ADDB135929928f3EdEC926Bb1f91926403F6`
+- **FloatVaultV4**: `0xCED0dd6C9Fa24449A31acE04De600A39C0DD6F33`
+- **FloatSwapRouterV4**: `0x7daAb586f1E735B0c5EAD16EDeaabF93230Da222`
+- **FloatLiquidTokenV4**:`0x8500AC117D41156218B3abda8Efcc7C318B725c2`
+- **FloatKeeperV4**: `0xf53eD015031Dd14877C4ECd5B59F4b7749aDce86`
+- **ASSET**:`0xab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3`
+- **AssetPoolV4**: `0x55a4f7a23c4c2616cf848e639a08bd4283d13e66f5fcf34f828b5ca7e4e96324` 
+
+["FloatStrategyV4","FloatVaultV4","FloatSwapRouterV4","FloatLiquidTokenV4","FloatKeeperV4","ASSET","Demeter"],
+["0x6440136e5F095136764FD956a63482C0264343Bb","0xCED0dd6C9Fa24449A31acE04De600A39C0DD6F33","0x7daAb586f1E735B0c5EAD16EDeaabF93230Da222","0x8500AC117D41156218B3abda8Efcc7C318B725c2","0xf53eD015031Dd14877C4ECd5B59F4b7749aDce86","0xab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3","0x208169b1321a09e614a68b06b7f600dc0e007212"]
+ 
+############################################################################################################################
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+
+- **FloatContractmanager**:`0x5e13c44341865861d77d6f9997048f512bf9CBbD`
+- **FloatStrategyV4**: `0x9E6F7751E9AC72aDC87049a2a1f8713540931Ea8`
+- **FloatVaultV4**: `0x209a7B8eC45A46b4886B9940386f5c2d5E45DED5`
+- **FloatSwapRouterV4**: `0xaBc9d748E6627bF2127bCbe654076E7F0214c58c`
+- **FloatLiquidTokenV4**:`0x75738FD3ec6364C36eC4Be2A9A622AB7e019F3Cd`
+- **FloatKeeperV4**: `0xC1D1EB27F22C3802E52087C3e34b88C91f1701a1`
+- **ASSET**:`0xa1f72459dfa10bad200ac160ecd78c6b77a747be`
+- **AssetPoolV4**: `` 
+ 
+############################################################################################################################
+
+ 
  
  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
  

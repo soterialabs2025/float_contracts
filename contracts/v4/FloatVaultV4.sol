@@ -7,7 +7,6 @@ import "./interfaces/IFloatVaultV4.sol";
 import "../../interfaces/IPositionManagerV4.sol";
 import "./interfaces/IFloatLiquidTokenVault.sol";
 import "./interfaces/IFloatStrategyV4Ticks.sol";
-import "./interfaces/ISwapRouterV4.sol";
 import "./V4Deployments8453.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -15,12 +14,14 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
 /// @title FloatVaultV4
-/// @notice Same economics as `FloatVault`, but deposits swap via `ISwapRouterV4` (UR `V4_SWAP`) and position details read v4 PM + strategy ticks.
-/// @dev Register `FloatSwapRouterV4` / `FloatStrategyV4` (or your chosen names) on the contract manager. `positionManagerV4` uses Base (8453) deployment constant from `V4Deployments8453`.
+/// @notice WETH-only deposit vault. Mints `FloatLiquidTokenV4` shares pro-rata against `strategy.balance`,
+///         then forwards WETH to the strategy. Non-WETH inflows (and any router-side swap on deposit) are
+///         intentionally not supported — users must wrap to WETH before calling.
+/// @dev    `positionManagerV4` is the Base (8453) deployment constant from `V4Deployments8453`. Strategy
+///         rebalances continue to route through `FloatSwapRouterV4` (asset-keyed strict swap), but the vault
+///         itself no longer talks to the swap router.
 contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
    
   using SafeERC20 for IERC20;
@@ -30,7 +31,6 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   IFloatStrategyV4 public strategy;
   IFloatLiquidTokenVault public liquidToken;
   IFloatV4ContractManager public immutable _manager;
-  ISwapRouterV4 public swapRouter;
 
   /// @notice Uniswap v4 PositionManager (for `getPositionDetails` liquidity); Base mainnet address from deployments doc.
   IPositionManagerV4 public immutable positionManagerV4;
@@ -38,7 +38,6 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   address public assetAddress;
   address public liquidTokenAddress;
   address public strategyAddr;
-  address public swapRouterAddr;
   address private demeterAddr;
   address private constant WETH_ADDR = 0x4200000000000000000000000000000000000006;
   bool public contractSetUp;
@@ -83,15 +82,11 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     assetAddress = _manager.getAddress("ASSET");
     liquidTokenAddress = _manager.getAddress("FloatLiquidTokenV4");
     strategyAddr = _manager.getAddress("FloatStrategyV4");
-    swapRouterAddr = _manager.getAddress("FloatSwapRouterV4");
     demeterAddr = _manager.getAddress("Demeter");
     strategy = IFloatStrategyV4(strategyAddr);
     asset = IERC20(assetAddress);
     weth = IERC20(WETH_ADDR);
     liquidToken = IFloatLiquidTokenVault(liquidTokenAddress);
-    if (swapRouterAddr != address(0)) {
-      swapRouter = ISwapRouterV4(swapRouterAddr);
-    }
     contractSetUp = true;
     emit ContractSetUp(_msgSender());
   }
@@ -109,9 +104,13 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     _;
   }
 
+  /// @notice Refresh the vault's local ASSET reference after a manager-driven rotation.
+  /// @dev    Called by `FloatContractManagerV4.changeStrategyAsset` as the final step of a rotation.
+  ///         Authorization (`onlyAuthorized`) covers the manager, owner, and Demeter.
   function updateAsset() external onlyAuthorized {
     assetAddress = _manager.getAddress("ASSET");
     asset = IERC20(assetAddress);
+    emit AssetChanged(assetAddress);
   }
 
   /// @inheritdoc IFloatVaultV4
@@ -211,82 +210,45 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     }
   }
 
-  /// @notice Deposit WETH only (no `PoolKey`; no router swap).
+  /// @notice Deposit WETH and mint `FloatLiquidTokenV4` shares pro-rata against current vault NAV.
+  /// @dev    Caller must `WETH.approve(vault, amount)` first. No native ETH and no in-vault token swaps.
+  ///         Strategy's `beforeDeposit` is invoked before the pull so NAV is measured after any harvest.
   function depositWeth(uint256 amount) external nonReentrant returns (uint256 shares) {
-    PoolKey memory unused;
-    return _deposit(WETH_ADDR, amount, unused);
+    return _deposit(amount);
   }
 
-  /// @notice Deposit an ERC20 by swapping **tokenIn → WETH** on `swapKey` via `FloatSwapRouterV4` (quoter min-out on the router).
-  /// @dev `swapKey` must be the initialized **tokenIn / WETH** pool (`currency0 < currency1`). Use `depositWeth` for native WETH deposits.
-  function depositErc20(address tokenIn, uint256 amount, PoolKey calldata swapKey) external nonReentrant returns (uint256 shares) {
-    require(tokenIn != WETH_ADDR, "use depositWeth");
-    return _deposit(tokenIn, amount, swapKey);
-  }
-
-  /// @notice `tokenIn == WETH` → same as `depositWeth` (ignore `swapKey`); otherwise same as `depositErc20`.
-  function deposit(address tokenIn, uint256 amount, PoolKey calldata swapKey) external nonReentrant returns (uint256 shares) {
-    return _deposit(tokenIn, amount, swapKey);
-  }
-
-  function _deposit(address tokenIn, uint256 amount, PoolKey memory swapKey) internal returns (uint256 shares) {
+  function _deposit(uint256 amount) internal returns (uint256 shares) {
     require(!neutral, "Vault neutral");
     require(contractSetUp, "not initialized");
     require(address(liquidToken) != address(0), "liquidToken not set");
     require(address(weth) != address(0), "weth not set");
-    require(tokenIn != address(0), "tokenIn=0");
     require(amount > 0, "zero");
     address depositor = _msgSender();
+
     _syncUniswapFees();
     uint256 supply = totalSupply();
-    // Measure total vault value BEFORE beforeDeposit (idle + Uniswap position, WETH-denominated)
-    uint256 poolValueBefore = address(strategy) != address(0) ? strategy.balanceOfIdle() + strategy.poolValue() : 0;
+    uint256 poolValueBefore = address(strategy) != address(0)
+      ? strategy.balanceOfIdle() + strategy.poolValue()
+      : 0;
 
     if (address(strategy) != address(0)) {
       strategy.beforeDeposit();
       _syncUniswapFees();
-      // Re-measure after beforeDeposit in case it harvested/changed value
       poolValueBefore = strategy.balanceOfIdle() + strategy.poolValue();
     }
 
     uint256 balBefore = weth.balanceOf(address(this));
-    uint256 received;
-
-    if (tokenIn == WETH_ADDR) {
-      // ── Direct WETH deposit ──────────────────────────────────────────────
-      weth.safeTransferFrom(depositor, address(this), amount);
-      received = weth.balanceOf(address(this)) - balBefore;
-      require(received > 0, "no WETH received");
-    } else {
-      // ── Non-WETH: pull token then swap to WETH via UniversalRouter ───────
-      require(address(swapRouter) != address(0), "swapRouter not set");
-      IERC20(tokenIn).safeTransferFrom(depositor, address(this), amount);
-      uint256 currentAllowance = IERC20(tokenIn).allowance(address(this), address(swapRouter));
-      if (currentAllowance < amount) {
-        IERC20(tokenIn).approve(address(swapRouter), type(uint256).max);
-      }
-      address c0 = Currency.unwrap(swapKey.currency0);
-      address c1 = Currency.unwrap(swapKey.currency1);
-      require(
-        (c0 == tokenIn && c1 == address(weth)) || (c1 == tokenIn && c0 == address(weth)),
-        "swapKey"
-      );
-      uint256 wethOut = swapRouter.swapToWethViaUniversalRouterV4(swapKey, amount, address(this));
-      require(wethOut > 0, "swap returned 0");
-      received = weth.balanceOf(address(this)) - balBefore;
-      require(received > 0, "no WETH after swap");
-    }
+    weth.safeTransferFrom(depositor, address(this), amount);
+    uint256 received = weth.balanceOf(address(this)) - balBefore;
+    require(received > 0, "no WETH received");
 
     _earn(received);
 
-    if (supply == 0) {
-      shares = received;
-    } else if (poolValueBefore == 0) {
+    if (supply == 0 || poolValueBefore == 0) {
       shares = received;
     } else {
       shares = Math.mulDiv(received, supply, poolValueBefore);
     }
-
     require(shares > 0, "zero shares");
 
     liquidToken.mint(depositor, shares);
@@ -404,23 +366,6 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     neutral = true;
     emit StrategyNeutral(neutralPoolValue);
   }
-
-  /// @param poolFeePips Uniswap v4 `fee` for the ASSET/WETH pool (e.g. 3000 = 0.30%, 10_000 = 1%).
-  /// @param tickSpacing Must match the initialized pool for that fee (and `hooks`).
-  /// @param hooks Pool hooks address, or `address(0)`.
-  function changeAsset(address _newAssetAddr, uint24 poolFeePips, int24 tickSpacing, address hooks)
-    external
-    onlyOwner
-    nonReentrant
-  {
-    require(address(strategy) != address(0), "No strategy set");
-
-    _syncUniswapFees();
-    strategy.changeAsset(_newAssetAddr, poolFeePips, tickSpacing, hooks);
-    _syncUniswapFees();
-    emit AssetChanged(_newAssetAddr);
-  }
-
 
   /// @notice Withdraw proportional WETH while the vault is neutral (after `neutralStrategy`).
   /// @dev `neutralTotalSupply` is fixed at neutralization; `neutralWethBalance` tracks remaining WETH.

@@ -3,8 +3,9 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "../../interfaces/IPoolManagerV4.sol";
 import "../../libraries/LiquidityLibraryV4.sol";
+import "./interfaces/IFloatStrategyV4.sol";
+import "./interfaces/IFloatV4StrategySwapRouter.sol";
 import "./V4Deployments8453.sol";
 
 /**
@@ -12,16 +13,15 @@ import "./V4Deployments8453.sol";
  * @author TB_Contracts Team (v4 stack)
  * @notice Central registry for v4 protocol contract addresses — same role as `FloatContractManager` for v3.
  * @dev Single source of truth for names → addresses (`FloatVaultV4`, `FloatStrategyV4`, `FloatSwapRouterV4`, …).
- *      `changeStrategyAsset(address)` resolves a vanilla (no-hooks) ASSET/WETH v4 pool on Base `PoolManager` by fee
- *      tier, analogous to `_poolV3ForAsset` + `changeStrategyAsset` on v3. Explicit `fee` / `tickSpacing` / `hooks`
- *      remain available when discovery is wrong or the pool uses custom hooks.
- *      Does not call `FloatSwapRouterV4` (no stored asset; swaps are per `tokenIn`).
- * @custom:version 1.0.0
+ *      `changeStrategyAsset(asset)` is the **single** entry point for ASSET rotation. PoolKeys live in
+ *      `FloatSwapRouterV4.v4PoolConfig` (seeded at deploy via `_seedV4PoolConfigs`, extended via
+ *      `setV4PoolConfig`). The manager pulls the key from the router, validates ASSET/WETH layout, calls
+ *      `IFloatStrategyV4.changeAsset(asset, key)`, then refreshes the vault's local asset reference via
+ *      `updateAsset()`. The frontend never submits a PoolKey.
+ * @custom:version 3.0.0
  */
 contract FloatContractManagerV4 is Ownable {
     address private constant baseWETH = 0x4200000000000000000000000000000000000006;
-    /// @dev Base canonical USDC — discovery tries 0.05% first (common Base v4 WETH/USDC tier).
-    address private constant baseUSDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
     mapping(string => address) public addresses;
 
@@ -79,92 +79,64 @@ contract FloatContractManagerV4 is Ownable {
         emit AddressDeleted(_name);
     }
 
-    function _feeToTickSpacingV4(uint24 fee) private pure returns (int24) {
-        if (fee == 500) return 10;
-        if (fee == 3000) return 60;
-        if (fee == 10_000) return 200;
-        revert("fee tier");
-    }
-
-    /**
-     * @notice Same responsibility as v3 `_poolV3ForAsset`: find ASSET/WETH liquidity for the strategy.
-     * @dev Probes standard Uniswap v4 fee tiers on Base `V4Deployments8453.POOL_MANAGER` with `hooks = address(0)`.
-     *      Initialized pool ⇒ `getSlot0` returns non-zero `sqrtPriceX96`. USDC prefers 500 (0.05%) first on Base
-     *      (see e.g. GeckoTerminal WETH/USDC v4 primary tier), then 3000 → 10000;
-     *      other assets prefer 10000 (v3 manager default) → 3000 → 500.
-     */
-    function _resolveV4PoolParamsForAsset(address asset) private view returns (uint24 fee, int24 tickSpacing, address hooks) {
-        require(asset != address(0) && asset != baseWETH, "bad asset");
-        hooks = address(0);
-        address weth = baseWETH;
-        address c0 = asset < weth ? asset : weth;
-        address c1 = asset < weth ? weth : asset;
-
-        uint24[3] memory fees = asset == baseUSDC
-            ? [uint24(500), uint24(3000), uint24(10_000)]
-            : [uint24(10_000), uint24(3000), uint24(500)];
-
-        IPoolManagerV4 pm = IPoolManagerV4(V4Deployments8453.POOL_MANAGER);
-
-        for (uint256 i = 0; i < fees.length; i++) {
-            int24 ts = _feeToTickSpacingV4(fees[i]);
-            LiquidityLibraryV4.PoolKey memory key = LiquidityLibraryV4.PoolKey({
-                currency0: c0,
-                currency1: c1,
-                fee: fees[i],
-                tickSpacing: ts,
-                hooks: hooks
-            });
-            (uint160 sqrtPriceX96,,,) = pm.getSlot0(LiquidityLibraryV4.poolId(key));
-            if (sqrtPriceX96 != 0) {
-                return (fees[i], ts, hooks);
-            }
-        }
-        revert("Pool does not exist for asset/WETH");
-    }
-
-    /// @notice Read-only helper: which vanilla v4 tier resolves for `asset`/WETH on Base.
-    function getV4PoolParamsForAsset(address asset) external view returns (uint24 fee, int24 tickSpacing, address hooks) {
-        return _resolveV4PoolParamsForAsset(asset);
-    }
-
-    /// @notice Same as four-arg overload, but discovers `(fee, tickSpacing, hooks)` like v3 manager + `_poolV3ForAsset`.
+    /// @notice Rotate the v4 strategy's ASSET to one of the assets pre-registered with `FloatSwapRouterV4`.
+    /// @dev    Single source of truth: the PoolKey is read from `FloatSwapRouterV4.getV4PoolConfig(asset)` (seeded
+    ///         at deploy / extended via `setV4PoolConfig`). The frontend supplies only the asset address.
+    ///         Flow:
+    ///           1. Read `(key, _)` from `FloatSwapRouterV4.getV4PoolConfig(_newAssetAddr)`.
+    ///           2. Validate the pulled key is canonical ASSET/WETH (`currency0 < currency1`, one side == WETH,
+    ///              the other == `_newAssetAddr`). Catches a misregistered router entry before it reaches the
+    ///              strategy.
+    ///           3. Call `IFloatStrategyV4.changeAsset(asset, key)` — strategy flattens the OLD pool, swaps to
+    ///              WETH, then adopts the NEW `key`. (Strategy reads `hookData` for LP ops directly from the
+    ///              router by `address(ASSET)`, before AND after the rotation.)
+    ///           4. Update the registry's `"ASSET"` entry and refresh the vault's local asset reference.
+    /// @param _newAssetAddr Non-WETH side of the pool — strategy's new ASSET. Must be pre-registered on the router.
     function changeStrategyAsset(address _newAssetAddr) external onlyOwnerOrDemeter {
         require(_newAssetAddr != address(0), "New asset address not set");
         require(_newAssetAddr != baseWETH, "WETH cannot be strategy asset");
-        (uint24 f, int24 ts, address h) = _resolveV4PoolParamsForAsset(_newAssetAddr);
-        _changeStrategyAsset(_newAssetAddr, f, ts, h);
-    }
 
-    /// @notice Rotates strategy asset and v4 pool tier for the v4 stack; syncs vault.
-    /// @param poolFeePips Uniswap v4 pool `fee` (hundredths of a bip) for ASSET/WETH.
-    /// @param tickSpacing Must match the pool initialized for that fee/hooks pair.
-    /// @param hooks Pool hooks, or `address(0)`.
-    function changeStrategyAsset(address _newAssetAddr, uint24 poolFeePips, int24 tickSpacing, address hooks)
-        external
-        onlyOwnerOrDemeter
-    {
-        require(_newAssetAddr != address(0), "New asset address not set");
-        require(_newAssetAddr != baseWETH, "WETH cannot be strategy asset");
-        _changeStrategyAsset(_newAssetAddr, poolFeePips, tickSpacing, hooks);
-    }
-
-    function _changeStrategyAsset(address _newAssetAddr, uint24 poolFeePips, int24 tickSpacing, address hooks) private {
         address vaultAddr = addresses["FloatVaultV4"];
         address strategyAddr = addresses["FloatStrategyV4"];
-
+        address swapRouterAddr = addresses["FloatSwapRouterV4"];
         require(strategyAddr != address(0), "Strategy address not set");
+        require(swapRouterAddr != address(0), "SwapRouter address not set");
 
-        (bool success,) = strategyAddr.call(
-            abi.encodeWithSignature("changeAsset(address,uint24,int24,address)", _newAssetAddr, poolFeePips, tickSpacing, hooks)
+        // 1. Pull the canonical PoolKey from the swap router's pre-seeded registry.
+        //    Low-level staticcall so we avoid importing the v4-core `PoolKey` here; the router's
+        //    `(Currency, Currency, uint24, int24, IHooks)` struct is wire-compatible with
+        //    `LiquidityLibraryV4.PoolKey`'s `(address, address, uint24, int24, address)`.
+        (bool ok, bytes memory ret) = swapRouterAddr.staticcall(
+            abi.encodeWithSignature("getV4PoolConfig(address)", _newAssetAddr)
         );
-        require(success, "changeAsset call failed");
+        if (!ok) _bubbleRevert(ret, "getV4PoolConfig failed");
+        (LiquidityLibraryV4.PoolKey memory key, ) = abi.decode(ret, (LiquidityLibraryV4.PoolKey, bytes));
 
+        // 2. Defense-in-depth validation: the router only enforces `assetAddress in {c0, c1}`, not that the
+        //    other side is WETH. The Float strategy assumes ASSET/WETH; reject anything else early.
+        require(key.currency0 < key.currency1, "PoolKey: c0>=c1");
+        require(
+            (key.currency0 == _newAssetAddr && key.currency1 == baseWETH) ||
+            (key.currency1 == _newAssetAddr && key.currency0 == baseWETH),
+            "PoolKey != ASSET/WETH"
+        );
+
+        // 3. Rotate strategy state via typed interface (strategy flattens against the OLD pool first).
+        IFloatStrategyV4(strategyAddr).changeAsset(_newAssetAddr, key);
+
+        // 4. Refresh registry + vault local reference.
         addresses["ASSET"] = _newAssetAddr;
-
         if (vaultAddr != address(0)) {
-            (bool ok,) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));
-            require(ok, "Vault updateAsset failed");
+            (bool ok2, bytes memory ret2) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));
+            if (!ok2) _bubbleRevert(ret2, "Vault updateAsset failed");
         }
+    }
+
+    /// @dev Re-throw a low-level call's revert payload (preserves nested `require` strings / custom errors).
+    function _bubbleRevert(bytes memory ret, string memory fallbackMsg) private pure {
+        if (ret.length > 0) {
+            assembly { revert(add(ret, 0x20), mload(ret)) }
+        }
+        revert(fallbackMsg);
     }
 }

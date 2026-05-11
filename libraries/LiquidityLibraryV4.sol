@@ -11,6 +11,8 @@ import {PoolKey as CorePoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
 /**
  * @title LiquidityLibraryV4
@@ -78,6 +80,8 @@ library LiquidityLibraryV4 {
         int24               m;            // width multiplier (same meaning as V3)
         uint16              slippageBps;
         uint256             dust;
+        /// @dev Must match `setV4PoolConfig` on the strategy router for hooked pools.
+        bytes               hookData;
     }
 
     struct IncreaseContext {
@@ -86,12 +90,14 @@ library LiquidityLibraryV4 {
         PoolKey             poolKey;
         uint16              slippageBps;
         uint256             dust;
+        bytes               hookData;
     }
 
     struct DecreaseContext {
         IPositionManagerV4  posm;
         IPoolManagerV4      poolManager;
         PoolKey             poolKey;
+        bytes               hookData;
     }
 
     // ---------------------------------------------------------------
@@ -229,25 +235,23 @@ library LiquidityLibraryV4 {
         return PoolId.unwrap(PoolIdLibrary.toId(ck));
     }
 
-    /// @notice Read (sqrtPriceX96, currentTick) from the V4 PoolManager.
-    /// @dev Replaces pool.slot0() from V3.
+    /// @notice Read (sqrtPriceX96, currentTick) via v4-core `StateLibrary` (`extsload`).
+    /// @dev    The real V4 PoolManager exposes slot0 only through `extsload`; calling a hypothetical
+    ///         `getSlot0(bytes32)` on the PoolManager returns no-such-selector revert. Always go through
+    ///         `StateLibrary.getSlot0` so behavior matches the periphery (router / quoter) reads.
     function getSlot0(IPoolManagerV4 poolManager, PoolKey memory key)
         internal view returns (uint160 sqrtPriceX96, int24 tick)
     {
-        (sqrtPriceX96, tick, , ) = poolManager.getSlot0(poolId(key));
+        (sqrtPriceX96, tick, , ) =
+            StateLibrary.getSlot0(IPoolManager(address(poolManager)), PoolId.wrap(poolId(key)));
     }
 
-    /// @notice Same as `getSlot0`, but returns `(0, 0)` if the pool is uninitialized or `getSlot0` reverts.
-    /// @dev Used by strategy **view** helpers (`balanceOfIdle`, `poolValue`) before the first mint so vault
-    ///      `deposit` gas estimation does not revert when `sqrtPriceX96` is not yet readable for the key.
+    /// @notice Same as `getSlot0`. Kept for backwards compatibility — `extsload` of an unset slot returns
+    ///         zero rather than reverting, so an uninitialized pool naturally surfaces as `sqrtPriceX96 == 0`.
     function getSlot0Safe(IPoolManagerV4 poolManager, PoolKey memory key)
         internal view returns (uint160 sqrtPriceX96, int24 tick)
     {
-        try poolManager.getSlot0(poolId(key)) returns (uint160 s, int24 t, uint24, uint24) {
-            return (s, t);
-        } catch {
-            return (0, 0);
-        }
+        return getSlot0(poolManager, key);
     }
 
     /// @notice Read the liquidity of our position from the V4 PoolManager.
@@ -334,7 +338,7 @@ library LiquidityLibraryV4 {
             uint128(max0 > type(uint128).max ? type(uint128).max : max0),
             uint128(max1 > type(uint128).max ? type(uint128).max : max1),
             address(this),   // recipient of NFT = strategy contract
-            bytes("")        // no hook data
+            ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1);
 
@@ -399,7 +403,7 @@ library LiquidityLibraryV4 {
             liq,
             uint128(max0 > type(uint128).max ? type(uint128).max : max0),
             uint128(max1 > type(uint128).max ? type(uint128).max : max1),
-            bytes("") // no hook data
+            ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0);
         params[2] = abi.encode(ctx.poolKey.currency1);
@@ -444,7 +448,7 @@ library LiquidityLibraryV4 {
             uint256(0),  // liquidityDelta = 0 => fees only
             uint128(0),  // amount0Min
             uint128(0),  // amount1Min
-            bytes("")    // no hook data
+            ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1, recipient);
 
@@ -483,7 +487,7 @@ library LiquidityLibraryV4 {
             uint256(liq),
             uint128(0), // amount0Min
             uint128(0), // amount1Min
-            bytes("")
+            ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1, address(this));
 
@@ -517,7 +521,7 @@ library LiquidityLibraryV4 {
             uint256(liqToRemove),
             uint128(0),
             uint128(0),
-            bytes("")
+            ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1, address(this));
 

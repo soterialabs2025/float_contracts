@@ -7,299 +7,495 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {IUniversalRouter} from "@uniswap/universal-router/contracts/interfaces/IUniversalRouter.sol";
-import {Commands} from "@uniswap/universal-router/contracts/libraries/Commands.sol";
-import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
-import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
-import {IV4Router} from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 
-import "./interfaces/ISwapRouterV4.sol";
 import "./interfaces/IFloatV4StrategySwapRouter.sol";
+import "./interfaces/IFloatV4ContractManager.sol";
 import "./V4Deployments8453.sol";
 
 /// @title FloatSwapRouterV4
-/// @notice Float-facing router: token → WETH via Universal Router `V4_SWAP` (see Uniswap v4 swap routing guide).
-/// @dev Base (8453) only: infra addresses match `V4Deployments8453` (Permit2, Universal Router, Quoter, WETH).
-contract FloatSwapRouterV4 is ISwapRouterV4, IFloatV4StrategySwapRouter, Ownable, ReentrancyGuard {
+/// @notice v4-native swap router for the Float stack: bypasses Universal Router and Permit2, calls
+///         `PoolManager.unlock` directly and settles through `unlockCallback`. Hooked-pool friendly
+///         (the hook only ever sees `msg.sender == address(this)`), and pool-key data is registered
+///         per-asset so strategy callers only need to supply the asset address + direction.
+/// @dev    Base (8453) only — addresses come from `V4Deployments8453`. Pool config registry
+///         (`setV4PoolConfig`) is gated to `owner` or a designated `configManager` (e.g. `FloatContractManagerV4`).
+contract FloatSwapRouterV4 is
+    IV4StrategySwapRouterStrict,
+    IUnlockCallback,
+    Ownable,
+    ReentrancyGuard
+{
     using SafeERC20 for IERC20;
 
-    IUniversalRouter public immutable universalRouter = IUniversalRouter(V4Deployments8453.UNIVERSAL_ROUTER);
-    IAllowanceTransfer public immutable permit2 = IAllowanceTransfer(V4Deployments8453.PERMIT2);
-    IV4Quoter public immutable quoterV4 = IV4Quoter(V4Deployments8453.QUOTER);
-    IERC20 public immutable WETH = IERC20(0x4200000000000000000000000000000000000006);
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Immutable infra (Base mainnet)
+    // ─────────────────────────────────────────────────────────────────────────────
 
-    /// @notice Float asset on Base — same as `ADDRESSES.md` ASSET.
-    address internal constant TEST_SWAP_TOKEN_OUT = 0xAB3f23c2ABcB4E12Cc8B593C218A7ba64Ed17Ba3;
-    /// @dev Pool params from `ADDRESSES.md` (fee / tickSpacing / hooks). If your swap still reverts, the
-    /// liquid pool may be a different `PoolKey` (e.g. Uniswap UI pool with dynamic fee + hooks); use
-    /// `swapTestExactInputSingle` with the exact key from an `Initialize` log or the v4 SDK config.
-    uint24 internal constant TEST_SWAP_FEE = 12000;
-    int24 internal constant TEST_SWAP_TICK_SPACING = 240;
-    IHooks internal constant TEST_SWAP_HOOKS = IHooks(address(0));
+    IPoolManager public immutable poolManager = IPoolManager(V4Deployments8453.POOL_MANAGER);
+    IV4Quoter public immutable v4Quoter = IV4Quoter(V4Deployments8453.QUOTER);
 
-    /// @notice Strategy allowed to call `swapExactInputSingleFromStrategy` (set after deploy).
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Configurable params
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @notice Hard cap on per-call slippage haircuts (bps); also bounds `setStrictStrategySlippageBps`.
+    uint16 public maxSlippageBps = 1_000;
+    /// @notice Slippage haircut (bps) applied on quoter-derived `minOut` for `swapExactInputSingleQuoter` / `swapExactInputSingleStrict`.
+    uint16 public strictStrategySlippageBps = 200;
+    /// @notice Max permissible price impact (bps) for `swapExactInputSingleStrict`. Default 300 = 3%.
+    uint16 public maxPriceImpactBps = 300;
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Per-asset v4 pool registry
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @notice Per-asset v4 pool config registered by owner or `configManager`. `key.currency0`/`currency1` MUST include `assetAddress`.
+    struct V4PoolConfig {
+        PoolKey key;
+        bytes hookData;
+    }
+    mapping(address => V4PoolConfig) public v4PoolConfig;
+
+    /// @notice Optional secondary configurer (e.g. `FloatContractManagerV4`) — allowed to call `setV4PoolConfig`.
+    address public configManager;
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Float address registry (v3-parity gating)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @notice Float contract registry; queried by `setUpContract` to populate the swap allowlist.
+    IFloatV4ContractManager public immutable manager;
+
+    /// @notice Float strategy contract — primary authorized swap caller (parity with v3 `strategy`).
     address public strategy;
+    /// @notice Float vault contract — included in the swap allowlist for forward-compat (current vault is WETH-only and does not call the router).
+    address public vaultAddr;
+    /// @notice Demeter operator address — allowed to call swap entrypoints (parity with v3).
+    address public demeterAddr;
 
-    uint16 public defaultSlippageBps = 100;
+    /// @notice Becomes true after `setUpContract` runs; swap entrypoints require it.
+    bool public initialized;
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Events / errors
+    // ─────────────────────────────────────────────────────────────────────────────
 
     event SwapExecuted(
-        address indexed caller, address indexed recipient, address tokenIn, uint256 amountIn, uint256 amountOut
+        address indexed caller, address indexed recipient, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
     );
-    event DefaultSlippageBpsUpdated(uint16 bps);
+    event V4PoolConfigSet(address indexed asset, PoolKey key, bytes hookData);
+    event ConfigManagerUpdated(address indexed configManager);
+    event StrictStrategySlippageBpsUpdated(uint16 strictStrategySlippageBps);
+    event MaxPriceImpactBpsUpdated(uint16 maxPriceImpactBps);
+    event MaxSlippageBpsUpdated(uint16 maxSlippageBps);
+    event ContractSetUp(address indexed caller);
+    event StrategySet(address indexed strategy);
+    event AddressesRefreshed(address indexed strategy, address indexed vault, address indexed demeter);
 
-    error ZeroAddress();
     error ZeroAmount();
-    error TokenIsWETH();
-    error BadPoolKey();
+    error Unauthorized();
+    error NotInitialized();
 
-    /// @dev Owner is the account that deploys (`_msgSender()`); use `transferOwnership` if that must differ.
-    constructor() Ownable(_msgSender()) {}
-
-    function setDefaultSlippageBps(uint16 bps) external onlyOwner {
-        require(bps < 10_000, "slippage");
-        defaultSlippageBps = bps;
-        emit DefaultSlippageBpsUpdated(bps);
+    constructor(address _manager) Ownable(_msgSender()) {
+        require(_manager != address(0), "manager=0");
+        manager = IFloatV4ContractManager(_manager);
+        _seedV4PoolConfigs();
     }
 
-    function setStrategy(address s) external override onlyOwner {
-        strategy = s;
-    }
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Hard-coded pool registry (Base Clanker / Doppler-style v4 hooked pools)
+    // ─────────────────────────────────────────────────────────────────────────────
 
-    /// @inheritdoc IFloatV4StrategySwapRouter
-    function swapExactInputSingleFromStrategy(
-        PoolKey calldata key,
-        bool zeroForOne,
-        uint256 amountIn,
-        uint128 minOutIfNoQuoter
-    ) external override nonReentrant returns (uint256 amountOut) {
-        require(msg.sender == strategy && strategy != address(0), "strategy");
-        require(amountIn > 0 && amountIn <= type(uint128).max, "amount");
+    /// @dev Common to every seeded entry: dynamic-fee flag (0x800000) and tickSpacing 200.
+    uint24  private constant SEED_FEE          = 8388608;
+    int24   private constant SEED_TICK_SPACING = 200;
+    /// @dev Stored as `uint160` (with leading `00` prepended to the literal) so we don't trip Solidity's
+    ///      EIP-55 checksum validation, which fires on any 40-hex-digit address-shaped literal.
+    uint160 private constant SEED_WETH         = 0x004200000000000000000000000000000000000006;
 
-        IERC20 tokenIn = IERC20(Currency.unwrap(zeroForOne ? key.currency0 : key.currency1));
-        IERC20 tokenOut = IERC20(Currency.unwrap(zeroForOne ? key.currency1 : key.currency0));
-
-        tokenIn.safeTransferFrom(msg.sender, address(this), amountIn);
-
-        uint128 minOut = _minOut(key, zeroForOne, uint128(amountIn), minOutIfNoQuoter, bytes(""));
-        amountOut =
-            _swapExactInSingleUr(key, zeroForOne, uint128(amountIn), minOut, tokenIn, tokenOut, msg.sender, bytes(""));
-    }
-
-    /// @notice TEST ONLY: same as two-arg version with `minOutIfNoQuoter = 0` (quoter + `defaultSlippageBps` when available).
-    function swapTestWethForPoolToken(uint256 amountIn) external nonReentrant returns (uint256 amountOut) {
-        return _swapTestWethForPoolToken(amountIn, 0);
-    }
-
-    /// @notice TEST ONLY: exact-in WETH → `TEST_SWAP_TOKEN_OUT` using hardcoded `PoolKey` (`ADDRESSES.md` tier).
-    /// @dev Approve **this contract** for WETH, then call. `minOutIfNoQuoter` used if quoter reverts (often `0` while debugging).
-    function swapTestWethForPoolToken(uint256 amountIn, uint128 minOutIfNoQuoter)
-        external
-        nonReentrant
-        returns (uint256 amountOut)
-    {
-        return _swapTestWethForPoolToken(amountIn, minOutIfNoQuoter);
-    }
-
-    function _swapTestWethForPoolToken(uint256 amountIn, uint128 minOutIfNoQuoter) private returns (uint256 amountOut) {
-        if (amountIn == 0 || amountIn > type(uint128).max) revert ZeroAmount();
-
-        IERC20 tokenOut = IERC20(TEST_SWAP_TOKEN_OUT);
-        PoolKey memory key = PoolKey({
-            currency0: Currency.wrap(address(WETH)),
-            currency1: Currency.wrap(TEST_SWAP_TOKEN_OUT),
-            fee: TEST_SWAP_FEE,
-            tickSpacing: TEST_SWAP_TICK_SPACING,
-            hooks: TEST_SWAP_HOOKS
+    /// @dev Single-entry registrar used by `_seedV4PoolConfigs`. Args are typed as `uint160` and call sites
+    ///      prepend a `00` to each 40-digit hex literal (making it 42 digits → not address-shaped) so we
+    ///      avoid Solidity's strict EIP-55 checksum requirement on `0x...` literals. `hookData` is
+    ///      intentionally empty for all seeded pools — new entries (or override of an existing entry's
+    ///      hookData) go through `setV4PoolConfig` (owner / configManager).
+    function _seed(uint160 asset, uint160 c0, uint160 c1, uint160 hooksAddr) private {
+        address a = address(asset);
+        v4PoolConfig[a] = V4PoolConfig({
+            key: PoolKey({
+                currency0:   Currency.wrap(address(c0)),
+                currency1:   Currency.wrap(address(c1)),
+                fee:         SEED_FEE,
+                tickSpacing: SEED_TICK_SPACING,
+                hooks:       IHooks(address(hooksAddr))
+            }),
+            hookData: ""
         });
-
-        WETH.safeTransferFrom(msg.sender, address(this), amountIn);
-
-        uint128 minOut = _minOut(key, true, uint128(amountIn), minOutIfNoQuoter, bytes(""));
-        amountOut =
-            _swapExactInSingleUr(key, true, uint128(amountIn), minOut, WETH, tokenOut, msg.sender, bytes(""));
-        emit SwapExecuted(msg.sender, msg.sender, address(WETH), amountIn, amountOut);
+        emit V4PoolConfigSet(a, v4PoolConfig[a].key, "");
     }
 
-    /// @notice TEST ONLY: same single-hop UR swap as production paths, but you supply the exact `PoolKey` + `hookData`
-    /// (from v4 SDK / subgraph / `Initialize` event). Use when the hardcoded test key does not match the live pool.
-    /// @dev Approve **this contract** for `tokenIn` (derived from `key` + `zeroForOne`), then call.
-    function swapTestExactInputSingle(
-        PoolKey calldata key,
-        bool zeroForOne,
-        uint256 amountIn,
-        uint128 minOutIfNoQuoter,
-        bytes calldata hookData
-    ) external nonReentrant returns (uint256 amountOut) {
-        if (amountIn == 0 || amountIn > type(uint128).max) revert ZeroAmount();
-        IERC20 tokenIn = IERC20(Currency.unwrap(zeroForOne ? key.currency0 : key.currency1));
-        IERC20 tokenOut = IERC20(Currency.unwrap(zeroForOne ? key.currency1 : key.currency0));
-        tokenIn.safeTransferFrom(msg.sender, address(this), amountIn);
-        PoolKey memory keyMem = key;
-        uint128 minOut = _minOut(keyMem, zeroForOne, uint128(amountIn), minOutIfNoQuoter, hookData);
-        amountOut =
-            _swapExactInSingleUr(keyMem, zeroForOne, uint128(amountIn), minOut, tokenIn, tokenOut, msg.sender, hookData);
-        emit SwapExecuted(msg.sender, msg.sender, address(tokenIn), amountIn, amountOut);
+    /// @dev Pre-registers every Float-eligible v4 pool. All seeded pools use the `0x800000` dynamic-fee flag
+    ///      and tickSpacing 200; only currencies + hook address vary. Each address literal is prefixed with
+    ///      `00` (so it's 42 hex digits, not 40) to bypass Solidity's EIP-55 checksum validation.
+    function _seedV4PoolConfigs() private {
+        // 1  SAIRI
+        _seed(0x00de61878b0b21ce395266c44d4d548d1c72a3eb07, SEED_WETH, 0x00de61878b0b21ce395266c44d4d548d1c72a3eb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 2  MiroShark
+        _seed(0x00d7bc6a05a56655fb2052f742b012d1dfd66e1ba3, SEED_WETH, 0x00d7bc6a05a56655fb2052f742b012d1dfd66e1ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 3  EDGE
+        _seed(0x0062abe92f50c518165a5c010fe59f35023197fba3, SEED_WETH, 0x0062abe92f50c518165a5c010fe59f35023197fba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 4  Litcoin (asset < WETH)
+        _seed(0x00316ffb9c875f900adcf04889e415cc86b564eba3, 0x00316ffb9c875f900adcf04889e415cc86b564eba3, SEED_WETH, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 5  LienFi (asset < WETH)
+        _seed(0x003722264ab15a1dfce5a5af89e6547f7949a8aba3, 0x003722264ab15a1dfce5a5af89e6547f7949a8aba3, SEED_WETH, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 6  ClawBank (asset < WETH)
+        _seed(0x0016332535e2c27da578bc2e82beb09ce9d3c8eb07, 0x0016332535e2c27da578bc2e82beb09ce9d3c8eb07, SEED_WETH, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 7  gitlawb
+        _seed(0x005f980dcfc4c0fa3911554cf5ab288ed0eb13dba3, SEED_WETH, 0x005f980dcfc4c0fa3911554cf5ab288ed0eb13dba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 8  Helixa Cred
+        _seed(0x00ab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3, SEED_WETH, 0x00ab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 9  CLAWNCH
+        _seed(0x00a1f72459dfa10bad200ac160ecd78c6b77a747be, SEED_WETH, 0x00a1f72459dfa10bad200ac160ecd78c6b77a747be, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 10 Moltbook
+        _seed(0x00b695559b26bb2c9703ef1935c37aeae9526bab07, SEED_WETH, 0x00b695559b26bb2c9703ef1935c37aeae9526bab07, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 11 nookplot
+        _seed(0x00b233bdffd437e60fa451f62c6c09d3804d285ba3, SEED_WETH, 0x00b233bdffd437e60fa451f62c6c09d3804d285ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 12 Hermes OS
+        _seed(0x0095ccfd2b81a9667b0cc979992632f98fc853eba3, SEED_WETH, 0x0095ccfd2b81a9667b0cc979992632f98fc853eba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 13 KellyClaude
+        _seed(0x0050d2280441372486beecdd328c1854743ebacb07, SEED_WETH, 0x0050d2280441372486beecdd328c1854743ebacb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 14 Juno Agent
+        _seed(0x004e6c9f48f73e54ee5f3ab7e2992b2d733d0d0b07, SEED_WETH, 0x004e6c9f48f73e54ee5f3ab7e2992b2d733d0d0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 16 Darksol (asset < WETH)
+        _seed(0x0000cb1fbca324d51325a7264d54072bc073c28ba3, 0x0000cb1fbca324d51325a7264d54072bc073c28ba3, SEED_WETH, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 18 Doppel
+        _seed(0x00f27b8ef47842e6445e37804896f1bc5e29381b07, SEED_WETH, 0x00f27b8ef47842e6445e37804896f1bc5e29381b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 19 FELIX
+        _seed(0x00f30bf00edd0c22db54c9274b90d2a4c21fc09b07, SEED_WETH, 0x00f30bf00edd0c22db54c9274b90d2a4c21fc09b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 20 BitVault Signal
+        _seed(0x00d88fd4a11255e51f64f78b4a7d74456325c2d8dc, SEED_WETH, 0x00d88fd4a11255e51f64f78b4a7d74456325c2d8dc, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 21 clawd.atg.eth
+        _seed(0x009f86db9fc6f7c9408e8fda3ff8ce4e78ac7a6b07, SEED_WETH, 0x009f86db9fc6f7c9408e8fda3ff8ce4e78ac7a6b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 22 Molten
+        _seed(0x0059c0d5c34c301ac0600147924d6c9be22a2f0b07, SEED_WETH, 0x0059c0d5c34c301ac0600147924d6c9be22a2f0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 23 BOTCOIN
+        _seed(0x00a601877977340862ca67f816eb079958e5bd0ba3, SEED_WETH, 0x00a601877977340862ca67f816eb079958e5bd0ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 24 Regent
+        _seed(0x006f89bca4ea5931edfcb09786267b251dee752b07, SEED_WETH, 0x006f89bca4ea5931edfcb09786267b251dee752b07, 0x00d60d6b218116cfd801e28f78d011a203d2b068cc);
+        // 25 SelfClaw
+        _seed(0x009ae5f51d81ff510bf961218f833f79d57bfbab07, SEED_WETH, 0x009ae5f51d81ff510bf961218f833f79d57bfbab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 26 machines-cash
+        _seed(0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, SEED_WETH, 0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        // 27 Cody (asset < WETH)
+        _seed(0x003977fc913db86b01a257232c568317798b903b07, 0x003977fc913db86b01a257232c568317798b903b07, SEED_WETH, 0x0034a45c6b61876d739400bd71228cbcbd4f53e8cc);
     }
 
-    /// @inheritdoc ISwapRouterV4
-    function swapToWethViaUniversalRouterV4(PoolKey calldata key, uint256 amountIn, address recipient)
-        external
-        override
-        nonReentrant
-        returns (uint256 amountOut)
-    {
-        if (amountIn == 0) revert ZeroAmount();
-        if (amountIn > type(uint128).max) revert ZeroAmount();
-        if (recipient == address(0)) revert ZeroAddress();
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Authorized-caller gating (v3 parity: only Float contracts may swap)
+    // ─────────────────────────────────────────────────────────────────────────────
 
+    /// @dev Allowlist for swap entrypoints: Strategy, Vault, Demeter, ContractManager, Owner.
+    ///      Mirrors `FloatSwapRouter._msgSender()` checks while letting Owner/Demeter call directly for ops.
+    modifier onlyAuthorized() {
+        if (!initialized) revert NotInitialized();
+        address s = _msgSender();
+        if (
+            s != strategy &&
+            s != vaultAddr &&
+            s != demeterAddr &&
+            s != address(manager) &&
+            s != owner()
+        ) revert Unauthorized();
+        _;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Owner setters
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    function setConfigManager(address newConfigManager) external onlyOwner {
+        configManager = newConfigManager;
+        emit ConfigManagerUpdated(newConfigManager);
+    }
+
+    /// @notice One-shot init: pulls Strategy / Vault / Demeter from the registry and auto-grants
+    ///         the Float ContractManager `configManager` rights for `setV4PoolConfig`.
+    /// @dev    Owner-only. Required before any swap entrypoint will accept calls (see `onlyAuthorized`).
+    function setUpContract() external onlyOwner {
+        address _strategy = manager.getAddress("FloatStrategyV4");
+        address _vault    = manager.getAddress("FloatVaultV4");
+        address _demeter  = manager.getAddress("Demeter");
+        require(_strategy != address(0), "strategy=0");
+
+        strategy    = _strategy;
+        vaultAddr   = _vault;
+        demeterAddr = _demeter;
+
+        configManager = address(manager);
+        initialized = true;
+
+        emit ContractSetUp(_msgSender());
+        emit StrategySet(_strategy);
+        emit ConfigManagerUpdated(address(manager));
+    }
+
+    /// @notice Re-pull Strategy / Vault / Demeter from the registry after a registry-side change.
+    /// @dev    Allowed for owner / demeter / manager (parity with v3 `updateAsset`).
+    function refreshAddresses() external {
+        address s = _msgSender();
+        if (s != owner() && s != demeterAddr && s != address(manager)) revert Unauthorized();
+
+        strategy    = manager.getAddress("FloatStrategyV4");
+        vaultAddr   = manager.getAddress("FloatVaultV4");
+        demeterAddr = manager.getAddress("Demeter");
+        require(strategy != address(0), "strategy=0");
+        emit AddressesRefreshed(strategy, vaultAddr, demeterAddr);
+    }
+
+    function setMaxSlippageBps(uint16 bps) external onlyOwner {
+        require(bps > 0 && bps <= 5_000, "bps oor");
+        maxSlippageBps = bps;
+        emit MaxSlippageBpsUpdated(bps);
+    }
+
+    function setStrictStrategySlippageBps(uint16 bps) external onlyOwner {
+        require(bps <= maxSlippageBps, "slippage>max");
+        strictStrategySlippageBps = bps;
+        emit StrictStrategySlippageBpsUpdated(bps);
+    }
+
+    function setMaxPriceImpactBps(uint16 bps) external onlyOwner {
+        require(bps > 0 && bps <= 5_000, "bps oor");
+        maxPriceImpactBps = bps;
+        emit MaxPriceImpactBpsUpdated(bps);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Pool registry
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IV4StrategySwapRouterStrict
+    function setV4PoolConfig(address assetAddress, PoolKey calldata key, bytes calldata hookData) external override {
+        require(_msgSender() == owner() || _msgSender() == configManager, "auth");
+        require(assetAddress != address(0), "asset=0");
         address c0 = Currency.unwrap(key.currency0);
         address c1 = Currency.unwrap(key.currency1);
-        address wethAddr = address(WETH);
-        address tokenIn;
-        if (c0 == wethAddr && c1 != wethAddr) {
-            tokenIn = c1;
-        } else if (c1 == wethAddr && c0 != wethAddr) {
-            tokenIn = c0;
-        } else {
-            revert BadPoolKey();
-        }
-        if (tokenIn == wethAddr) revert TokenIsWETH();
+        require(assetAddress == c0 || assetAddress == c1, "asset !in key");
+        v4PoolConfig[assetAddress] = V4PoolConfig({key: key, hookData: hookData});
+        emit V4PoolConfigSet(assetAddress, key, hookData);
+    }
 
-        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-
-        bool zeroForOne = tokenIn == c0;
-        uint128 minOut = _minOutFromQuoter(key, zeroForOne, uint128(amountIn), bytes(""));
-
-        PoolKey memory keyMem = key;
-        amountOut = _swapExactInSingleUr(
-            keyMem, zeroForOne, uint128(amountIn), minOut, IERC20(tokenIn), WETH, recipient, bytes("")
+    /// @inheritdoc IV4StrategySwapRouterStrict
+    function getV4PoolConfig(address assetAddress) public view override returns (PoolKey memory key, bytes memory hookData) {
+        V4PoolConfig storage cfg = v4PoolConfig[assetAddress];
+        require(
+            Currency.unwrap(cfg.key.currency0) != address(0) || Currency.unwrap(cfg.key.currency1) != address(0),
+            "no config"
         );
-        if (amountOut > 0) {
-            emit SwapExecuted(msg.sender, recipient, tokenIn, amountIn, amountOut);
-        }
+        key = cfg.key;
+        hookData = cfg.hookData;
     }
 
-    /// @dev Prefer quoter + slippage; if quoter reverts or returns 0, use `minOut = 0` so swaps can still execute (integrators should set `defaultSlippageBps` / pool liquidity carefully).
-    function _minOutFromQuoter(PoolKey calldata key, bool zeroForOne, uint128 amountIn, bytes memory hookData)
-        private
-        returns (uint128 minOut)
-    {
-        try quoterV4.quoteExactInputSingle(
-            IV4Quoter.QuoteExactSingleParams({
-                poolKey: key, zeroForOne: zeroForOne, exactAmount: amountIn, hookData: hookData
-            })
-        ) returns (uint256 quotedOut, uint256) {
-            if (quotedOut == 0) {
-                return 0;
-            }
-            minOut = uint128(Math.mulDiv(quotedOut, 10_000 - uint256(defaultSlippageBps), 10_000));
-        } catch {
-            minOut = 0;
-        }
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Asset-registry swap entrypoints (strategy)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @notice Single-hop v4 exact-in via direct `PoolManager.unlock`. Slippage enforced by `minAmountOut`.
+    /// @dev Uses widest possible price limit (`MIN_SQRT_PRICE+1` for `zeroForOne`, else `MAX_SQRT_PRICE-1`),
+    ///      same as `V4Router._swap`. `(PoolKey, hookData)` looked up from `v4PoolConfig[assetAddress]`.
+    function swapExactInputSingle(
+        address assetAddress,
+        bool zeroForOne,
+        uint128 amountIn,
+        uint128 minAmountOut
+    ) external onlyAuthorized nonReentrant returns (uint256 amountOut) {
+        (PoolKey memory key, bytes memory hookData) = getV4PoolConfig(assetAddress);
+        uint160 limit = zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+        return _swapV4Direct(key, zeroForOne, amountIn, minAmountOut, limit, hookData, _msgSender());
     }
 
-    function _minOut(
+    /// @notice Same as `swapExactInputSingle` but caller chooses an explicit `sqrtPriceLimitX96`.
+    /// @param sqrtPriceLimitX96 For `zeroForOne` must satisfy `MIN_SQRT_PRICE < limit < currentSqrtPriceX96`,
+    ///        otherwise must satisfy `currentSqrtPriceX96 < limit < MAX_SQRT_PRICE`.
+    function swapV4Direct(
+        address assetAddress,
+        bool zeroForOne,
+        uint128 amountIn,
+        uint128 minAmountOut,
+        uint160 sqrtPriceLimitX96
+    ) external onlyAuthorized nonReentrant returns (uint256 amountOut) {
+        (PoolKey memory key, bytes memory hookData) = getV4PoolConfig(assetAddress);
+        return _swapV4Direct(key, zeroForOne, amountIn, minAmountOut, sqrtPriceLimitX96, hookData, _msgSender());
+    }
+
+    /// @notice v4 swap with quoter-derived slippage (`strictStrategySlippageBps`). NOT MEV-resistant on its own.
+    function swapExactInputSingleQuoter(
+        address assetAddress,
+        bool zeroForOne,
+        uint128 amountIn
+    ) external onlyAuthorized nonReentrant returns (uint256 amountOut) {
+        (PoolKey memory key, bytes memory hookData) = getV4PoolConfig(assetAddress);
+        uint128 minOut = _minOutFromV4Quoter(key, zeroForOne, amountIn, hookData, strictStrategySlippageBps);
+        uint160 limit = zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+        return _swapV4Direct(key, zeroForOne, amountIn, minOut, limit, hookData, _msgSender());
+    }
+
+    /// @inheritdoc IV4StrategySwapRouterStrict
+    /// @dev Quoter-derived `minOut` (`strictStrategySlippageBps`) PLUS post-swap `sqrtPriceX96` impact bound (`maxPriceImpactBps`).
+    ///      Best on-chain MEV mitigation without a hook oracle. Default for automated rebalancing.
+    function swapExactInputSingleStrict(
+        address assetAddress,
+        bool zeroForOne,
+        uint128 amountIn
+    ) external override onlyAuthorized nonReentrant returns (uint256 amountOut) {
+        (PoolKey memory key, bytes memory hookData) = getV4PoolConfig(assetAddress);
+
+        PoolId poolId = PoolIdLibrary.toId(key);
+        (uint160 sqrtBefore, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+        require(sqrtBefore != 0, "pool !init");
+
+        uint128 minOut = _minOutFromV4Quoter(key, zeroForOne, amountIn, hookData, strictStrategySlippageBps);
+
+        amountOut = _swapV4Direct(
+            key,
+            zeroForOne,
+            amountIn,
+            minOut,
+            zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1,
+            hookData,
+            _msgSender()
+        );
+
+        (uint160 sqrtAfter, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+        _requirePriceImpactBound(sqrtBefore, sqrtAfter, zeroForOne);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Internals
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @dev Pulls `amountIn` of input token from `_msgSender()`, calls `unlock`, settles in the callback,
+    ///      then asserts `amountOut >= minAmountOut` from `recipient`'s balance delta.
+    function _swapV4Direct(
         PoolKey memory key,
         bool zeroForOne,
         uint128 amountIn,
-        uint128 minOutIfNoQuoter,
-        bytes memory hookData
+        uint128 minAmountOut,
+        uint160 sqrtPriceLimitX96,
+        bytes memory hookData,
+        address recipient
+    ) private returns (uint256 amountOut) {
+        if (amountIn == 0) revert ZeroAmount();
+
+        address tokenIn = Currency.unwrap(zeroForOne ? key.currency0 : key.currency1);
+        address tokenOut = Currency.unwrap(zeroForOne ? key.currency1 : key.currency0);
+
+        IERC20(tokenIn).safeTransferFrom(_msgSender(), address(this), amountIn);
+
+        bytes memory data = abi.encode(
+            recipient,
+            key,
+            zeroForOne,
+            int256(uint256(amountIn)),
+            sqrtPriceLimitX96,
+            hookData
+        );
+
+        uint256 balBefore = IERC20(tokenOut).balanceOf(recipient);
+        poolManager.unlock(data);
+        amountOut = IERC20(tokenOut).balanceOf(recipient) - balBefore;
+
+        require(amountOut >= minAmountOut, "Insufficient output amount");
+        emit SwapExecuted(_msgSender(), recipient, tokenIn, tokenOut, amountIn, amountOut);
+    }
+
+    /// @dev `quoteExactInputSingle` is `external` (not view) — wrap in try/catch so a hook that gates the quoter
+    ///      surfaces a clear `"quoter failed"` instead of an opaque revert. Reverts on `quoted == 0`.
+    function _minOutFromV4Quoter(
+        PoolKey memory key,
+        bool zeroForOne,
+        uint128 amountIn,
+        bytes memory hookData,
+        uint16 slippageBps
     ) internal returns (uint128 minOut) {
-        address q = address(quoterV4);
-        if (q == address(0)) {
-            return minOutIfNoQuoter;
-        }
-        try quoterV4.quoteExactInputSingle(
+        try v4Quoter.quoteExactInputSingle(
             IV4Quoter.QuoteExactSingleParams({
-                poolKey: key, zeroForOne: zeroForOne, exactAmount: amountIn, hookData: hookData
-            })
-        ) returns (uint256 quotedOut, uint256) {
-            if (quotedOut == 0) minOut = minOutIfNoQuoter;
-            else minOut = uint128(Math.mulDiv(quotedOut, 10_000 - uint256(defaultSlippageBps), 10_000));
-        } catch {
-            minOut = minOutIfNoQuoter;
-        }
-    }
-
-    /// @dev Pull `amountIn` of `tokenIn` to this contract before calling.
-    function _swapExactInSingleUr(
-        PoolKey memory key,
-        bool zeroForOne,
-        uint128 amountIn,
-        uint128 minOut,
-        IERC20 tokenIn,
-        IERC20 tokenOut,
-        address outputTo,
-        bytes memory hookData
-    ) internal returns (uint256 amountOut) {
-        address ur = address(universalRouter);
-        _ensureAllowance(tokenIn, address(permit2), amountIn);
-        permit2.approve(address(tokenIn), ur, uint160(amountIn), uint48(block.timestamp + 300));
-
-        bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = _encodeV4SwapPayload(key, zeroForOne, amountIn, minOut, hookData);
-
-        uint256 balBefore = tokenOut.balanceOf(address(this));
-        IUniversalRouter(ur).execute(commands, inputs, block.timestamp + 300);
-        amountOut = tokenOut.balanceOf(address(this)) - balBefore;
-        if (amountOut > 0 && outputTo != address(this)) {
-            tokenOut.safeTransfer(outputTo, amountOut);
-        }
-    }
-
-    function _encodeV4SwapPayload(
-        PoolKey memory key,
-        bool zeroForOne,
-        uint128 amountIn,
-        uint128 minOut,
-        bytes memory hookData
-    ) internal pure returns (bytes memory) {
-        bytes memory actions = _v4SwapActionBytes();
-        bytes[] memory params = _v4SwapParamChunks(key, zeroForOne, amountIn, minOut, hookData);
-        return abi.encode(actions, params);
-    }
-
-    /// @dev Match Uniswap v4 swap routing guide: `abi.encode(IV4Router.ExactInputSingleParams{...})`
-    /// (https://docs.uniswap.org/contracts/v4/guides/swap-routing). `minHopPriceX36` is required by
-    /// `IV4Router` / `CalldataDecoder.decodeSwapExactInSingleParams` even when the docs snippet omits it.
-    function _v4SwapParamChunks(
-        PoolKey memory key,
-        bool zeroForOne,
-        uint128 amountIn,
-        uint128 minOut,
-        bytes memory hookData
-    ) private pure returns (bytes[] memory params) {
-        params = new bytes[](3);
-        params[0] = abi.encode(
-            IV4Router.ExactInputSingleParams({
                 poolKey: key,
                 zeroForOne: zeroForOne,
-                amountIn: amountIn,
-                amountOutMinimum: minOut,
-                minHopPriceX36: 0,
+                exactAmount: amountIn,
                 hookData: hookData
             })
-        );
+        ) returns (uint256 quoted, uint256) {
+            require(quoted > 0, "quoter=0");
+            minOut = uint128(Math.mulDiv(quoted, 10_000 - uint256(slippageBps), 10_000));
+        } catch {
+            revert("quoter failed");
+        }
+    }
+
+    /// @dev `|sqrtBefore - sqrtAfter| / sqrtBefore` in bps, must be ≤ `maxPriceImpactBps`. Direction-aware: on
+    ///      `zeroForOne` price decreases (`sqrtBefore > sqrtAfter`); otherwise it increases. A move in the
+    ///      "wrong" direction has zero diff and silently passes (would only happen with hook-side adjustments).
+    function _requirePriceImpactBound(uint160 sqrtBefore, uint160 sqrtAfter, bool zeroForOne) internal view {
+        uint256 diff = zeroForOne
+            ? (sqrtBefore > sqrtAfter ? uint256(sqrtBefore - sqrtAfter) : 0)
+            : (sqrtAfter > sqrtBefore ? uint256(sqrtAfter - sqrtBefore) : 0);
+        uint256 bps = (diff * 10_000) / uint256(sqrtBefore);
+        require(bps <= uint256(maxPriceImpactBps), "price impact");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // PoolManager unlock callback
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IUnlockCallback
+    /// @dev Decodes `(recipient, key, zeroForOne, amountIn, sqrtPriceLimitX96, hookData)`, calls `poolManager.swap`,
+    ///      settles input via `sync`+`transfer`+`settle`, and `take`s output to `recipient`. Only callable by `poolManager`.
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        require(msg.sender == address(poolManager), "only PM");
+
+        (
+            address recipient,
+            PoolKey memory key,
+            bool zeroForOne,
+            int256 amountIn,
+            uint160 sqrtPriceLimitX96,
+            bytes memory hookData
+        ) = abi.decode(data, (address, PoolKey, bool, int256, uint160, bytes));
+
         Currency inC = zeroForOne ? key.currency0 : key.currency1;
         Currency outC = zeroForOne ? key.currency1 : key.currency0;
-        params[1] = abi.encode(inC, uint256(amountIn));
-        params[2] = abi.encode(outC, uint256(minOut));
-    }
 
-    function _v4SwapActionBytes() private pure returns (bytes memory) {
-        return abi.encodePacked(
-            uint8(Actions.SWAP_EXACT_IN_SINGLE), uint8(Actions.SETTLE_ALL), uint8(Actions.TAKE_ALL)
+        BalanceDelta delta = poolManager.swap(
+            key,
+            SwapParams({zeroForOne: zeroForOne, amountSpecified: -amountIn, sqrtPriceLimitX96: sqrtPriceLimitX96}),
+            hookData
         );
-    }
 
-    function _ensureAllowance(IERC20 token, address spender, uint256 amount) internal {
-        if (token.allowance(address(this), spender) < amount) {
-            SafeERC20.forceApprove(token, spender, type(uint256).max);
-        }
+        int128 deltaIn = zeroForOne ? delta.amount0() : delta.amount1();
+        int128 deltaOut = zeroForOne ? delta.amount1() : delta.amount0();
+        require(deltaIn <= 0, "delta in");
+        require(deltaOut >= 0, "delta out");
+
+        uint256 owed = uint256(uint128(-deltaIn));
+        uint256 received = uint256(uint128(deltaOut));
+
+        poolManager.sync(inC);
+        IERC20(Currency.unwrap(inC)).safeTransfer(address(poolManager), owed);
+        poolManager.settle();
+
+        poolManager.take(outC, recipient, received);
+
+        return "";
     }
 }

@@ -25,7 +25,7 @@ import "../interfaces/IFloatStrategy.sol";'''
 new_imports = '''import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
 import "../StrategyManager.sol";
-import "./interfaces/IFloatV4StrategySwapRouter.sol";
+import {IV4StrategySwapRouterStrict} from "./interfaces/IFloatV4StrategySwapRouter.sol";
 import "../../interfaces/IOutOfRangeStrategy.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -64,7 +64,7 @@ p = p.replace(
     ISwapRouter private swapRouter;""",
     """IPoolManagerV4 private poolManager;
     LiquidityLibraryV4.PoolKey public poolKey;
-    IFloatV4StrategySwapRouter private swapRouterV4;""",
+    IV4StrategySwapRouterStrict private swapRouterV4;""",
 )
 
 import re
@@ -129,7 +129,7 @@ new_setup = """    function setUpContract(
         vaultAddr = _vaultAddr;
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
-        swapRouterV4 = IFloatV4StrategySwapRouter(_swapRouterAddr);
+        swapRouterV4 = IV4StrategySwapRouterStrict(_swapRouterAddr);
         ASSET = IERC20(assetAddr);
         address a = address(ASSET);
         address w = address(WETH);
@@ -168,7 +168,8 @@ new_collect = """    function _collectAllFees(bool trackFees) internal returns (
         LiquidityLibraryV4.DecreaseContext memory dctx = LiquidityLibraryV4.DecreaseContext({
             posm: nonfungiblePositionManager,
             poolManager: poolManager,
-            poolKey: poolKey
+            poolKey: poolKey,
+            hookData: _poolHookData()
         });
         (amount0, amount1) = LiquidityLibraryV4.collectAllFees(liqPos, dctx, address(this));
         valueInWeth = 0;
@@ -191,7 +192,8 @@ new_mint = """        LiquidityLibraryV4.MintContext memory ctx = LiquidityLibra
             poolKey: poolKey,
             m: mValue,
             slippageBps: slippageBps,
-            dust: 1_000_000_000_000
+            dust: 1_000_000_000_000,
+            hookData: _poolHookData()
         });
         (uint256 newId, uint128 liq) = liqPos.mintNewPosition(ctx, assetBal, wethBal);
         if (newId != 0 && liq > 0) {
@@ -208,7 +210,8 @@ new_inc = """        LiquidityLibraryV4.IncreaseContext memory ctx = LiquidityLi
             poolManager: poolManager,
             poolKey: poolKey,
             slippageBps: slippageBps,
-            dust: 1_000_000_000_000
+            dust: 1_000_000_000_000,
+            hookData: _poolHookData()
         });"""
 
 p = p.replace(old_inc, new_inc)
@@ -218,7 +221,8 @@ old_dec = """        LiquidityLibrary.DecreaseContext memory ctx = LiquidityLibr
 new_dec = """        LiquidityLibraryV4.DecreaseContext memory ctx = LiquidityLibraryV4.DecreaseContext({
             posm: nonfungiblePositionManager,
             poolManager: poolManager,
-            poolKey: poolKey
+            poolKey: poolKey,
+            hookData: _poolHookData()
         });"""
 
 p = p.replace(old_dec, new_dec)
@@ -234,7 +238,7 @@ p = p.replace("address p1 = pool.token1();", "address p1 = poolKey.currency1;")
 
 p = p.replace(
     "swapRouter.swapExactInputFromStrategyStrictQuote(address(tokenIn), address(tokenOut), amount, address(this));",
-    "swapRouterV4.swapExactInputSingleFromStrategy(_toCorePoolKey(), address(tokenIn) == poolKey.currency0, amount, 0);",
+    "swapRouterV4.swapExactInputSingleStrict(address(ASSET), address(tokenIn) == poolKey.currency0, uint128(amount));",
 )
 
 p = p.replace(
