@@ -105,7 +105,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         WETH = IERC20(weth_);
         positionManager = IPositionManagerV4(positionManager_);
         poolManager = IPoolManagerV4(poolManager_);
-        deviationBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2000, maxTokenCapBps: 9800});
+        deviationBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2400, maxTokenCapBps: 9800});
         offensiveBands = StrategyManagerV4.DeviationBands({lowerBps: 200, upperBps: 2400, maxTokenCapBps: 9800});
 
         managerAddress = _managerAddr;
@@ -165,33 +165,38 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         if (userShares == 0) revert ZeroValue();
         if (totalSupply_ == 0) revert ZeroValue();
         if (receiver == address(0)) revert ZeroAddress();
-        uint256 idleAssetBefore = ASSET.balanceOf(address(this));
-        uint256 idleWethBefore  = WETH.balanceOf(address(this));
-        if (liqPos.positionId != 0) {
-            uint256 poolVal = poolValue();
-            if (poolVal > 0) {
-                uint256 amountFromPool = Math.mulDiv(poolVal, userShares, totalSupply_);
-                if (amountFromPool > 0) {
-                    _decreaseLiquidity(amountFromPool);
+        // Block-scoped locals so the compiler can release stack slots before the final transfers
+        // (otherwise `_swap`'s inlined `_liquidityDust()` lookup pushes us past stack-depth 16).
+        uint256 totalUserAsset;
+        uint256 totalUserWeth;
+        {
+            uint256 idleAssetBefore = ASSET.balanceOf(address(this));
+            uint256 idleWethBefore  = WETH.balanceOf(address(this));
+            if (liqPos.positionId != 0) {
+                uint256 poolVal = poolValue();
+                if (poolVal > 0) {
+                    uint256 amountFromPool = Math.mulDiv(poolVal, userShares, totalSupply_);
+                    if (amountFromPool > 0) {
+                        _decreaseLiquidity(amountFromPool);
+                    }
                 }
             }
+            uint256 assetAfter = ASSET.balanceOf(address(this));
+            uint256 wethAfter  = WETH.balanceOf(address(this));
+            uint256 assetFromPool = assetAfter > idleAssetBefore ? assetAfter - idleAssetBefore : 0;
+            uint256 wethFromPool  = wethAfter  > idleWethBefore  ? wethAfter  - idleWethBefore  : 0;
+            totalUserAsset = assetFromPool + Math.mulDiv(idleAssetBefore, userShares, totalSupply_);
+            totalUserWeth  = wethFromPool  + Math.mulDiv(idleWethBefore,  userShares, totalSupply_);
         }
-        uint256 assetAfter = ASSET.balanceOf(address(this));
-        uint256 wethAfter  = WETH.balanceOf(address(this));
-        uint256 assetFromPool = assetAfter > idleAssetBefore ? assetAfter - idleAssetBefore : 0;
-        uint256 wethFromPool = wethAfter > idleWethBefore ? wethAfter - idleWethBefore : 0;
-        uint256 userIdleAsset = Math.mulDiv(idleAssetBefore, userShares, totalSupply_);
-        uint256 userIdleWeth  = Math.mulDiv(idleWethBefore,  userShares, totalSupply_);
-        uint256 totalUserAsset = assetFromPool + userIdleAsset;
-        uint256 totalUserWeth  = wethFromPool  + userIdleWeth;
         uint256 assetFee = Math.mulDiv(totalUserAsset, withdrawalFeeBps, DIVISOR);
         uint256 wethFee  = Math.mulDiv(totalUserWeth,  withdrawalFeeBps, DIVISOR);
         totalUserAsset -= assetFee;
         totalUserWeth -= wethFee;
-        uint256 wethBeforeSwap = WETH.balanceOf(address(this));
-        _swap(ASSET, totalUserAsset);
-        uint256 wethFromAsset = WETH.balanceOf(address(this)) - wethBeforeSwap;
-        totalUserWeth += wethFromAsset;
+        {
+            uint256 wethBeforeSwap = WETH.balanceOf(address(this));
+            _swap(ASSET, totalUserAsset);
+            totalUserWeth += WETH.balanceOf(address(this)) - wethBeforeSwap;
+        }
         if (assetFee > 0) {
             ASSET.safeTransfer(owner(), assetFee);
         }
@@ -594,7 +599,10 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         if (amount == 0) return;
         uint256 bal = tokenIn.balanceOf(address(this));
         if (amount > bal) amount = bal;
-        if (amount == 0) return;
+        // Forfeit dust: v4 strict path enforces minOut > 0, and the quoter rounds tiny swaps
+        // (e.g. a few wei of an 18-dec token) to 0 output via tick/fee math. Without this guard,
+        // a stray wei left in the OLD asset would block every `changeAsset` with `quoter=0`.
+        if (amount <= _liquidityDust()) return;
         require(
             address(tokenIn) == poolKey.currency0 || address(tokenIn) == poolKey.currency1,
             "!"
@@ -729,4 +737,14 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
     }
+  function rescueToken(address _token, address _recipient) external onlyOwner {
+
+    require(_token != address(0), "Invalid token address");
+    require(_recipient != address(0), "Invalid recipient address");
+    
+    uint256 amount = IERC20(_token).balanceOf(address(this));
+    require(amount > 0, "No tokens to rescue");
+    
+    IERC20(_token).safeTransfer(_recipient, amount);
+  }
 }

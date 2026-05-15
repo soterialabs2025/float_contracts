@@ -666,4 +666,13 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
     }
+    function rescueToken(address _token) external onlyOwner {
+
+    require(_token != address(0), "Invalid token address");
+    
+    uint256 amount = IERC20(_token).balanceOf(address(this));
+    require(amount > 0, "No tokens to rescue");
+    
+    IERC20(_token).safeTransfer(owner(), amount);
+  }
 }
