@@ -32,6 +32,7 @@ remappings = [
 # Uniswap v4 + Universal Router (see https://docs.uniswap.org/contracts/v4/guides/swap-routing).
 [profile.v4]
 src = "contracts"
+out = "out"
 test = "test"
 libs = ["lib", "node_modules"]
 solc_version = "0.8.26"
