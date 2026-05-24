@@ -32,6 +32,9 @@ remappings = [
 # Uniswap v4 + Universal Router (see https://docs.uniswap.org/contracts/v4/guides/swap-routing).
 [profile.v4]
 src = "contracts"
+# All v4 builds (JSON + ABI) land under artifacts/, not out/.
+out = "artifacts"
+extra_output_files = ["abi"]
 test = "test"
 libs = ["lib", "node_modules"]
 solc_version = "0.8.26"

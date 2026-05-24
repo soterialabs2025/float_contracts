@@ -64,6 +64,20 @@ abstract contract LiquidV4SwapCore is IUnlockCallback {
         _seedV4PoolConfigs();
     }
 
+    function _wethAddress() internal pure returns (address) {
+        return address(SEED_WETH);
+    }
+
+    /// @dev Triton/Demeter preflight `getV4PoolConfig(WETH)` for `changeAsset(WETH)`; mirrors the ASSET/WETH pool.
+    function _mirrorWethPoolConfig(PoolKey memory key, bytes memory hookData) internal {
+        address w = _wethAddress();
+        address c0 = Currency.unwrap(key.currency0);
+        address c1 = Currency.unwrap(key.currency1);
+        if (c0 != w && c1 != w) return;
+        v4PoolConfig[w] = V4PoolConfig({key: key, hookData: hookData});
+        emit V4PoolConfigSet(w, key, hookData);
+    }
+
     function _setV4PoolConfig(address assetAddress, PoolKey memory key, bytes memory hookData) internal {
         require(assetAddress != address(0), "asset=0");
         address c0 = Currency.unwrap(key.currency0);
@@ -71,6 +85,9 @@ abstract contract LiquidV4SwapCore is IUnlockCallback {
         require(assetAddress == c0 || assetAddress == c1, "asset !in key");
         v4PoolConfig[assetAddress] = V4PoolConfig({key: key, hookData: hookData});
         emit V4PoolConfigSet(assetAddress, key, hookData);
+        if (assetAddress != _wethAddress()) {
+            _mirrorWethPoolConfig(key, hookData);
+        }
     }
 
     function _getV4PoolConfig(address assetAddress)
@@ -99,6 +116,7 @@ abstract contract LiquidV4SwapCore is IUnlockCallback {
             hookData: ""
         });
         emit V4PoolConfigSet(a, v4PoolConfig[a].key, "");
+        _mirrorWethPoolConfig(v4PoolConfig[a].key, "");
     }
 
     /// @dev Pre-registers Base Clanker / Doppler-style v4 hooked pools (parity with `FloatSwapRouterV4`).

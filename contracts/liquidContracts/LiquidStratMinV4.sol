@@ -55,7 +55,7 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
 
     modifier onlyAuthorized() {
         address s = _msgSender();
-        if (s != vaultAddr && s != demeterAddr && s != owner()) {
+        if (s != vaultAddr && s != tritonAddr && s != owner()) {
             revert Unauthorized();
         }
         _;
@@ -66,31 +66,22 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
         emit StrategyEvent(0, uint256(uint160(_msgSender())), 0, 0);
     }
 
-    /// @notice Wire vault/Triton and load the ASSET/WETH v4 pool from this contract's seeded `v4PoolConfig`.
-    function setUpContract(
-        address _assetAddr,
-        address _poolManagerAddr,
-        address _vaultAddr,
-        address _tritonAddr
-    ) external onlyOwner {
-        if (_assetAddr == address(0) || _poolManagerAddr == address(0)) {
+    /// @notice One-time setup: ASSET, vault/Triton auth, and ASSET/WETH pool from seeded `v4PoolConfig`.
+    /// @dev    Overrides `LiquidSwapRouterV4.setUpContract` — first arg is the ASSET token, not an external strategy.
+    ///         Pool manager is the immutable v4 `poolManager` on this contract (no separate address).
+    function setUpContract(address _assetAddr, address _vaultAddr, address _tritonAddr) external override onlyOwner {
+        if (_assetAddr == address(0) || _vaultAddr == address(0)) {
             revert ZeroAddress();
         }
-        require(address(poolManager) == _poolManagerAddr, "poolManager");
         assetAddr = _assetAddr;
-        poolManagerV4 = IPoolManagerV4(_poolManagerAddr);
+        poolManagerV4 = IPoolManagerV4(address(poolManager));
         ASSET = IERC20(_assetAddr);
 
-        strategy = address(this);
-        vaultAddr = _vaultAddr;
-        demeterAddr = _tritonAddr;
-        initialized = true;
+        _wireRouter(address(this), _vaultAddr, _tritonAddr);
 
         (LiquidityLibraryV4.PoolKey memory key, bytes memory hookData) = _poolKeyFromConfig(_assetAddr);
         _applyPoolKey(_assetAddr, key, hookData);
         contractSetUp = true;
-        emit ContractSetUp(_msgSender());
-        emit StrategySet(address(this));
     }
 
     /// @notice Owner helper when supplying `LiquidityLibraryV4.PoolKey` (same layout as v4 `PoolKey` addresses).
@@ -103,6 +94,17 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
         if (assetAddress == assetAddr) {
             _validateAndStorePoolKey(assetAddress, key);
         }
+    }
+
+    /// @notice Copy the active asset's v4 pool config to WETH (one-time fix for deployed strategies).
+    /// @dev    Triton/Demeter require `getV4PoolConfig(WETH)` before `changeAsset(WETH)`; new configs mirror automatically.
+    function ensureWethPoolConfig() external onlyOwner {
+        address w = address(WETH);
+        address a = assetAddr;
+        if (a == address(0)) revert ZeroAddress();
+        if (a == w) return;
+        (PoolKey memory key, bytes memory hookData) = _getV4PoolConfig(a);
+        _setV4PoolConfig(w, key, hookData);
     }
 
     function setMode(uint8 m) external onlyOwner {
@@ -149,7 +151,8 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
         if (totalSupply_ == 0) revert ZeroValue();
         if (receiver == address(0)) revert ZeroAddress();
 
-        uint256 idleAssetBefore = ASSET.balanceOf(address(this));
+        bool wethOnly = address(ASSET) == address(WETH);
+        uint256 idleAssetBefore = wethOnly ? 0 : ASSET.balanceOf(address(this));
         uint256 idleWethBefore = WETH.balanceOf(address(this));
 
         uint256 userIdleAsset = Math.mulDiv(idleAssetBefore, userShares, totalSupply_);
@@ -163,9 +166,11 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
         totalUserAsset -= assetFee;
         totalUserWeth -= wethFee;
 
-        uint256 wethBeforeSwap = WETH.balanceOf(address(this));
-        _swap(ASSET, totalUserAsset);
-        totalUserWeth += WETH.balanceOf(address(this)) - wethBeforeSwap;
+        if (!wethOnly && totalUserAsset > 0) {
+            uint256 wethBeforeSwap = WETH.balanceOf(address(this));
+            _swap(ASSET, totalUserAsset);
+            totalUserWeth += WETH.balanceOf(address(this)) - wethBeforeSwap;
+        }
 
         if (assetFee > 0) {
             ASSET.safeTransfer(owner(), assetFee);
@@ -197,6 +202,9 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
     }
 
     function _totalValueInWeth() internal view returns (uint256) {
+        if (address(ASSET) == address(WETH)) {
+            return WETH.balanceOf(address(this));
+        }
         uint256 assetBal = ASSET.balanceOf(address(this));
         uint256 wethBal = WETH.balanceOf(address(this));
         uint256 p = _spotPrice1e18();
@@ -231,10 +239,19 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
 
         // Exit to WETH only: sell current ASSET, DEFENSIVE (WETH deposits still accepted, held idle).
         if (_newAssetAddr == w) {
-            uint256 oldAssetBal = ASSET.balanceOf(address(this));
-            if (oldAssetBal > 0) {
-                _swap(ASSET, oldAssetBal);
+            address a = assetAddr;
+            if (a != address(0) && a != w) {
+                (PoolKey memory exitKey, bytes memory exitHookData) = _getV4PoolConfig(a);
+                _mirrorWethPoolConfig(exitKey, exitHookData);
             }
+            if (address(ASSET) != w) {
+                uint256 oldAssetBal = ASSET.balanceOf(address(this));
+                if (oldAssetBal > 0) {
+                    _swap(ASSET, oldAssetBal);
+                }
+            }
+            ASSET = WETH;
+            assetAddr = w;
             _applyMode(Mode.DEFENSIVE);
             emit StrategyEvent(10, 0, 0, 0);
             return;
@@ -243,7 +260,7 @@ contract LiquidStratMinV4 is ILiquidStrategyV4, LiquidSwapRouterV4 {
         (LiquidityLibraryV4.PoolKey memory key, bytes memory hookData) = _poolKeyFromConfig(_newAssetAddr);
 
         uint256 assetBal = ASSET.balanceOf(address(this));
-        if (assetBal > 0) {
+        if (assetBal > 0 && address(ASSET) != address(WETH)) {
             _swap(ASSET, assetBal);
         }
 

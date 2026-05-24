@@ -13,7 +13,7 @@ import "./interfaces/ILiquidV4SwapRouter.sol";
 contract LiquidSwapRouterV4 is ILiquidV4SwapRouter, LiquidV4SwapCore, Ownable, ReentrancyGuard {
     address public strategy;
     address public vaultAddr;
-    address public demeterAddr;
+    address public tritonAddr;
     bool public initialized;
 
     error RouterUnauthorized();
@@ -25,21 +25,32 @@ contract LiquidSwapRouterV4 is ILiquidV4SwapRouter, LiquidV4SwapCore, Ownable, R
     modifier onlyRouterCaller() {
         if (!initialized) revert RouterNotInitialized();
         address s = _msgSender();
-        if (s != strategy && s != vaultAddr && s != demeterAddr && s != owner()) revert RouterUnauthorized();
+        if (s != strategy && s != vaultAddr && s != tritonAddr && s != owner()) revert RouterUnauthorized();
         _;
     }
 
     constructor() Ownable(_msgSender()) {}
 
-    /// @notice Wire authorized callers (strategy / vault / demeter).
-    function setUpContract(address _strategy, address _vault, address _demeter) external onlyOwner {
+    /// @dev Shared vault/Triton/strategy wiring for `setUpContract` / `setUpRouter`.
+    function _wireRouter(address _strategy, address _vault, address _triton) internal {
         require(_strategy != address(0), "strategy=0");
+        require(_vault != address(0), "vault=0");
         strategy = _strategy;
         vaultAddr = _vault;
-        demeterAddr = _demeter;
+        tritonAddr = _triton;
         initialized = true;
         emit ContractSetUp(_msgSender());
         emit StrategySet(_strategy);
+    }
+
+    /// @notice Wire vault/Triton for a standalone router (strategy is an external contract).
+    function setUpRouter(address _strategy, address _vault, address _triton) external onlyOwner {
+        _wireRouter(_strategy, _vault, _triton);
+    }
+
+    /// @notice Alias of `setUpRouter` for standalone `LiquidSwapRouterV4` deployments.
+    function setUpContract(address _strategy, address _vault, address _triton) external onlyOwner {
+        _wireRouter(_strategy, _vault, _triton);
     }
 
     function setV4PoolConfig(address assetAddress, PoolKey calldata key, bytes calldata hookData)

@@ -1,1 +1,4 @@
 $env:FOUNDRY_PROFILE = 'v4'
+# Builds write to artifacts/ (see foundry.toml [profile.v4] out = "artifacts").
+# Flat ABIs:  python scripts/export-abi.py
+# Or one shot: .\scripts\forge-build-v4.ps1
