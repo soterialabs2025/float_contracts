@@ -139,6 +139,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     }
     function deposit(uint256 amount) external override onlyAuthorized  nonReentrant {
         if (amount == 0) revert ZeroValue();
+        // STABLE: accept WETH from vault but do not mint; call `changeAsset(newToken)` to deploy LP.
         if (stratMode == Mode.STABLE) {
             return;
         }
@@ -717,7 +718,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
                 uint256 oldAssetBal = ASSET.balanceOf(address(this));
                 if (oldAssetBal > 0) _swap(ASSET, oldAssetBal);
             }
-            ASSET = WETH;
+            // Keep ASSET as the prior token so `poolKey` / router config stay valid; holdings are WETH-only.
             stratMode = Mode.STABLE;
             defensiveEnteredAt = block.timestamp;
             baselineTick = 0;
@@ -738,7 +739,9 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             liqPos.positionId = 0;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal > 0) _swap(ASSET, assetBal);
+        if (assetBal > 0 && address(ASSET) != w) {
+            _swap(ASSET, assetBal);
+        }
         ASSET = IERC20(_newAssetAddr);
         _setPoolKey(key);
         _giveAllowances();
