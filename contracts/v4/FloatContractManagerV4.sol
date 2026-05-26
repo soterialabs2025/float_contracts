@@ -13,7 +13,8 @@ import "./V4Deployments8453.sol";
  * @author TB_Contracts Team (v4 stack)
  * @notice Central registry for v4 protocol contract addresses — same role as `FloatContractManager` for v3.
  * @dev Single source of truth for names → addresses (`FloatVaultV4`, `FloatStrategyV4`, `FloatSwapRouterV4`, …).
- *      `changeStrategyAsset(asset)` is the **single** entry point for ASSET rotation. PoolKeys live in
+ *      `changeStrategyAsset(asset)` rotates ASSET; `exitStrategyToStable()` exits to WETH / mode STABLE.
+ *      PoolKeys live in
  *      `FloatSwapRouterV4.v4PoolConfig` (seeded at deploy via `_seedV4PoolConfigs`, extended via
  *      `setV4PoolConfig`). The manager pulls the key from the router, validates ASSET/WETH layout, calls
  *      `IFloatStrategyV4.changeAsset(asset, key)`, then refreshes the vault's local asset reference via
@@ -129,6 +130,23 @@ contract FloatContractManagerV4 is Ownable {
         if (vaultAddr != address(0)) {
             (bool ok2, bytes memory ret2) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));
             if (!ok2) _bubbleRevert(ret2, "Vault updateAsset failed");
+        }
+    }
+
+    /// @notice Flatten LP, swap to WETH, set strategy `STABLE` (mode 4). Registry `"ASSET"` becomes WETH.
+    /// @dev    `key` is unused by the strategy on the WETH exit path; pass an empty struct.
+    function exitStrategyToStable() external onlyOwnerOrDemeter {
+        address vaultAddr = addresses["FloatVaultV4"];
+        address strategyAddr = addresses["FloatStrategyV4"];
+        require(strategyAddr != address(0), "Strategy address not set");
+
+        LiquidityLibraryV4.PoolKey memory key;
+        IFloatStrategyV4(strategyAddr).changeAsset(baseWETH, key);
+
+        addresses["ASSET"] = baseWETH;
+        if (vaultAddr != address(0)) {
+            (bool ok, bytes memory ret) = vaultAddr.call(abi.encodeWithSignature("updateAsset()"));
+            if (!ok) _bubbleRevert(ret, "Vault updateAsset failed");
         }
     }
 

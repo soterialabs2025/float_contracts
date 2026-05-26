@@ -198,6 +198,13 @@ contract FloatSwapRouterV4 is
         _seed(0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, SEED_WETH, 0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 27 Cody (asset < WETH)
         _seed(0x003977fc913db86b01a257232c568317798b903b07, 0x003977fc913db86b01a257232c568317798b903b07, SEED_WETH, 0x0034a45c6b61876d739400bd71228cbcbd4f53e8cc);
+    
+       // 27 GitBank (asset < WETH)
+        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, SEED_WETH, 0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+           // 27 Supergemma4 (asset < WETH)
+        _seed(0x00572c4fa77623652411574c51b5ddb7e1b750aba3, 0x00572c4fa77623652411574c51b5ddb7e1b750aba3, SEED_WETH, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+           // 27 Cody (asset < WETH)
+        _seed(0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, SEED_WETH, 0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

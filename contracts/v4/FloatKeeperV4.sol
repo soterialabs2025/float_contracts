@@ -10,6 +10,10 @@ import "./interfaces/IFloatVaultV4.sol";
 /// @title FloatKeeperV4
 /// @notice Same keeper/orchestration as `FloatKeeper`, wired to `FloatVaultV4` via manager key `FloatVaultV4`.
 contract FloatKeeperV4 is Ownable, ReentrancyGuard {
+    /// @dev Must match `FloatStrategyV4.Mode`: 3 = NEUTRAL, 4 = STABLE (WETH-only idle).
+    uint8 private constant MODE_NEUTRAL = 3;
+    uint8 private constant MODE_STABLE = 4;
+
     struct WatchedStrategy {
         address stratAddr;
         uint32 minInterval;
@@ -98,6 +102,14 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
 
         IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
 
+        uint8 strategyMode = strat.mode();
+        if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
+            emit UpkeepPerformed(
+                id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
+            );
+            return;
+        }
+
         bool keeperCheck = strat.keeperCheck();
 
         if (!keeperCheck) {
@@ -144,6 +156,14 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
         }
 
         IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
+
+        uint8 strategyMode = strat.mode();
+        if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
+            emit UpkeepPerformed(
+                id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
+            );
+            return;
+        }
 
         try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {} catch {
             emit UpkeepPerformed(

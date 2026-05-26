@@ -3,6 +3,10 @@
     "language": "Solidity",
     "settings": {
       "viaIR": true,
+      "metadata": {
+    "bytecodeHash": "none",
+    "appendCBOR": false
+    },
       "optimizer": {
         "enabled": true,
         "runs": 1

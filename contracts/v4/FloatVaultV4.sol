@@ -271,6 +271,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     uint256 wethToDeposit = neutralWethBalance;
 
     _syncUniswapFees();
+    strategy.resumeNormalFromVault();
     strategy.beforeDeposit();
     _syncUniswapFees();
     uint256 poolValueBefore = strategy.balanceOfIdle() + strategy.poolValue();
@@ -342,8 +343,8 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     return IFloatStrategyV4(address(strategy)).balanceOfPool();
   }
  
-  /// @notice Emergency: drain strategy to WETH in this vault and enter NEUTRAL on the strategy.
-  /// @dev Full proportional withdraw; `neutralWethBalance` backs `neutralWithdrawal` pro-rata redemptions.
+  /// @notice Emergency: drain strategy to WETH in this vault and set strategy mode NEUTRAL.
+  /// @dev Full proportional withdraw, then `enterNeutralFromVault`. `neutralWethBalance` backs `neutralWithdrawal`.
   function neutralStrategy() external onlyOwner nonReentrant {
     require(!neutral, "Already neutral");
     require(address(strategy) != address(0), "No strategy set");
@@ -360,6 +361,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
 
     uint256 wethBefore = weth.balanceOf(address(this));
     strategy.withdraw(totalSupply_, totalSupply_, address(this));
+    strategy.enterNeutralFromVault();
     neutralWethBalance = weth.balanceOf(address(this)) - wethBefore;
     _syncUniswapFees();
 
