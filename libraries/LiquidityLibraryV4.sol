@@ -301,11 +301,29 @@ library LiquidityLibraryV4 {
             lower = base - ((ctx.m - 1) / 2) * ctx.poolKey.tickSpacing;
             upper = lower + total;
         }
-        int24 minTick = alignUp(TickMath.MIN_TICK, ctx.poolKey.tickSpacing);
-        int24 maxTick = alignDown(TickMath.MAX_TICK, ctx.poolKey.tickSpacing);
+        return mintNewPositionWithRange(ps, ctx, bal0, bal1, lower, upper);
+    }
+
+    /// @notice Mint with an explicit tick range (reads current slot0 for price).
+    function mintNewPositionWithRange(
+        PositionState storage ps,
+        MintContext memory ctx,
+        uint256 bal0,
+        uint256 bal1,
+        int24 lower,
+        int24 upper
+    ) internal returns (uint256 newTokenId, uint128 newLiquidity) {
+        if (bal0 == 0 && bal1 == 0) return (0, 0);
+
+        (uint160 sqrtP, ) = getSlot0(ctx.poolManager, ctx.poolKey);
+        require(sqrtP != 0, "Pool not initialized");
+
+        int24 spacing = ctx.poolKey.tickSpacing;
+        int24 minTick = alignUp(TickMath.MIN_TICK, spacing);
+        int24 maxTick = alignDown(TickMath.MAX_TICK, spacing);
         if (lower < minTick) lower = minTick;
         if (upper > maxTick) upper = maxTick;
-        if (lower >= upper) { lower -= ctx.poolKey.tickSpacing; upper += ctx.poolKey.tickSpacing; }
+        if (lower >= upper) { lower -= spacing; upper += spacing; }
         require(lower < upper, "bad ticks");
 
         ps.tickLower = lower;
@@ -319,15 +337,11 @@ library LiquidityLibraryV4 {
         (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
         if (need0 > bal0) need0 = bal0;
         if (need1 > bal1) need1 = bal1;
-        // V4 PositionManager uses amount0Max / amount1Max (max tokens to spend),
-        // not desired + min like V3. We apply slippage as the tolerance above need.
         uint256 max0 = need0 + Math.mulDiv(need0, ctx.slippageBps, 10_000);
         uint256 max1 = need1 + Math.mulDiv(need1, ctx.slippageBps, 10_000);
 
-        // Peek at nextTokenId before minting so we can return it
         uint256 expectedTokenId = ctx.posm.nextTokenId();
 
-        // Encode [MINT_POSITION, SETTLE_PAIR]
         bytes memory actions = abi.encodePacked(ACTION_MINT_POSITION, ACTION_SETTLE_PAIR);
         bytes[] memory params = new bytes[](2);
         params[0] = abi.encode(
@@ -337,7 +351,7 @@ library LiquidityLibraryV4 {
             liq,
             uint128(max0 > type(uint128).max ? type(uint128).max : max0),
             uint128(max1 > type(uint128).max ? type(uint128).max : max1),
-            address(this),   // recipient of NFT = strategy contract
+            address(this),
             ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1);
@@ -347,7 +361,6 @@ library LiquidityLibraryV4 {
             block.timestamp + 300
         );
 
-        // Confirm tokenId was actually minted
         uint256 mintedId = expectedTokenId;
         uint128 mintedLiq = ctx.posm.getPositionLiquidity(mintedId);
         if (mintedLiq == 0) return (0, 0);

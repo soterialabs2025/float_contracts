@@ -4,13 +4,14 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
-import "./interfaces/IUfloatKeeper.sol";
+import "./interfaces/IUFloatKeeper.sol";
 
 /// @title UfloatKeeper
 /// @notice Keeper for standalone `UfloatStrategyV4` contracts. No Float vault or contract manager.
 /// @dev `UfloatStrategyV4.mode()`: 3 = STABLE (skip upkeep / harvest).
-contract UfloatKeeper is IUfloatKeeper, Ownable, ReentrancyGuard {
+contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard { 
     uint8 private constant MODE_STABLE = 3;
+    uint32 public constant DEFAULT_MIN_INTERVAL = 3;
 
     struct WatchedStrategy {
         address stratAddr;
@@ -51,18 +52,23 @@ contract UfloatKeeper is IUfloatKeeper, Ownable, ReentrancyGuard {
         _;
     }
 
-    /// @inheritdoc IUfloatKeeper
+    /// @inheritdoc IUFloatKeeper
     function setStrategyFactory(address factory) external onlyOwner {
         strategyFactory = factory;
         emit StrategyFactoryUpdated(factory);
     }
 
-    /// @inheritdoc IUfloatKeeper
-    function addStrategy(address strat, uint32 minInterval) external onlyAuthorized returns (uint256 id) {
+    /// @inheritdoc IUFloatKeeper
+    function addStrategy(address strat) external onlyAuthorized returns (uint256 id) {
         if (strat == address(0)) revert ZeroAddress();
-        watched.push(WatchedStrategy({stratAddr: strat, minInterval: minInterval, lastAction: 0, active: true}));
+        watched.push(WatchedStrategy({
+            stratAddr: strat,
+            minInterval: DEFAULT_MIN_INTERVAL,
+            lastAction: 0,
+            active: true
+        }));
         id = watched.length - 1;
-        emit StrategyAdded(strat, minInterval);
+        emit StrategyAdded(strat, DEFAULT_MIN_INTERVAL);
     }
 
     function updateStrategy(uint256 id, bool active, uint32 minInterval) external onlyAuthorized {

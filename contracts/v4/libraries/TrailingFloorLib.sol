@@ -12,6 +12,11 @@ library TrailingFloorLib {
         return r == 0 ? tick : (tick < 0 ? tick - r - spacing : tick - r);
     }
 
+    function alignUp(int24 tick, int24 spacing) internal pure returns (int24) {
+        int24 r = tick % spacing;
+        return r == 0 ? tick : (tick < 0 ? tick - r : tick + (spacing - r));
+    }
+
     function sqrt(uint256 y) private pure returns (uint256 z) {
         if (y == 0) return 0;
         uint256 x = y;
@@ -67,6 +72,23 @@ library TrailingFloorLib {
         }
         if (newSqrt256 >= uint256(TickMath.MAX_SQRT_RATIO)) {
             newSqrt256 = uint256(TickMath.MAX_SQRT_RATIO) - 1;
+        }
+        return TickMath.getTickAtSqrtRatio(uint160(newSqrt256));
+    }
+
+    /// @notice Tick at or above the sqrt price that is `riseBps`/10000 above the current token1/token0 price (0 < riseBps < 10_000).
+    function ceilTickAboveCurrentByBps(int24 currentTick, uint256 riseBps) internal pure returns (int24) {
+        if (riseBps == 0) return currentTick;
+        if (riseBps >= 10_000) riseBps = 9999;
+        uint160 sc = TickMath.getSqrtRatioAtTick(currentTick);
+        uint256 priceFactor1e18 = Math.mulDiv(10_000 + riseBps, 1e18, 10_000);
+        uint256 sqrtScale1e18 = sqrt1e18(priceFactor1e18);
+        uint256 newSqrt256 = Math.mulDiv(uint256(sc), sqrtScale1e18, 1e18);
+        if (newSqrt256 <= uint256(TickMath.MIN_SQRT_RATIO)) {
+            newSqrt256 = uint256(TickMath.MIN_SQRT_RATIO) + 1;
+        }
+        if (newSqrt256 >= uint256(TickMath.MAX_SQRT_RATIO)) {
+            return TickMath.MAX_TICK;
         }
         return TickMath.getTickAtSqrtRatio(uint160(newSqrt256));
     }

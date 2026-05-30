@@ -3,9 +3,9 @@ pragma solidity ^0.8.20;
 
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
-/// @title IUfloatV4StrategySwapRouter
-/// @notice `UfloatSwapRouter` surface: per-asset v4 pool registry and strict swaps for allowlisted `UfloatStrategy` contracts.
-interface IUfloatV4StrategySwapRouter {
+/// @title IUFloatV4StrategySwapRouter
+/// @notice `UFloatSwapRouter` surface: per-asset v4 pool registry and strict swaps for allowlisted `UFloatStrategy` contracts.
+interface IUFloatV4StrategySwapRouter {
     /// @notice Quoter-derived `minOut` plus post-swap price-impact bound. Callable only by authorized strategies.
     function swapExactInputSingleStrict(
         address assetAddress,

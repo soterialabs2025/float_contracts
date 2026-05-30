@@ -19,14 +19,14 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 
-import "./interfaces/IUfloatV4StrategySwapRouter.sol";
+import "./interfaces/IUFloatV4StrategySwapRouter.sol";
 import "./V4Deployments8453.sol";
 
 /// @title UfloatSwapRouter
 /// @notice v4 swap router for standalone `UfloatStrategy` contracts. Pool configs are owner-set;
 ///         only allowlisted strategy addresses may call swap entrypoints (strict swap for rebalances).
 /// @dev    Base (8453) only — infra addresses from `V4Deployments8453`.
-contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownable, ReentrancyGuard {
+contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
     // Owner setters
     // ─────────────────────────────────────────────────────────────────────────────
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     function addAuthorizedStrategy(address strategy) external onlyOwnerOrStrategyFactory {
         if (strategy == address(0)) revert ZeroAddress();
         if (isAuthorizedStrategy[strategy]) revert AlreadyAuthorized();
@@ -221,7 +221,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
         emit AuthorizedStrategyAdded(strategy);
     }
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     function removeAuthorizedStrategy(address strategy) external onlyOwner {
         uint256 idx = _authorizedStrategyIndex[strategy];
         if (idx == 0) revert NotAuthorized();
@@ -237,7 +237,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
         emit AuthorizedStrategyRemoved(strategy);
     }
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     function getAuthorizedStrategies() external view returns (address[] memory) {
         return _authorizedStrategies;
     }
@@ -264,7 +264,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
     // Pool registry
     // ─────────────────────────────────────────────────────────────────────────────
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     function setV4PoolConfig(address assetAddress, PoolKey calldata key, bytes calldata hookData) external override onlyOwner {
         if (assetAddress == address(0)) revert ZeroAddress();
         address c0 = Currency.unwrap(key.currency0);
@@ -274,7 +274,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
         emit V4PoolConfigSet(assetAddress, key, hookData);
     }
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     function getV4PoolConfig(address assetAddress) public view override returns (PoolKey memory key, bytes memory hookData) {
         V4PoolConfig storage cfg = v4PoolConfig[assetAddress];
         require(
@@ -285,7 +285,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
         hookData = cfg.hookData;
     }
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     function hasV4PoolConfig(address assetAddress) public view override returns (bool) {
         V4PoolConfig storage cfg = v4PoolConfig[assetAddress];
         return Currency.unwrap(cfg.key.currency0) != address(0) || Currency.unwrap(cfg.key.currency1) != address(0);
@@ -335,7 +335,7 @@ contract UfloatSwapRouter is IUfloatV4StrategySwapRouter, IUnlockCallback, Ownab
         return _swapV4Direct(key, zeroForOne, amountIn, minOut, limit, hookData, _msgSender());
     }
 
-    /// @inheritdoc IUfloatV4StrategySwapRouter
+    /// @inheritdoc IUFloatV4StrategySwapRouter
     /// @dev Quoter-derived `minOut` (`strictStrategySlippageBps`) PLUS post-swap `sqrtPriceX96` impact bound (`maxPriceImpactBps`).
     function swapExactInputSingleStrict(
         address assetAddress,
