@@ -21,6 +21,10 @@ contract UStrategyManager is Ownable {
     uint256 public rangeBelowBps = 1000;
     /// @notice Asymmetric LP range: bps above current tick (2000 = 20%).
     uint256 public rangeAboveBps = 2000;
+    /// @notice OFFENSIVE below-range ratchet and `offensiveAssetBps` apply after this many consecutive OFFENSIVE entries.
+    uint256 public minFloorTickCount = 2;
+    /// @notice Max time in OFFENSIVE before exiting to NORMAL and re-minting at `targetAssetBps` range.
+    uint256 public offensiveStaleDuration = 3 hours;
 
     function setMintParams(
         uint256 _targetAssetBps,
@@ -36,5 +40,11 @@ contract UStrategyManager is Ownable {
         offensiveAssetBps = _offensiveAssetBps;
         rangeBelowBps = _rangeBelowBps;
         rangeAboveBps = _rangeAboveBps;
+    }
+
+    function setOffensiveParams(uint256 _minFloorTickCount, uint256 _offensiveStaleDuration) external onlyOwner {
+        require(_minFloorTickCount > 0, "!count");
+        minFloorTickCount = _minFloorTickCount;
+        offensiveStaleDuration = _offensiveStaleDuration;
     }
 }

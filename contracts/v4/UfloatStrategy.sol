@@ -50,7 +50,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     mapping(address => uint256) private _allowedTokenIndex;
     IERC20 public ASSET;
     address private constant PERMIT2 = V4Deployments8453.PERMIT2;
-    address private demeterAddr;
+    address private tritonAddr;
     address private keeperStratAddr;
     bool private _initialized;
     uint256 public lastOffensiveTime;
@@ -62,6 +62,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     Mode internal stratMode;
     uint256 public defensiveEnteredAt;
     uint256 public consecutiveOffensiveCount;
+    uint256 public prevConsecutiveOffensiveCount;
 
     function _lpModeActive() internal view returns (bool) {
         return stratMode == Mode.NORMAL || stratMode == Mode.OFFENSIVE;
@@ -93,7 +94,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
 
     function _requireAuthorized() internal view {
         address s = _msgSender();
-        if (s != demeterAddr && s != keeperStratAddr && s != owner()) revert Unauthorized();
+        if (s != tritonAddr && s != keeperStratAddr && s != owner()) revert Unauthorized();
     }
 
     modifier onlyAuthorized() {
@@ -115,7 +116,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     function bootstrapStrategy(
         address owner_,
         address swapRouter,
-        address demeter,
+        address triton,
         address keeper,
         address[] calldata tokens
     ) external {
@@ -125,7 +126,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         if (tokens.length == 0) revert TokenNotAllowed();
 
         _initialized = true;
-        demeterAddr = demeter;
+        tritonAddr = triton;
         keeperStratAddr = keeper;
         swapRouterV4 = IUFloatV4StrategySwapRouter(swapRouter);
         _initStrategyDefaults();
@@ -146,6 +147,8 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         offensiveAssetBps = 4000;
         rangeBelowBps = 1000;
         rangeAboveBps = 2000;
+        minFloorTickCount = 2;
+        offensiveStaleDuration = 3 hours;
         slippageBps = 100;
         minHarvestDelay = 2 hours;
     }
@@ -374,8 +377,27 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         return false;
     }
 
+    function _handleOffensiveStale() internal returns (bool) {
+        if (stratMode == Mode.OFFENSIVE
+                && block.timestamp - lastOffensiveTime > offensiveStaleDuration
+                && consecutiveOffensiveCount == prevConsecutiveOffensiveCount + 1) {
+            _decreaseAllLiquidity();
+            liqPos.positionId = 0;
+            stratMode = Mode.NORMAL;
+            consecutiveOffensiveCount = 0;
+            prevConsecutiveOffensiveCount = 0;
+            (uint256 staleAssetBal, uint256 staleWethBal) = _getTokenBalances();
+            _balanceTokens(staleAssetBal, staleWethBal);
+            _mintAsymmetricPosition();
+            _noteHarvestActivity();
+            return true;
+        }
+        return false;
+    }
+
     function keeperCheck() external nonReentrant returns (bool) {
         if (stratMode == Mode.STABLE) return false;
+        if (_handleOffensiveStale()) return true;
         if (liqPos.positionId == 0) return false;
         if (_inRange()) return true;
         return _handleOutOfRange();
@@ -390,6 +412,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
 
     function _enterOffensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();
+        prevConsecutiveOffensiveCount = consecutiveOffensiveCount;
         lastOffensiveTime = block.timestamp;
         consecutiveOffensiveCount++;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
@@ -411,9 +434,8 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
 
     function _asymmetricTicks(int24 currentTick) internal view returns (int24 lower, int24 upper) {
         int24 spacing = poolKey.tickSpacing;
-        uint256 belowBps = rangeBelowBps;
+        uint256 belowBps = _effectiveRangeBelowBps();
         uint256 aboveBps = rangeAboveBps;
-        if (belowBps == 0 || belowBps >= 10_000) belowBps = 1000;
         if (aboveBps == 0 || aboveBps >= 10_000) aboveBps = 2000;
         lower = TrailingFloorLib.alignDown(
             TrailingFloorLib.floorTickBelowCurrentByBps(currentTick, belowBps),
@@ -515,11 +537,31 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     }
 
     function _assetTargetBps() internal view returns (uint256) {
-        if (stratMode == Mode.OFFENSIVE) {
+        if (stratMode == Mode.OFFENSIVE && consecutiveOffensiveCount >= minFloorTickCount) {
             if (offensiveAssetBps != 0) return offensiveAssetBps;
         }
         if (targetAssetBps != 0) return targetAssetBps;
         return 5000;
+    }
+
+    uint256 private constant MIN_RANGE_BELOW_BPS = 200;
+    uint256 private constant MAX_OFFENSIVE_RATCHET_COUNT = 4;
+
+    /// @dev After `minFloorTickCount` OFFENSIVE re-mints, tighten below-range by 2/3 per step; caps at 4th offensive.
+    function _effectiveRangeBelowBps() internal view returns (uint256) {
+        uint256 base = rangeBelowBps;
+        if (base == 0 || base >= 10_000) base = 1000;
+        if (consecutiveOffensiveCount < minFloorTickCount) return base;
+
+        uint256 count = consecutiveOffensiveCount;
+        if (count > MAX_OFFENSIVE_RATCHET_COUNT) count = MAX_OFFENSIVE_RATCHET_COUNT;
+        uint256 steps = count - minFloorTickCount + 1;
+        uint256 effective = base;
+        for (uint256 i = 0; i < steps; i++) {
+            effective = effective * 2 / 3;
+            if (effective < MIN_RANGE_BELOW_BPS) return MIN_RANGE_BELOW_BPS;
+        }
+        return effective;
     }
 
     function _balanceTokens(uint256 assetBal, uint256 wethBal) internal {
@@ -721,7 +763,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
 
     function exitToStable() external {
         address s = _msgSender();
-        if (s != demeterAddr && s != owner()) revert Unauthorized();
+        if (s != tritonAddr && s != owner()) revert Unauthorized();
         _changeAsset(address(WETH));
     }
 

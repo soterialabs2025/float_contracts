@@ -13,7 +13,7 @@ import "./interfaces/IUFloatKeeper.sol";
 contract UFloatStrategyFactoryV4 {
     struct InfraConfig {
         address swapRouter;
-        address demeter;
+        address triton;
         address keeper;
     }
 
@@ -33,7 +33,7 @@ contract UFloatStrategyFactoryV4 {
     );
 
     constructor(InfraConfig memory config) {
-        if (config.swapRouter == address(0) || config.demeter == address(0) || config.keeper == address(0)) {
+        if (config.swapRouter == address(0) || config.triton == address(0) || config.keeper == address(0)) {
             revert ZeroAddress();
         }
         infra = config;
@@ -71,7 +71,7 @@ contract UFloatStrategyFactoryV4 {
         strat.bootstrapStrategy(
             strategyOwner,
             infra.swapRouter,
-            infra.demeter,
+            infra.triton,
             infra.keeper,
             tokens
         );

@@ -17,5 +17,5 @@ library V4Deployments8453 {
     address internal constant UFLOATKEEPER = 0xfe071630eE2d05801e6771a13B70E6128034370f;
     address internal constant MANAGER = 0xD12D64925340Ffc277d79b02A212Dd576701EaC9;
     address internal constant DEMETER = 0x208169B1321A09e614a68B06b7F600Dc0E007212;
-    address internal constant TRITON = 0x5A86759516C094607544BF17Fde6Ed46c8e7771f;
+    address internal constant TRITON = 0x66d60E991D09447245d668671d079b57eB48f58E;
 }

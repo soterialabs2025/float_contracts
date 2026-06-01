@@ -30,6 +30,7 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
     error Unauthorized();
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
     event StrategyUpdated(address indexed stratAddr);
+    event StrategyRemoved(address indexed stratAddr, uint256 indexed id);
     event UpkeepPerformed(
         uint256 indexed id,
         address indexed strat,
@@ -73,6 +74,17 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
         ws.active = active;
         ws.minInterval = minInterval;
         emit StrategyUpdated(ws.stratAddr);
+    }
+
+    function removeStrategy(uint256 id) external onlyAuthorized {
+        require(id < watched.length, "bad id");
+        address removed = watched[id].stratAddr;
+        uint256 last = watched.length - 1;
+        if (id != last) {
+            watched[id] = watched[last];
+        }
+        watched.pop();
+        emit StrategyRemoved(removed, id);
     }
 
     function strategiesLength() external view returns (uint256) {
