@@ -363,22 +363,22 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         return 5000;
     }
 
-    uint256 private constant MIN_RANGE_BELOW_BPS = 200;
-    uint256 private constant MAX_OFFENSIVE_RATCHET_COUNT = 4;
-
-    /// @dev After `minFloorTickCount` OFFENSIVE re-mints, tighten below-range by 2/3 per step; caps at 4th offensive.
+    /// @dev After `minFloorTickCount` OFFENSIVE re-mints, tighten below-range by `ratchetNumerator/ratchetDenominator` per step.
     function _effectiveRangeBelowBps() internal view returns (uint256) {
         uint256 base = rangeBelowBps;
         if (base == 0 || base >= 10_000) base = 1000;
         if (consecutiveOffensiveCount < minFloorTickCount) return base;
 
         uint256 count = consecutiveOffensiveCount;
-        if (count > MAX_OFFENSIVE_RATCHET_COUNT) count = MAX_OFFENSIVE_RATCHET_COUNT;
+        if (count > maxOffensiveRatchetCount) count = maxOffensiveRatchetCount;
         uint256 steps = count - minFloorTickCount + 1;
         uint256 effective = base;
+        uint256 floorBps = minRangeBelowBps != 0 ? minRangeBelowBps : 200;
+        uint256 num = ratchetNumerator != 0 ? ratchetNumerator : 1;
+        uint256 den = ratchetDenominator != 0 ? ratchetDenominator : 4;
         for (uint256 i = 0; i < steps; i++) {
-            effective = effective * 2 / 3;
-            if (effective < MIN_RANGE_BELOW_BPS) return MIN_RANGE_BELOW_BPS;
+            effective = effective * num / den;
+            if (effective < floorBps) return floorBps;
         }
         return effective;
     }

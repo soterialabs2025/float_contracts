@@ -306,6 +306,79 @@ library LiquidityLibrary {
         newTokenId = tokenId;
         newLiquidity = liquidity;
     }
+
+    function mintNewPositionWithRange(
+        PositionState storage ps,
+        MintContext memory ctx,
+        uint256 tokenBal,
+        uint256 wethBal,
+        int24 tickLower,
+        int24 tickUpper
+    ) internal returns (uint256 newTokenId, uint128 newLiquidity) {
+        if (tokenBal == 0 && wethBal == 0) return (ps.positionId, 0);
+
+        address poolAddr = ctx.factory.getPool(ctx.weth, ctx.tokens, ctx.fee);
+        require(poolAddr == ctx.assetPoolV3, "Pool mismatch");
+
+        IUniswapV3PoolMinimal pool = IUniswapV3PoolMinimal(poolAddr);
+        address token0 = pool.token0();
+        address token1 = pool.token1();
+
+        require(
+            (token0 == ctx.weth && token1 == ctx.tokens) ||
+            (token0 == ctx.tokens && token1 == ctx.weth),
+            "Pool token mismatch"
+        );
+
+        int24 minTick = alignUp(TickMath.MIN_TICK, ctx.tickSpacing);
+        int24 maxTick = alignDown(TickMath.MAX_TICK, ctx.tickSpacing);
+        int24 lower = tickLower;
+        int24 upper = tickUpper;
+        if (lower < minTick) lower = minTick;
+        if (upper > maxTick) upper = maxTick;
+        if (lower >= upper) upper = lower + ctx.tickSpacing;
+        require(lower < upper, "bad ticks");
+        ps.tickLower = lower;
+        ps.tickUpper = upper;
+
+        uint160 sqrtP;
+        (sqrtP, , , , , , ) = pool.slot0();
+        (uint160 sqrtL, uint160 sqrtU) = getSqrtRatios(ps.tickLower, ps.tickUpper);
+        uint256 bal0;
+        uint256 bal1;
+        if (token0 == ctx.weth) {
+            bal0 = wethBal;
+            bal1 = tokenBal;
+        } else {
+            bal0 = tokenBal;
+            bal1 = wethBal;
+        }
+        uint128 liq = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
+        require(liq > 0, "no liq");
+        (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
+        if (need0 > bal0) need0 = bal0;
+        if (need1 > bal1) need1 = bal1;
+        (uint256 min0, uint256 min1) = calculateMinAmounts(need0, need1, ctx.slippageBps);
+        INonfungiblePositionManager.MintParams memory params =
+            INonfungiblePositionManager.MintParams({
+                token0: token0,
+                token1: token1,
+                fee: ctx.fee,
+                tickLower: ps.tickLower,
+                tickUpper: ps.tickUpper,
+                amount0Desired: need0,
+                amount0Min: min0,
+                amount1Desired: need1,
+                amount1Min: min1,
+                recipient: address(this),
+                deadline: block.timestamp + 300
+            });
+        (uint256 tokenId, uint128 liquidity, , ) = ctx.npm.mint(params);
+
+        ps.positionId = tokenId;
+        newTokenId = tokenId;
+        newLiquidity = liquidity;
+    }
     
     function increaseLiquidityInternal(
         PositionState storage ps,

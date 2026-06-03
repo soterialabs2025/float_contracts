@@ -12,13 +12,13 @@
 
 
 - **FloatContractmanagerV4**:`0xD12D64925340Ffc277d79b02A212Dd576701EaC9`
-- **FloatStrategyV4**: `0x9FEDd4BC30864FAfba6fe85A17Dde7DEfaC2e012`
+- **FloatStrategyV4**: `0xeAaD530aFD31ebc34FD704D5abF57b2A6c3aC8a9` -`2`
 - **FloatVaultV4**: `0xEf84FDafC3afEe7E7c86dAc12DF9e2e9F2952469`
 - **FloatSwapRouterV4**: `0x8B26727Be08fa249ca13a967A4197E730193be1F`
 - **FloatLiquidTokenV4**:`0x9eB486310Ed402c3249DCB8AE898ff48092558cd`
 - **FloatKeeperV4**:`0xd1E8E956e94aB837770Acaa7E98e943B09FCA49c`
-- **ASSET**:`0xb233bdffd437e60fa451f62c6c09d3804d285ba3`
-- **AssetPoolV4**: `0xe93071444b085fe0b83b0e138c2f0e47d510c1f6fa604a83dd10c0c7f8a0bb97` 
+- **ASSET**:`0xd7bc6a05a56655fb2052f742b012d1dfd66e1ba3`
+- **AssetPoolV4**: `0x83a29b6619907f80e5a47d40f53d4af239a69980f22a08b10f43d357a9f06209` 
 
 **Fee**:`8388608`
 **hooks**:`0xbb7784a4d481184283ed89619a3e3ed143e1adc0`
@@ -30,6 +30,28 @@
 0xbb7784a4d481184283ed89619a3e3ed143e1adc0
 8388608
 
+############################################################################################################################
+
+
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+
+- **FloatContractmanager**:`0x8b8a48Db78e6f1d1e465b3abaBea88f2532c7154`
+- **FloatStrategy**: `0xbEef95061F5B69795977C6d157d8408B24b5f4ee`
+- **FloatVault**: `0x88871de6383Ad611799265D7196b198Ba0347baE`
+- **FloatSwapRouter**: `0x01e97028262BE1Bc8e5E6EFAA2b6cC7cC3d94070`
+- **FloatLiquidToken**:`0xaF5c46121f6D9491978257224952257e65C8BD11`
+- **FloatKeeper**: `0x3d99742330fC641c79eAAE3a67370EAd635e5473`
+- **ASSET**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b`
+ - **AssetPoolV3**: `0xaec085e5a5ce8d96a7bdd3eb3a62445d4f6ce703` 
+
+
+Cred Pool ID:
+0x55A4F7A23C4C2616CF848E639A08BD4283D13E66F5FCF34F828B5CA7E4E96324
+55A4F7A23C4C2616CF848E639A08BD4283D13E66F5FCF34F828B5CA7E4E96324
+ 
+ 0xb1013b0388d72ec128dd96699fbed5291aa0b19e2e57905476da07f1b1d3d54d
 ############################################################################################################################
  
   **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`

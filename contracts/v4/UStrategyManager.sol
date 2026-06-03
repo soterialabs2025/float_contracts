@@ -25,6 +25,13 @@ contract UStrategyManager is Ownable {
     uint256 public minFloorTickCount = 2;
     /// @notice Max time in OFFENSIVE before exiting to NORMAL and re-minting at `targetAssetBps` range.
     uint256 public offensiveStaleDuration = 3 hours;
+    /// @notice Floor for tightened below-range during OFFENSIVE ratchet (200 = 2%).
+    uint256 public minRangeBelowBps = 200;
+    /// @notice Last consecutive OFFENSIVE entry that applies below-range ratchet tightening.
+    uint256 public maxOffensiveRatchetCount = 4;
+    /// @notice OFFENSIVE below-range ratchet multiplier: effective *= numerator / denominator each step (default 1/3).
+    uint256 public ratchetNumerator = 1;
+    uint256 public ratchetDenominator = 3;
 
     function setMintParams(
         uint256 _targetAssetBps,
@@ -42,9 +49,24 @@ contract UStrategyManager is Ownable {
         rangeAboveBps = _rangeAboveBps;
     }
 
-    function setOffensiveParams(uint256 _minFloorTickCount, uint256 _offensiveStaleDuration) external onlyOwner {
+    function setOffensiveParams(
+        uint256 _minFloorTickCount,
+        uint256 _offensiveStaleDuration,
+        uint256 _minRangeBelowBps,
+        uint256 _maxOffensiveRatchetCount,
+        uint256 _ratchetNumerator,
+        uint256 _ratchetDenominator
+    ) external onlyOwner {
         require(_minFloorTickCount > 0, "!count");
+        require(_minRangeBelowBps > 0 && _minRangeBelowBps < 10_000, "!min bps");
+        require(_maxOffensiveRatchetCount >= _minFloorTickCount, "!cap");
+        require(_ratchetNumerator > 0 && _ratchetDenominator > 0, "!ratchet");
+        require(_ratchetNumerator < _ratchetDenominator, "ratchet must tighten");
         minFloorTickCount = _minFloorTickCount;
         offensiveStaleDuration = _offensiveStaleDuration;
+        minRangeBelowBps = _minRangeBelowBps;
+        maxOffensiveRatchetCount = _maxOffensiveRatchetCount;
+        ratchetNumerator = _ratchetNumerator;
+        ratchetDenominator = _ratchetDenominator;
     }
 }

@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../libraries/LiquidityLibrary.sol";
+import "./v4/libraries/TrailingFloorLib.sol";
 import "../interfaces/IFloatStrategy.sol";
 
 contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC721Receiver {         
@@ -40,15 +41,12 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     address public assetAddr;
     address private demeterAddr;
     address private keeperStratAddr;
-    int24 public baselineTick;
-    int24 public floorTick;
     bool public harvestOnDeposit = true;
     uint256 public lastHarvest; 
     uint256 public PrevHarvestTime;
     uint256 public lastOffensiveTime; 
     uint256 public prevOffensiveTime;
     uint256 public baseTokenShareBps = 5_000;
-    uint256 private tokenShareAnchorBps;
     uint256 public UniswapFeesCollected; 
     uint256 public lastUniswapFeeTotal;
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
@@ -74,8 +72,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         WETH = IERC20(baseWETH);
         nonfungiblePositionManager = INonfungiblePositionManager(nonfungiblePosManAddr);
         factory = IUniswapV3Factory(v3FactoryAddr);
-        deviationBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2000, maxTokenCapBps: 9800});
-        offensiveBands = StrategyManager.DeviationBands({lowerBps: 200, upperBps: 2200, maxTokenCapBps: 9800});
     }
     function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {
         managerAddress = _managerAddr;
@@ -105,6 +101,9 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
     function deposit(uint256 amount) external override onlyAuthorized  nonReentrant {
         if (amount == 0) revert ZeroValue();
+        if (mode == Mode.STABLE) {
+            return;
+        }
         if (liqPos.positionId == 0) {
             _deposit();
             return;
@@ -229,12 +228,12 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _decreaseAllLiquidity();
             liqPos.positionId = 0;
             mode = Mode.NORMAL;
-            baseTokenShareBps = 5_000;
+            baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
             consecutiveOffensiveCount = 0;
             prevConsecutiveOffensiveCount = 0;
             (uint256 staleAssetBal, uint256 staleWethBal) = _getTokenBalances();
             _balanceTokens(staleAssetBal, staleWethBal);
-            _mintNewPosition(startM);
+            _mintAsymmetricPosition();
             _noteHarvestActivity();
             return true;
         }
@@ -249,86 +248,46 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function readInRange() external view override returns (bool) {
         return _inRange();
     }
-    function _checkInRange() internal returns (bool) {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return true;
-        if (_inRange()) return false;
-        if (liqPos.positionId == 0) {
-            _enterDefensive();
-            return true;
-        }
+    function keeperCheck() external nonReentrant returns (bool) {
+        if (mode == Mode.STABLE || mode == Mode.NEUTRAL) return false;
+        if (_handleOffensiveStale()) return true;
+        if (liqPos.positionId == 0) return false;
+        if (_inRange()) return true;
+        return _handleOutOfRange();
+    }
+
+    function _isAllWeth(uint256 assetBal, uint256 wethBal) internal view returns (bool) {
+        return wethBal > _liquidityDust() && assetBal <= _liquidityDust();
+    }
+
+    function _isAllAsset(uint256 assetBal, uint256 wethBal) internal view returns (bool) {
+        return assetBal > _liquidityDust() && wethBal <= _liquidityDust();
+    }
+
+    function _handleOutOfRange() internal returns (bool) {
+        if (liqPos.positionId == 0) return false;
         uint128 remainingLiq = _drainPositionLiquidity(6);
         if (remainingLiq != 0) return true;
-        (, , , , int24 posTickUpper, ) = liqPos.getPositionData(nonfungiblePositionManager);
         liqPos.positionId = 0;
-        _enterOffensiveOrDefensiveByTick(posTickUpper);
-        return true;
-    }
-    function keeperCheck() external nonReentrant returns (bool) {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return true;
-        bool offensiveStale = _handleOffensiveStale();
-        bool floorHit = _checkTrailingPriceFloor();
-        bool outOfRange = _checkInRange();
-        bool tokenShareIssue = _checkTokenShare();
-        return offensiveStale || floorHit || outOfRange || tokenShareIssue;
-    }
-    function _checkTrailingPriceFloor() internal returns (bool) {
-        if (!_lpModeActive() || liqPos.positionId == 0) {
-            if (liqPos.positionId == 0) {
-                baselineTick = 0;
-                floorTick = 0;
-            }
-            return false;
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (_isAllWeth(assetBal, wethBal)) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
         }
-        (, int24 poolTick, , , , , ) = pool.slot0();
-        if (baselineTick == 0) {
-            baselineTick = poolTick;
-            floorTick = 0;
-            return false;
-        }
-        if (poolTick < baselineTick) {
-            baselineTick = poolTick;
-            floorTick = 0;
-            return false;
-        }
-        if (floorTick != 0 && poolTick < floorTick) {
-            uint128 remainingLiq = _drainPositionLiquidity(6);
-            if (remainingLiq != 0) {
-                return true;
-            }
-            liqPos.positionId = 0;
-            floorTick = 0;
+        if (_isAllAsset(assetBal, wethBal)) {
             _enterDefensive();
-            return true;
-        }
-        uint256 rallyBps = LiquidityLibrary.priceDeviationBpsAbove(baselineTick, poolTick);
-        if (rallyBps < minFloorDeviationBps) {
             return false;
-        }
-        uint256 depthBps = LiquidityLibrary.trailingFloorDepthBps(rallyBps, floorSlopeNumerator, floorSlopeDenominator);
-        if (depthBps == 0) {
-            return false;
-        }
-        int24 rawFloor = LiquidityLibrary.floorTickBelowCurrentByBps(poolTick, depthBps);
-        int24 candidate = LiquidityLibrary.alignDown(rawFloor, tickSpacing);
-        if (floorTick == 0 || candidate > floorTick && consecutiveOffensiveCount < minFloorTickCount) {
-            floorTick = candidate;
         }
         return false;
     }
+
     function _enterDefensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();
-        floorTick = 0;
         consecutiveOffensiveCount = 0;
-        baselineTick = 0;
         defensiveEnteredAt = block.timestamp;
         mode = Mode.DEFENSIVE;
-        tokenShareAnchorBps = 0;
     }
-    function _enterOffensiveOrDefensiveByTick(int24 posTickUpper) internal {
-        (, int24 poolTick, , , , , ) = pool.slot0();
-        if (poolTick >= posTickUpper) _enterOffensive();
-        else _enterDefensive();
-    }
+
     function _enterOffensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();
         prevOffensiveTime = lastOffensiveTime;
@@ -344,36 +303,101 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         }
         mode = Mode.OFFENSIVE;
         _balanceTokens(assetBal, wethBal);
-        _mintNewPosition(offensiveM); 
+        _mintAsymmetricPosition();
         if (liqPos.positionId != 0) {
-            baseTokenShareBps = offensiveTargetAssetBps;
-            floorTick = 0;
+            baseTokenShareBps = _assetTargetBps();
             defensiveEnteredAt = 0;
             lastRebalanceTime = block.timestamp;
-            emit StrategyEvent(5, liqPos.positionId, offensiveTargetAssetBps, 0);
+            emit StrategyEvent(5, liqPos.positionId, baseTokenShareBps, 0);
         } else {
             _enterDefensive();
         }
     }
-    function _mintNewPosition(int24 mValue) internal {
+
+    function _assetTargetBps() internal view returns (uint256) {
+        if (mode == Mode.OFFENSIVE && consecutiveOffensiveCount >= minFloorTickCount) {
+            if (offensiveAssetBps != 0) return offensiveAssetBps;
+        }
+        if (targetAssetBps != 0) return targetAssetBps;
+        return 5000;
+    }
+
+    /// @dev After `minFloorTickCount` OFFENSIVE re-mints, tighten below-range by `ratchetNumerator/ratchetDenominator` per step.
+    function _effectiveRangeBelowBps() internal view returns (uint256) {
+        uint256 base = rangeBelowBps;
+        if (base == 0 || base >= 10_000) base = 1000;
+        if (consecutiveOffensiveCount < minFloorTickCount) return base;
+
+        uint256 count = consecutiveOffensiveCount;
+        if (count > maxOffensiveRatchetCount) count = maxOffensiveRatchetCount;
+        uint256 steps = count - minFloorTickCount + 1;
+        uint256 effective = base;
+        uint256 floorBps = minRangeBelowBps != 0 ? minRangeBelowBps : 200;
+        uint256 num = ratchetNumerator != 0 ? ratchetNumerator : 1;
+        uint256 den = ratchetDenominator != 0 ? ratchetDenominator : 3;
+        for (uint256 i = 0; i < steps; i++) {
+            effective = effective * num / den;
+            if (effective < floorBps) return floorBps;
+        }
+        return effective;
+    }
+
+    function _asymmetricTicks(int24 currentTick) internal view returns (int24 lower, int24 upper) {
+        int24 spacing = tickSpacing;
+        uint256 belowBps = _effectiveRangeBelowBps();
+        uint256 aboveBps = rangeAboveBps;
+        if (aboveBps == 0 || aboveBps >= 10_000) aboveBps = 2000;
+        lower = TrailingFloorLib.alignDown(
+            TrailingFloorLib.floorTickBelowCurrentByBps(currentTick, belowBps),
+            spacing
+        );
+        upper = TrailingFloorLib.alignUp(
+            TrailingFloorLib.ceilTickAboveCurrentByBps(currentTick, aboveBps),
+            spacing
+        );
+        if (lower >= upper) upper = lower + spacing;
+    }
+
+    function _mintContext() internal view returns (LiquidityLibrary.MintContext memory) {
+        return LiquidityLibrary.MintContext({
+            npm: nonfungiblePositionManager,
+            factory: factory,
+            pool: pool,
+            weth: address(WETH),
+            tokens: address(ASSET),
+            assetPoolV3: assetPoolV3,
+            fee: v3Fee,
+            tickSpacing: tickSpacing,
+            m: 1,
+            slippageBps: slippageBps,
+            dust: _liquidityDust()
+        });
+    }
+
+    function _mintAsymmetricPosition() internal {
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (assetBal == 0 && wethBal == 0) return;
-        LiquidityLibrary.MintContext memory ctx = LiquidityLibrary.MintContext({npm: nonfungiblePositionManager, factory: factory, pool: pool, weth: address(WETH), tokens: address(ASSET), assetPoolV3: assetPoolV3, fee: v3Fee, tickSpacing: tickSpacing, m: mValue, slippageBps: slippageBps, dust: _liquidityDust()});
-        (uint256 newId, uint128 liq) = liqPos.mintNewPosition(ctx, assetBal, wethBal);
+        (, int24 currentTick, , , , , ) = pool.slot0();
+        (int24 lower, int24 upper) = _asymmetricTicks(currentTick);
+        (uint256 newId, uint128 liq) = liqPos.mintNewPositionWithRange(
+            _mintContext(),
+            assetBal,
+            wethBal,
+            lower,
+            upper
+        );
         if (newId != 0 && liq > 0) {
             (address token0, address token1, , , , uint128 liquidity) = liqPos.getPositionData(nonfungiblePositionManager);
             deposits[newId] = Deposit(address(this), liquidity, token0, token1);
             emit StrategyEvent(6, newId, uint256(uint32(int32(liqPos.tickLower))), uint256(uint32(int32(liqPos.tickUpper))));
-            (, int24 poolTickAfterMint, , , , , ) = pool.slot0();
-            baselineTick = poolTickAfterMint;
-            floorTick = 0;
-            (bool ok, uint256 currentBps) = _poolTokenShareBps();
-            if (ok) tokenShareAnchorBps = currentBps;
         }
         _handleLeftoverTokensWithLimit(0);
     }
 
     function _deposit() internal {
+        if (mode == Mode.STABLE) {
+            return;
+        }
         if (liqPos.positionId != 0 && (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL)) {
             return;
         }
@@ -381,7 +405,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (assetBal == 0 && wethBal == 0) return;
         _balanceTokens(assetBal, wethBal);
         if (liqPos.positionId == 0) {
-            _mintNewPosition(startM);
+            _mintAsymmetricPosition();
         } else {
             _increaseLiquidityInternal();
             _handleLeftoverTokensWithLimit(0);
@@ -432,11 +456,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
         uint256 totalValue   = assetBal + wethAsTokens;
         if (totalValue == 0) return;
-        uint256 targetAssetBps = 5_000;
-        if (mode == Mode.OFFENSIVE && offensiveTargetAssetBps != 0) {
-            targetAssetBps = offensiveTargetAssetBps;
-        }
-        uint256 target = Math.mulDiv(totalValue, targetAssetBps, 10_000);
+        uint256 target = Math.mulDiv(totalValue, _assetTargetBps(), 10_000);
         if (assetBal > target) {
             uint256 toSell = assetBal - target;
             if (toSell > 0) _swap(ASSET, WETH, toSell);
@@ -455,8 +475,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         liqAdded = liqPos.increaseLiquidityInternal(ctx, IERC20(p0), IERC20(p1));
         if (liqAdded > 0) {
             deposits[liqPos.positionId].liquidity += liqAdded;
-            (bool ok, uint256 currentBps) = _poolTokenShareBps();
-            if (ok) tokenShareAnchorBps = currentBps;
         }
         return liqAdded;
     }
@@ -510,39 +528,6 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             _increaseLiquidityInternal();
             _handleLeftoverTokensWithLimit(iter + 1);
         }
-    }
-    function _checkTokenShare() internal returns (bool) {
-        if (liqPos.positionId == 0) return false;
-        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return true;
-        (bool ok, uint256 currentBps) = _poolTokenShareBps();
-        if (!ok) return false;
-        uint256 baseline   = tokenShareAnchorBps == 0 ? currentBps : tokenShareAnchorBps;
-        DeviationBands storage bands = mode == Mode.OFFENSIVE ? offensiveBands : deviationBands;
-        if (currentBps >= bands.maxTokenCapBps || currentBps <= bands.lowerBps) {
-            _decreaseAllLiquidity();
-            liqPos.positionId = 0;
-            if (currentBps >= bands.maxTokenCapBps) _enterDefensive();
-            else _enterOffensive();
-            return true;
-        }
-        uint256 delta = currentBps > baseline ? (currentBps - baseline) : (baseline - currentBps);
-        uint256 maxDev = currentBps > baseline ? bands.upperBps : bands.lowerBps;
-        if (delta >= maxDev) {
-            _decreaseAllLiquidity();
-            liqPos.positionId = 0;
-            if (currentBps > baseline) _enterDefensive();
-            else _enterOffensive();
-            return true;
-        }
-        return false;
-    }
-    function _poolTokenShareBps() internal view returns (bool ok, uint256 currentBps) {
-        (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
-        uint256 p = _spotPrice1e18();
-        if (p == 0) return (false, 0);
-        uint256 totalValue = assetAmt + Math.mulDiv(wethAmt, p, 1e18);
-        if (totalValue == 0) return (false, 0);
-        return (true, Math.mulDiv(assetAmt, 10_000, totalValue));
     }
     function _swap(IERC20 tokenIn, IERC20 tokenOut, uint256 amount) internal {
         if (amount == 0) return;
@@ -639,15 +624,12 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             mode = Mode.NORMAL;
         }
         defensiveEnteredAt = 0;
-        baselineTick = 0;
-        floorTick = 0;
-        baseTokenShareBps = 5_000;
-        tokenShareAnchorBps = 0;
+        baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
         if (wethBal == 0 && assetBal == 0) {
             return;
         }
         _balanceTokens(assetBal, wethBal);
-        _mintNewPosition(startM);
+        _mintAsymmetricPosition();
         if (liqPos.positionId != 0) {
             lastRebalanceTime = block.timestamp;
         }
@@ -656,13 +638,11 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         mode = Mode.NEUTRAL;
         defensiveEnteredAt = block.timestamp;
         consecutiveOffensiveCount = 0;
-        floorTick = 0;
-        baselineTick = 0;
     }
     function resumeNormalFromVault() external onlyAuthorized {
         if (mode != Mode.NEUTRAL) revert MustBeNeutral();
         mode = Mode.NORMAL;
-        baseTokenShareBps = 5_000;
+        baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
     }
