@@ -296,7 +296,18 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         if (stratMode == Mode.STABLE) {
             return;
         }
-        if (liqPos.positionId == 0 || _lpModeActive()) {
+        if (liqPos.positionId == 0) {
+            if (_idlePaused()) {
+                (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+                if (assetBal > 0 || wethBal > 0) {
+                    _balanceTokens(assetBal, wethBal);
+                }
+                return;
+            }
+            _deposit();
+            return;
+        }
+        if (_lpModeActive()) {
             _deposit();
             return;
         }
@@ -324,9 +335,6 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     }
 
     function _harvest(bool skipIncreaseLiquidity) internal {
-        if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
-            return;
-        }
         if (_idlePaused()) {
             if (liqPos.positionId != 0) {
                 _collectAllFees(true);
@@ -337,15 +345,19 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
             return;
         }
         (, , uint256 valueInWeth) = _collectAllFees(true);
+        if (skipIncreaseLiquidity || !_lpModeActive()) {
+            return;
+        }
+        if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
+            return;
+        }
         if (valueInWeth == 0) {
             return;
         }
-        if (!skipIncreaseLiquidity && _lpModeActive()) {
-            (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-            _balanceTokens(assetBal, wethBal);
-            if (_increaseLiquidityInternal() > 0) {
-                _noteHarvestActivity();
-            }
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        _balanceTokens(assetBal, wethBal);
+        if (_increaseLiquidityInternal() > 0) {
+            _noteHarvestActivity();
         }
     }
 
@@ -374,10 +386,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
             _enterOffensive();
             return liqPos.positionId != 0;
         }
-        if (_isAllAsset(assetBal, wethBal)) {
-            _enterDefensive();
-            return false;
-        }
+        _enterDefensive();
         return false;
     }
 
@@ -402,9 +411,20 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     function keeperCheck() external nonReentrant returns (bool) {
         if (stratMode == Mode.STABLE) return false;
         if (_handleOffensiveStale()) return true;
-        if (liqPos.positionId == 0) return false;
+        if (liqPos.positionId == 0) {
+            _handleIdleNoPosition();
+            return false;
+        }
         if (_inRange()) return true;
         return _handleOutOfRange();
+    }
+
+    function _handleIdleNoPosition() internal {
+        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return;
+        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
+        _enterDefensive();
     }
 
     function _enterDefensive() internal {

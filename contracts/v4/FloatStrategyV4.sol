@@ -5,6 +5,7 @@ import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
 import "./StrategyManagerV4.sol";
 import {IV4StrategySwapRouterStrict} from "./interfaces/IFloatV4StrategySwapRouter.sol";
+import "./interfaces/IFloatV4ContractManager.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
 import "./interfaces/IFloatStrategyV4.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -78,6 +79,14 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         (, bytes memory hookData) = swapRouterV4.getV4PoolConfig(address(ASSET));
         return hookData;
     }
+    function _canCallHarvest(address caller) internal view returns (bool) {
+        if (caller == vaultAddr || caller == demeterAddr || caller == keeperStratAddr
+                || caller == managerAddress || caller == owner()) {
+            return true;
+        }
+        address keeperV4 = IFloatV4ContractManager(managerAddress).getAddress("FloatKeeperV4");
+        return keeperV4 != address(0) && caller == keeperV4;
+    }
     modifier onlyAuthorized() {
         address s = _msgSender();
         if (s != vaultAddr && s != demeterAddr && s != keeperStratAddr && s != managerAddress && s != owner()) revert Unauthorized();
@@ -139,6 +148,13 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             return;
         }
         if (liqPos.positionId == 0) {
+            if (_idlePaused()) {
+                (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+                if (assetBal > 0 || wethBal > 0) {
+                    _balanceTokens(assetBal, wethBal);
+                }
+                return;
+            }
             _deposit();
             return;
         }
@@ -225,10 +241,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     }
     function harvestBoolean(bool skipIncreaseLiquidity) external nonReentrant returns (uint256 newAssets) {
         if (msg.sender != address(this)) {
-            address s = _msgSender();
-            if (s != vaultAddr && s != demeterAddr && s != keeperStratAddr && s != managerAddress && s != owner()) {
-                revert Unauthorized();
-            }
+            if (!_canCallHarvest(_msgSender())) revert Unauthorized();
         }
         _harvest(skipIncreaseLiquidity);
         return poolValue();
@@ -257,9 +270,6 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         return false;
     }
     function _harvest(bool skipIncreaseLiquidity) internal  {
-        if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
-            return;
-        }
         if (_idlePaused()) {
             if (liqPos.positionId != 0) {
                 _collectAllFees(true);
@@ -270,16 +280,20 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             return;
         }
         (, , uint256 valueInWeth) = _collectAllFees(true);
+        if (skipIncreaseLiquidity || !_lpModeActive()) {
+            return;
+        }
+        if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
+            return;
+        }
         if (valueInWeth == 0) {
             return;
         }
-        if (!skipIncreaseLiquidity && _lpModeActive()) {
-            (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-            _balanceTokens(assetBal, wethBal);
-            uint128 added = _increaseLiquidityInternal();
-            if (added > 0) {
-                _noteHarvestActivity();
-            }
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        _balanceTokens(assetBal, wethBal);
+        uint128 added = _increaseLiquidityInternal();
+        if (added > 0) {
+            _noteHarvestActivity();
         }
     }
     function _inRange() internal view returns (bool) {
@@ -294,9 +308,22 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     function keeperCheck() external nonReentrant returns (bool) {
         if (stratMode == Mode.STABLE || stratMode == Mode.NEUTRAL) return false;
         if (_handleOffensiveStale()) return true;
-        if (liqPos.positionId == 0) return false;
+        if (liqPos.positionId == 0) {
+            _handleIdleNoPosition();
+            return false;
+        }
         if (_inRange()) return true;
         return _handleOutOfRange();
+    }
+
+    /// @dev No open LP but idle capital — enter DEFENSIVE so UI can `changeAsset` (e.g. post-OOR stuck NORMAL).
+    ///      Skips never-minted strategies (tick range unset) so first vault deposit can mint normally.
+    function _handleIdleNoPosition() internal {
+        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return;
+        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
+        _enterDefensive();
     }
 
     function _isAllWeth(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
@@ -317,10 +344,8 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             _enterOffensive();
             return liqPos.positionId != 0;
         }
-        if (_isAllAsset(assetBal, wethBal)) {
-            _enterDefensive();
-            return false;
-        }
+        // All-asset, mixed, or failed offensive split — idle LP; UI rotates via changeAsset.
+        _enterDefensive();
         return false;
     }
     function _enterDefensive() internal {

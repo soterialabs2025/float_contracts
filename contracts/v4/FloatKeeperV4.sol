@@ -169,7 +169,7 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
 
         IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
 
-        uint8 strategyMode = strat.mode();
+        uint8 strategyMode = strat.mode(); 
         if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
             emit UpkeepPerformed(
                 id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
