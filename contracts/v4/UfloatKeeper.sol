@@ -9,7 +9,7 @@ import "./interfaces/IUFloatKeeper.sol";
 /// @title UfloatKeeper
 /// @notice Keeper for standalone `UfloatStrategyV4` contracts. No Float vault or contract manager.
 /// @dev `UfloatStrategyV4.mode()`: 3 = STABLE (skip upkeep / harvest).
-contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard { 
+contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     uint8 private constant MODE_STABLE = 3;
     uint32 public constant DEFAULT_MIN_INTERVAL = 3;
 
@@ -22,7 +22,7 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
 
     WatchedStrategy[] public watched;
 
-    address public demeterAddr;
+    address public tritonAddr;
     address public strategyFactory;
 
     error Unauthorized();
@@ -40,15 +40,16 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         uint256 consecutiveOffensiveCount,
         uint256 defensiveEnteredAt
     );
+    event HarvestPerformed(uint256 indexed id, address indexed strat, address indexed keeper);
 
-    constructor(address _demeterAddr) Ownable(msg.sender) {
-        if (_demeterAddr == address(0)) revert ZeroAddress();
-        demeterAddr = _demeterAddr;
+    constructor(address _tritonAddr) Ownable(msg.sender) {
+        if (_tritonAddr == address(0)) revert ZeroAddress();
+        tritonAddr = _tritonAddr;
     }
 
     modifier onlyAuthorized() {
         address s = _msgSender();
-        if (s != demeterAddr && s != owner() && s != strategyFactory) revert Unauthorized();
+        if (s != tritonAddr && s != owner() && s != strategyFactory) revert Unauthorized();
         _;
     }
 
@@ -84,55 +85,44 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     }
 
     function performUpkeep(uint256 id) external nonReentrant {
+        _performUpkeep(id, msg.sender);
+    }
+
+    function performUpkeepBatch(uint256[] calldata ids) external nonReentrant {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _performUpkeep(ids[i], msg.sender);
+        }
+    }
+
+    function _performUpkeep(uint256 id, address keeper) internal {
         require(id < watched.length, "bad id");
 
         WatchedStrategy storage ws = watched[id];
         address stratAddr = ws.stratAddr;
 
         if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, 0, 0, 0);
+            emit UpkeepPerformed(id, stratAddr, keeper, false, 0, 0, 0);
             return;
         }
 
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            IOutOfRangeStrategyV4 s0 = IOutOfRangeStrategyV4(stratAddr);
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt()
-            );
             return;
         }
 
         IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
 
-        uint8 strategyMode = strat.mode();
-        if (strategyMode == MODE_STABLE) {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
+        if (strat.mode() == MODE_STABLE) {
             return;
         }
 
-        if (!strat.keeperCheck()) {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
-            return;
-        }
-
-        try strat.harvestBoolean(true) returns (uint256) {} catch {}
-
-        ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(
-            id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-        );
-    }
-
-    function performUpkeepBatch(uint256[] calldata ids) external {
-        uint256 len = ids.length;
-        for (uint256 i = 0; i < len; i++) {
-            try this.performUpkeep(ids[i]) {} catch {}
+        bool didAct = strat.keeperCheck();
+        if (didAct) {
+            ws.lastAction = uint32(block.timestamp);
         }
     }
 
@@ -140,43 +130,50 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         require(id < watched.length, "bad id");
 
         WatchedStrategy storage ws = watched[id];
-        address stratAddr = ws.stratAddr;
-
-        if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, 0, 0, 0);
-            return;
-        }
+        if (!ws.active || ws.stratAddr == address(0)) return;
 
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            IOutOfRangeStrategyV4 s0 = IOutOfRangeStrategyV4(stratAddr);
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt()
-            );
             return;
         }
 
-        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(ws.stratAddr);
+        if (strat.mode() == MODE_STABLE) return;
 
-        uint8 strategyMode = strat.mode();
-        if (strategyMode == MODE_STABLE) {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
+        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {
+            ws.lastAction = uint32(block.timestamp);
+            emit HarvestPerformed(id, ws.stratAddr, msg.sender);
+        } catch {}
+    }
+
+    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external nonReentrant {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _performHarvest(ids[i], skipIncreaseLiquidity);
+        }
+    }
+
+    function _performHarvest(uint256 id, bool skipIncreaseLiquidity) internal {
+        require(id < watched.length, "bad id");
+
+        WatchedStrategy storage ws = watched[id];
+        if (!ws.active || ws.stratAddr == address(0)) return;
+
+        uint32 lastAction = ws.lastAction;
+        uint32 minInterval = ws.minInterval;
+        if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
             return;
         }
 
-        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {} catch {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
-            return;
-        }
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(ws.stratAddr);
+        if (strat.mode() == MODE_STABLE) return;
 
-        ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(
-            id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-        );
+        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {
+            ws.lastAction = uint32(block.timestamp);
+            emit HarvestPerformed(id, ws.stratAddr, msg.sender);
+        } catch {}
     }
 }

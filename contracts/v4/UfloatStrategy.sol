@@ -118,18 +118,19 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         address swapRouter,
         address triton,
         address keeper,
+        StratMethod stratMethod_,
         address[] calldata tokens
     ) external {
         if (_initialized) revert AlreadyInitialized();
         if (msg.sender != factory) revert Unauthorized();
         if (owner_ == address(0) || swapRouter == address(0)) revert ZeroAddress();
         if (tokens.length == 0) revert TokenNotAllowed();
-
         _initialized = true;
         tritonAddr = triton;
         keeperStratAddr = keeper;
         swapRouterV4 = IUFloatV4StrategySwapRouter(swapRouter);
         _initStrategyDefaults();
+        stratMethod = stratMethod_;
 
         uint256 len = tokens.length;
         for (uint256 i = 0; i < len; i++) {
@@ -139,22 +140,6 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         stratMode = Mode.NORMAL;
         defensiveEnteredAt = 0;
         _transferOwnership(owner_);
-    }
-
-    function _initStrategyDefaults() private {
-        // Clones start with zeroed storage — field initializers on UStrategyManager do not apply.
-        targetAssetBps = 5000;
-        offensiveAssetBps = 4000;
-        rangeBelowBps = 1000;
-        rangeAboveBps = 2000;
-        minFloorTickCount = 2;
-        offensiveStaleDuration = 3 hours;
-        minRangeBelowBps = 200;
-        maxOffensiveRatchetCount = 4;
-        ratchetNumerator = 1;
-        ratchetDenominator = 3;
-        slippageBps = 100;
-        minHarvestDelay = 2 hours;
     }
 
     function _setPoolKey(LiquidityLibraryV4.PoolKey memory key) internal {
@@ -368,26 +353,58 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         return poolTick >= posTickLower && poolTick < posTickUpper;
     }
 
-    function _isAllWeth(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
-        return wethBal > LIQUIDITY_DUST && assetBal <= LIQUIDITY_DUST;
-    }
-
-    function _isAllAsset(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
-        return assetBal > LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST;
-    }
-
     function _handleOutOfRange() internal returns (bool) {
         if (liqPos.positionId == 0) return false;
         uint128 remainingLiq = _drainPositionLiquidity(6);
         if (remainingLiq != 0) return true;
         liqPos.positionId = 0;
+        return _handleOorAfterDrain();
+    }
+
+    function _handleOorAfterDrain() internal returns (bool) {
+        StratMethod method = stratMethod;
+        if (method == StratMethod.ReBalanceOnly) {
+            return _remintAtTarget();
+        }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (method == StratMethod.OffensiveOnly) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
+        }
+        if (method == StratMethod.DefensiveOnly) {
+            _enterDefensive();
+            return true;
+        }
         if (_isAllWeth(assetBal, wethBal)) {
             _enterOffensive();
             return liqPos.positionId != 0;
         }
         _enterDefensive();
-        return false;
+        return true;
+    }
+
+    function _remintAtTarget() internal returns (bool) {
+        stratMode = Mode.NORMAL;
+        consecutiveOffensiveCount = 0;
+        prevConsecutiveOffensiveCount = 0;
+        defensiveEnteredAt = 0;
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return false;
+        _balanceTokens(assetBal, wethBal);
+        _mintAsymmetricPosition();
+        if (liqPos.positionId != 0) {
+            _noteHarvestActivity();
+        }
+        return liqPos.positionId != 0;
+    }
+
+    function _isAllWeth(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
+        return wethBal > LIQUIDITY_DUST && assetBal <= LIQUIDITY_DUST;
+    }
+
+    function _offensiveBehaviorEnabled() internal view returns (bool) {
+        StratMethod method = stratMethod;
+        return method == StratMethod.OffensiveOnly || method == StratMethod.OffensiveDefensive;
     }
 
     function _handleOffensiveStale() internal returns (bool) {
@@ -410,21 +427,38 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
 
     function keeperCheck() external nonReentrant returns (bool) {
         if (stratMode == Mode.STABLE) return false;
-        if (_handleOffensiveStale()) return true;
+        if (_offensiveBehaviorEnabled() && _handleOffensiveStale()) return true;
         if (liqPos.positionId == 0) {
-            _handleIdleNoPosition();
-            return false;
+            return _handleIdleNoPosition();
         }
         if (_inRange()) return true;
         return _handleOutOfRange();
     }
 
-    function _handleIdleNoPosition() internal {
-        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return;
-        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
+    function _handleIdleNoPosition() internal returns (bool) {
+        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return false;
+        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return false;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return false;
+
+        StratMethod method = stratMethod;
+        if (method == StratMethod.ReBalanceOnly) {
+            return _remintAtTarget();
+        }
+        if (method == StratMethod.OffensiveOnly) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
+        }
+        if (method == StratMethod.DefensiveOnly) {
+            _enterDefensive();
+            return true;
+        }
+        if (_isAllWeth(assetBal, wethBal)) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
+        }
         _enterDefensive();
+        return true;
     }
 
     function _enterDefensive() internal {

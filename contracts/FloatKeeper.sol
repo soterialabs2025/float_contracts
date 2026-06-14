@@ -200,4 +200,14 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
         ws.lastAction = uint32(block.timestamp);
         emit UpkeepPerformed(id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
     }
+
+    /// @notice Batch harvest for multiple strategies in one tx
+    /// @param ids Strategy indices in `watched`
+    /// @param skipIncreaseLiquidity Passed through to each `performHarvest`
+    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external {
+        uint256 len = ids.length;
+        for (uint256 i = 0; i < len; i++) {
+            try this.performHarvest(ids[i], skipIncreaseLiquidity) {} catch {}
+        }
+    }
 }

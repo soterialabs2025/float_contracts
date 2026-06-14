@@ -131,12 +131,6 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
             return;
         }
 
-        try strat.harvestBoolean(true) returns (uint256) {} catch {}
-
-        ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(
-            id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-        );
     }
 
     function performUpkeepBatch(uint256[] calldata ids) external {
