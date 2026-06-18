@@ -436,7 +436,10 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     }
 
     function _handleIdleNoPosition() internal returns (bool) {
-        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return false;
+        Mode m = stratMode;
+        if (m == Mode.STABLE) return false;
+        if (m == Mode.DEFENSIVE && stratMethod != StratMethod.OffensiveOnly) return false;
+        if (m != Mode.NORMAL && m != Mode.OFFENSIVE && m != Mode.DEFENSIVE) return false;
         if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return false;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return false;
@@ -446,6 +449,9 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
             return _remintAtTarget();
         }
         if (method == StratMethod.OffensiveOnly) {
+            if (m == Mode.DEFENSIVE) {
+                return _remintAtTarget();
+            }
             _enterOffensive();
             return liqPos.positionId != 0;
         }
@@ -468,6 +474,15 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         stratMode = Mode.DEFENSIVE;
     }
 
+    /// @dev OffensiveOnly falls back to target rebalance on current asset instead of idling in DEFENSIVE.
+    function _offensiveFailedFallback() internal {
+        if (stratMethod == StratMethod.OffensiveOnly) {
+            _remintAtTarget();
+        } else {
+            _enterDefensive();
+        }
+    }
+
     function _enterOffensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();
         prevConsecutiveOffensiveCount = consecutiveOffensiveCount;
@@ -477,7 +492,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         uint256 p = _spotPrice1e18();
         uint256 totalValue = assetBal + (p == 0 ? 0 : Math.mulDiv(wethBal, p, 1e18));
         if (assetBal == 0 && wethBal == 0 || p == 0 || totalValue == 0) {
-            _enterDefensive();
+            _offensiveFailedFallback();
             return;
         }
         stratMode = Mode.OFFENSIVE;
@@ -486,7 +501,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         if (liqPos.positionId != 0) {
             defensiveEnteredAt = 0;
         } else {
-            _enterDefensive();
+            _offensiveFailedFallback();
         }
     }
 
