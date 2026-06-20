@@ -1,5 +1,33 @@
 
+############################################################################################################################
+ 
+  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+  **Triton**: `0x66d60E991D09447245d668671d079b57eB48f58E`
+  **Demeter_Two**: `0xa5eF8cEFEc50D33C3413ecE773CEe05aA0c8e1cB`
+  **Triton_Two**: `0x1CfA9B75FbA20A638b7ED10074c28087B2507f39`
 
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+- **OperatorRegistry**:`0xEe83df163453F38069666CBE1a1E35a63F6d01D7`
+- **UFloatStrategyFactoryV4**:`0x569d1b7D721c080b3029ab8eaD4213224Cc7BC41`
+- **UFloatSwapRouter**: `0xD18BCbE684210C6091d3F35AA2CEa23473648068`
+- **FloatContractmanagerV4**:`0xD12D64925340Ffc277d79b02A212Dd576701EaC9`
+- **UFloatKeeperV4**:`0x3C3653c9Eaf0b22e1A5eaE8dB948Ca4cD079463c`
+- **UFloatStrategyV4**:``
+- **ASSET**:`0x753f2af0f46361c9ae6fc347797f99b0c9e82ba3`
+- **AssetPoolV4**: `0x420818dac9ab6c53953a82e9d5da9acd4f3148869ba5a859afd8e8262c1b30ca` 
+
+["0xD18BCbE684210C6091d3F35AA2CEa23473648068","0xEe83df163453F38069666CBE1a1E35a63F6d01D7","0x3C3653c9Eaf0b22e1A5eaE8dB948Ca4cD079463c"]
+
+
+
+############################################################################################################################
 
  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
  
@@ -32,8 +60,11 @@ Cred Pool ID:
 
  **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
  **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
-
-
+0x5f94657afdb1e8f5423c0c5082ea220c85a7439e
+0xdcfe…3220
+Fees Collected
+0.0006785181 ETH
+0xdcfeec93bfa477e50be5ffa0f644acf2c2573220
 - **UFloatStrategyV4**:``
 - **UFloatStrategyFactoryV4**:`0x3ddd539F185e990B26c2c1D55563973f71f2c274`
 `0x78A3F514a1C27F2a85Ed94297Aa802c08E33EF19`

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable} from "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "../../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
+import {IPoolManager} from "../../lib/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "../../lib/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {IHooks} from "../../lib/v4-core/src/interfaces/IHooks.sol";
+import {SwapParams} from "../../lib/v4-core/src/types/PoolOperation.sol";
+import {BalanceDelta} from "../../lib/v4-core/src/types/BalanceDelta.sol";
+import {PoolKey} from "../../lib/v4-core/src/types/PoolKey.sol";
+import {Currency} from "../../lib/v4-core/src/types/Currency.sol";
+import {PoolId, PoolIdLibrary} from "../../lib/v4-core/src/types/PoolId.sol";
+import {StateLibrary} from "../../lib/v4-core/src/libraries/StateLibrary.sol";
+import {TickMath} from "../../lib/v4-core/src/libraries/TickMath.sol";
+import {IV4Quoter} from "../../lib/v4-periphery/src/interfaces/IV4Quoter.sol";
 
 import "./interfaces/IUFloatV4StrategySwapRouter.sol";
 import "./V4Deployments8453.sol";
@@ -87,6 +87,18 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     error Unauthorized();
     error AlreadyAuthorized();
     error NotAuthorized();
+    error BpsOutOfRange();
+    error SlippageExceedsMax();
+    error AssetNotInKey();
+    error NoPoolConfig();
+    error PoolNotInitialized();
+    error InsufficientOutput();
+    error QuoterZero();
+    error QuoterFailed();
+    error PriceImpactTooHigh();
+    error OnlyPoolManager();
+    error InvalidDeltaIn();
+    error InvalidDeltaOut();
 
     constructor() Ownable(_msgSender()) {
         _seedV4PoolConfigs();
@@ -243,19 +255,19 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     }
 
     function setMaxSlippageBps(uint16 bps) external onlyOwner {
-        require(bps > 0 && bps <= 5_000, "bps oor");
+        if (bps == 0 || bps > 5_000) revert BpsOutOfRange();
         maxSlippageBps = bps;
         emit MaxSlippageBpsUpdated(bps);
     }
 
     function setStrictStrategySlippageBps(uint16 bps) external onlyOwner {
-        require(bps <= maxSlippageBps, "slippage>max");
+        if (bps > maxSlippageBps) revert SlippageExceedsMax();
         strictStrategySlippageBps = bps;
         emit StrictStrategySlippageBpsUpdated(bps);
     }
 
     function setMaxPriceImpactBps(uint16 bps) external onlyOwner {
-        require(bps > 0 && bps <= 5_000, "bps oor");
+        if (bps == 0 || bps > 5_000) revert BpsOutOfRange();
         maxPriceImpactBps = bps;
         emit MaxPriceImpactBpsUpdated(bps);
     }
@@ -269,7 +281,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         if (assetAddress == address(0)) revert ZeroAddress();
         address c0 = Currency.unwrap(key.currency0);
         address c1 = Currency.unwrap(key.currency1);
-        require(assetAddress == c0 || assetAddress == c1, "asset !in key");
+        if (assetAddress != c0 && assetAddress != c1) revert AssetNotInKey();
         v4PoolConfig[assetAddress] = V4PoolConfig({key: key, hookData: hookData});
         emit V4PoolConfigSet(assetAddress, key, hookData);
     }
@@ -277,10 +289,9 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     /// @inheritdoc IUFloatV4StrategySwapRouter
     function getV4PoolConfig(address assetAddress) public view override returns (PoolKey memory key, bytes memory hookData) {
         V4PoolConfig storage cfg = v4PoolConfig[assetAddress];
-        require(
-            Currency.unwrap(cfg.key.currency0) != address(0) || Currency.unwrap(cfg.key.currency1) != address(0),
-            "no config"
-        );
+        if (Currency.unwrap(cfg.key.currency0) == address(0) && Currency.unwrap(cfg.key.currency1) == address(0)) {
+            revert NoPoolConfig();
+        }
         key = cfg.key;
         hookData = cfg.hookData;
     }
@@ -346,7 +357,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
 
         PoolId poolId = PoolIdLibrary.toId(key);
         (uint160 sqrtBefore, , , ) = StateLibrary.getSlot0(poolManager, poolId);
-        require(sqrtBefore != 0, "pool !init");
+        if (sqrtBefore == 0) revert PoolNotInitialized();
 
         uint128 minOut = _minOutFromV4Quoter(key, zeroForOne, amountIn, hookData, strictStrategySlippageBps);
 
@@ -399,7 +410,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         poolManager.unlock(data);
         amountOut = IERC20(tokenOut).balanceOf(recipient) - balBefore;
 
-        require(amountOut >= minAmountOut, "Insufficient output amount");
+        if (amountOut < minAmountOut) revert InsufficientOutput();
         emit SwapExecuted(_msgSender(), recipient, tokenIn, tokenOut, amountIn, amountOut);
     }
 
@@ -420,10 +431,10 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
                 hookData: hookData
             })
         ) returns (uint256 quoted, uint256) {
-            require(quoted > 0, "quoter=0");
+            if (quoted == 0) revert QuoterZero();
             minOut = uint128(Math.mulDiv(quoted, 10_000 - uint256(slippageBps), 10_000));
         } catch {
-            revert("quoter failed");
+            revert QuoterFailed();
         }
     }
 
@@ -435,7 +446,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
             ? (sqrtBefore > sqrtAfter ? uint256(sqrtBefore - sqrtAfter) : 0)
             : (sqrtAfter > sqrtBefore ? uint256(sqrtAfter - sqrtBefore) : 0);
         uint256 bps = (diff * 10_000) / uint256(sqrtBefore);
-        require(bps <= uint256(maxPriceImpactBps), "price impact");
+        if (bps > uint256(maxPriceImpactBps)) revert PriceImpactTooHigh();
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -446,7 +457,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     /// @dev Decodes `(recipient, key, zeroForOne, amountIn, sqrtPriceLimitX96, hookData)`, calls `poolManager.swap`,
     ///      settles input via `sync`+`transfer`+`settle`, and `take`s output to `recipient`. Only callable by `poolManager`.
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
-        require(msg.sender == address(poolManager), "only PM");
+        if (msg.sender != address(poolManager)) revert OnlyPoolManager();
 
         (
             address recipient,
@@ -468,8 +479,8 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
 
         int128 deltaIn = zeroForOne ? delta.amount0() : delta.amount1();
         int128 deltaOut = zeroForOne ? delta.amount1() : delta.amount0();
-        require(deltaIn <= 0, "delta in");
-        require(deltaOut >= 0, "delta out");
+        if (deltaIn > 0) revert InvalidDeltaIn();
+        if (deltaOut < 0) revert InvalidDeltaOut();
 
         uint256 owed = uint256(uint128(-deltaIn));
         uint256 received = uint256(uint128(deltaOut));

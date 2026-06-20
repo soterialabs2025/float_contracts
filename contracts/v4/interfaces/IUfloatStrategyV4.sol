@@ -13,7 +13,7 @@ interface IUFloatStrategyV4 is IUFloatStrategyAllowedTokens {
     /// @notice Pull WETH from owner and deploy into LP per mode rules.
     function depositWeth(uint256 amount) external;
 
-    /// @notice Withdraw up to `wethAmount` WETH notional (idle + pro-rata LP) to owner. Pass `type(uint256).max` for full exit.
+    /// @notice Withdraw WETH notional to owner. Pass `type(uint256).max` (or any amount >= `totalValueWeth()`) to fully exit in one tx.
     function withdrawWeth(uint256 wethAmount) external;
 
     function poolValue() external view returns (uint256);

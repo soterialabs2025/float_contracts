@@ -7,6 +7,8 @@ import "../../../libraries/TickMath.sol";
 /// @title TrailingFloorLib
 /// @notice Pure tick / trailing-floor math used by `FloatStrategyV4` only (no dependency on `LiquidityLibrary`).
 library TrailingFloorLib {
+    error SqrtOverflow();
+
     function alignDown(int24 tick, int24 spacing) internal pure returns (int24) {
         int24 r = tick % spacing;
         return r == 0 ? tick : (tick < 0 ? tick - r - spacing : tick - r);
@@ -32,9 +34,7 @@ library TrailingFloorLib {
         uint256 maxSafeX1e18 = type(uint256).max / 1e18;
         if (x1e18 > maxSafeX1e18) {
             uint256 sqrtX = sqrt(x1e18);
-            if (sqrtX > type(uint256).max / 1e18) {
-                revert("sqrt1e18: result overflow");
-            }
+            if (sqrtX > type(uint256).max / 1e18) revert SqrtOverflow();
             return sqrtX * 1e18;
         }
         unchecked {

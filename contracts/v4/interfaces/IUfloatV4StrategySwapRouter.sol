@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolKey} from "../../../lib/v4-core/src/types/PoolKey.sol";
 
 /// @title IUFloatV4StrategySwapRouter
 /// @notice `UFloatSwapRouter` surface: per-asset v4 pool registry and strict swaps for allowlisted `UFloatStrategy` contracts.

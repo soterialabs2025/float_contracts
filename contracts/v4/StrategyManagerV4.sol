@@ -31,16 +31,22 @@ contract StrategyManagerV4 is Ownable {
     uint256 public ratchetNumerator = 1;
     uint256 public ratchetDenominator = 3;
 
+    error InvalidBps();
+    error InvalidCount();
+    error InvalidRatchetCap();
+    error InvalidRatchet();
+    error RatchetMustTighten();
+
     function setMintParams(
         uint256 _targetAssetBps,
         uint256 _offensiveAssetBps,
         uint256 _rangeBelowBps,
         uint256 _rangeAboveBps
     ) external onlyOwner {
-        require(_targetAssetBps > 0 && _targetAssetBps < 10_000, "bd target bps");
-        require(_offensiveAssetBps > 0 && _offensiveAssetBps < 10_000, "bd off bps");
-        require(_rangeBelowBps > 0 && _rangeBelowBps < 10_000, "bd below bps");
-        require(_rangeAboveBps > 0 && _rangeAboveBps < 10_000, "bd above bs");
+        if (_targetAssetBps == 0 || _targetAssetBps >= 10_000) revert InvalidBps();
+        if (_offensiveAssetBps == 0 || _offensiveAssetBps >= 10_000) revert InvalidBps();
+        if (_rangeBelowBps == 0 || _rangeBelowBps >= 10_000) revert InvalidBps();
+        if (_rangeAboveBps == 0 || _rangeAboveBps >= 10_000) revert InvalidBps();
         targetAssetBps = _targetAssetBps;
         offensiveAssetBps = _offensiveAssetBps;
         rangeBelowBps = _rangeBelowBps;
@@ -55,11 +61,11 @@ contract StrategyManagerV4 is Ownable {
         uint256 _ratchetNumerator,
         uint256 _ratchetDenominator
     ) external onlyOwner {
-        require(_minFloorTickCount > 0, "bd flr cnt");
-        require(_minRangeBelowBps > 0 && _minRangeBelowBps < 10_000, "bd mn bps");
-        require(_maxOffensiveRatchetCount >= _minFloorTickCount, "bd cap");
-        require(_ratchetNumerator > 0 && _ratchetDenominator > 0, "bd rcht");
-        require(_ratchetNumerator < _ratchetDenominator, "rcht ttn");
+        if (_minFloorTickCount == 0) revert InvalidCount();
+        if (_minRangeBelowBps == 0 || _minRangeBelowBps >= 10_000) revert InvalidBps();
+        if (_maxOffensiveRatchetCount < _minFloorTickCount) revert InvalidRatchetCap();
+        if (_ratchetNumerator == 0 || _ratchetDenominator == 0) revert InvalidRatchet();
+        if (_ratchetNumerator >= _ratchetDenominator) revert RatchetMustTighten();
         minFloorTickCount = _minFloorTickCount;
         offensiveStaleDuration = _offensiveStaleDuration;
         minRangeBelowBps = _minRangeBelowBps;

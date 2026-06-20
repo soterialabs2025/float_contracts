@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
 import "./UStrategyManager.sol";
+import "./UStrategyOperatorAuth.sol";
 import {IUFloatV4StrategySwapRouter} from "./interfaces/IUFloatV4StrategySwapRouter.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
 import "./interfaces/IUFloatStrategyV4.sol";
@@ -15,12 +16,16 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
 import "../../libraries/LiquidityLibraryV4.sol";
 import "../../interfaces/IAllowanceTransfer.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import "./V4Deployments8453.sol";
 
-contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategyV4 {
-    error Unauthorized();
+contract UFloatStrategyV4 is
+    IUFloatStrategyV4,
+    UStrategyManager,
+    UStrategyOperatorAuth,
+    ReentrancyGuard,
+    IERC721Receiver,
+    IOutOfRangeStrategyV4
+{
     error ZeroValue();
     error ZeroAddress();
     error PositionExists();
@@ -50,8 +55,6 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     mapping(address => uint256) private _allowedTokenIndex;
     IERC20 public ASSET;
     address private constant PERMIT2 = V4Deployments8453.PERMIT2;
-    address private tritonAddr;
-    address private keeperStratAddr;
     bool private _initialized;
     uint256 public lastOffensiveTime;
     uint256 public lastHarvest;
@@ -92,14 +95,12 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         return hookData;
     }
 
-    function _requireAuthorized() internal view {
-        address s = _msgSender();
-        if (s != tritonAddr && s != keeperStratAddr && s != owner()) revert Unauthorized();
+    function _authCaller() internal view override returns (address) {
+        return _msgSender();
     }
 
-    modifier onlyAuthorized() {
-        _requireAuthorized();
-        _;
+    function _strategyOwner() internal view override returns (address) {
+        return owner();
     }
 
     /// @dev Implementation only — clones are bootstrapped by the factory.
@@ -116,7 +117,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     function bootstrapStrategy(
         address owner_,
         address swapRouter,
-        address triton,
+        address operatorRegistry_,
         address keeper,
         StratMethod stratMethod_,
         address[] calldata tokens
@@ -126,8 +127,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         if (owner_ == address(0) || swapRouter == address(0)) revert ZeroAddress();
         if (tokens.length == 0) revert TokenNotAllowed();
         _initialized = true;
-        tritonAddr = triton;
-        keeperStratAddr = keeper;
+        _setOperatorInfra(operatorRegistry_, keeper);
         swapRouterV4 = IUFloatV4StrategySwapRouter(swapRouter);
         _initStrategyDefaults();
         stratMethod = stratMethod_;
@@ -209,8 +209,8 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         if (wethAmount == 0) revert ZeroValue();
         uint256 totalValue = totalValueWeth();
         if (totalValue == 0) revert ZeroValue();
-        if (wethAmount > totalValue) wethAmount = totalValue;
-        _withdrawWethNotional(wethAmount, totalValue, _msgSender());
+        uint256 notional = wethAmount == type(uint256).max ? totalValue : wethAmount;
+        _withdrawWethNotional(notional, totalValue, _msgSender());
     }
 
     function totalValueWeth() public view returns (uint256) {
@@ -224,11 +224,18 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         idleAssetBefore = ASSET.balanceOf(address(this));
         idleWethBefore = WETH.balanceOf(address(this));
         if (liqPos.positionId != 0) {
-            uint256 poolVal = poolValue();
-            if (poolVal > 0) {
-                uint256 amountFromPool = Math.mulDiv(poolVal, wethNotional, totalValue);
-                if (amountFromPool > 0) {
-                    _decreaseLiquidity(amountFromPool);
+            if (wethNotional >= totalValue) {
+                _decreaseAllLiquidity();
+                if (liqPos.positionId != 0 && liqPos.getPositionLiquidity(positionManager) == 0) {
+                    liqPos.positionId = 0;
+                }
+            } else {
+                uint256 poolVal = poolValue();
+                if (poolVal > 0) {
+                    uint256 amountFromPool = Math.mulDiv(poolVal, wethNotional, totalValue);
+                    if (amountFromPool > 0) {
+                        _decreaseLiquidity(amountFromPool);
+                    }
                 }
             }
         }
@@ -239,31 +246,29 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
     }
 
     function _withdrawWethNotional(uint256 wethNotional, uint256 totalValue, address receiver) internal {
+        bool fullExit = wethNotional >= totalValue;
+        (uint256 wethFromPool, uint256 assetFromPool, uint256 idleWethBefore, uint256 idleAssetBefore) =
+            _unwindPoolNotional(wethNotional, totalValue);
+
         uint256 totalUserWeth;
-        uint256 wethFee;
-        if (stratMode == Mode.STABLE) {
-            (uint256 wethFromPool, , uint256 idleWethBefore, ) = _unwindPoolNotional(wethNotional, totalValue);
-            totalUserWeth = wethFromPool + Math.mulDiv(idleWethBefore, wethNotional, totalValue);
-            wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
-            totalUserWeth -= wethFee;
-            if (wethFee > 0) {
-                WETH.safeTransfer(owner(), wethFee);
-            }
-            WETH.safeTransfer(receiver, totalUserWeth);
-            return;
-        }
         uint256 totalUserAsset;
-        {
-            (uint256 wethFromPool, uint256 assetFromPool, uint256 idleWethBefore, uint256 idleAssetBefore) =
-                _unwindPoolNotional(wethNotional, totalValue);
-            totalUserAsset = assetFromPool + Math.mulDiv(idleAssetBefore, wethNotional, totalValue);
+        if (fullExit) {
+            totalUserWeth = WETH.balanceOf(address(this));
+            totalUserAsset = ASSET.balanceOf(address(this));
+        } else {
             totalUserWeth = wethFromPool + Math.mulDiv(idleWethBefore, wethNotional, totalValue);
+            totalUserAsset = assetFromPool + Math.mulDiv(idleAssetBefore, wethNotional, totalValue);
         }
-        uint256 assetFee = Math.mulDiv(totalUserAsset, withdrawalFeeBps, DIVISOR);
-        wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
-        totalUserAsset -= assetFee;
+
+        uint256 assetFee;
+        if (stratMode != Mode.STABLE) {
+            assetFee = Math.mulDiv(totalUserAsset, withdrawalFeeBps, DIVISOR);
+            totalUserAsset -= assetFee;
+        }
+        uint256 wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
         totalUserWeth -= wethFee;
-        {
+
+        if (stratMode != Mode.STABLE && totalUserAsset > 0) {
             uint256 wethBeforeSwap = WETH.balanceOf(address(this));
             _swap(ASSET, totalUserAsset);
             totalUserWeth += WETH.balanceOf(address(this)) - wethBeforeSwap;
@@ -341,9 +346,17 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         _balanceTokens(assetBal, wethBal);
-        if (_increaseLiquidityInternal() > 0) {
-            _noteHarvestActivity();
-        }
+        try this._execIncreaseLiquidity() returns (uint128 added) {
+            if (added > 0) {
+                _noteHarvestActivity();
+            }
+        } catch {}
+    }
+
+    /// @dev External wrapper so `_harvest` can try/catch compound without reverting fee collection.
+    function _execIncreaseLiquidity() external returns (uint128) {
+        if (msg.sender != address(this)) revert Unauthorized();
+        return _increaseLiquidityInternal();
     }
 
     function _inRange() internal view returns (bool) {
@@ -803,19 +816,8 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         _approveTriple(WETH, router, pm);
     }
 
-    function _fromV4PoolKey(PoolKey memory key) internal pure returns (LiquidityLibraryV4.PoolKey memory) {
-        return LiquidityLibraryV4.PoolKey({
-            currency0: Currency.unwrap(key.currency0),
-            currency1: Currency.unwrap(key.currency1),
-            fee: key.fee,
-            tickSpacing: key.tickSpacing,
-            hooks: address(key.hooks)
-        });
-    }
-
     function _poolKeyFromRouter(address asset) internal view returns (LiquidityLibraryV4.PoolKey memory key) {
-        (PoolKey memory routerKey, ) = swapRouterV4.getV4PoolConfig(asset);
-        key = _fromV4PoolKey(routerKey);
+        key = LiquidityLibraryV4.poolKeyFromRouter(IV4PoolConfigSource(address(swapRouterV4)), asset);
         address w = address(WETH);
         if (key.currency0 >= key.currency1) revert PoolKeyInvalid();
         if (!((key.currency0 == asset && key.currency1 == w) || (key.currency1 == asset && key.currency0 == w))) {
@@ -834,9 +836,7 @@ contract UFloatStrategyV4 is IUFloatStrategyV4, UStrategyManager, ReentrancyGuar
         _changeAsset(_newAssetAddr);
     }
 
-    function exitToStable() external {
-        address s = _msgSender();
-        if (s != tritonAddr && s != owner()) revert Unauthorized();
+    function exitToStable() external onlyOperatorOrOwner {
         _changeAsset(address(WETH));
     }
 

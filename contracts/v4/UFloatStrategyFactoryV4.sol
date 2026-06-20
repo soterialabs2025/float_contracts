@@ -16,7 +16,7 @@ import "./interfaces/IUFloatKeeper.sol";
 contract UFloatStrategyFactoryV4 is Ownable {
     struct InfraConfig {
         address swapRouter;
-        address triton;
+        address operatorRegistry;
         address keeper;
     }
 
@@ -40,25 +40,25 @@ contract UFloatStrategyFactoryV4 is Ownable {
         uint256 keeperId,
         uint256 allowedTokenCount
     );
-    event InfraUpdated(address indexed swapRouter, address indexed triton, address indexed keeper);
+    event InfraUpdated(address indexed swapRouter, address indexed operatorRegistry, address indexed keeper);
     event DeployGateUpdated(address indexed deployGateToken, uint256 minDeployGateBalance);
 
     constructor(InfraConfig memory config) Ownable(msg.sender) {
-        if (config.swapRouter == address(0) || config.triton == address(0) || config.keeper == address(0)) {
+        if (config.swapRouter == address(0) || config.operatorRegistry == address(0) || config.keeper == address(0)) {
             revert ZeroAddress();
         }
         infra = config;
         implementation = address(new UFloatStrategyV4(address(this)));
     }
 
-    /// @notice Update router / triton / keeper wired into newly deployed strategies.
+    /// @notice Update router / operator registry / keeper wired into newly deployed strategies.
     /// @dev    After changing router or keeper, call `setStrategyFactory(address(this))` on the new contracts.
     function updateInfra(InfraConfig calldata config) external onlyOwner {
-        if (config.swapRouter == address(0) || config.triton == address(0) || config.keeper == address(0)) {
+        if (config.swapRouter == address(0) || config.operatorRegistry == address(0) || config.keeper == address(0)) {
             revert ZeroAddress();
         }
         infra = config;
-        emit InfraUpdated(config.swapRouter, config.triton, config.keeper);
+        emit InfraUpdated(config.swapRouter, config.operatorRegistry, config.keeper);
     }
 
     /// @notice Set deploy gate token and minimum balance. Pass `address(0)` to disable the gate.
@@ -73,15 +73,6 @@ contract UFloatStrategyFactoryV4 is Ownable {
         address[] calldata tokens
     ) external returns (address strategy, uint256 keeperId) {
         return _deployStrategy(msg.sender, stratMethod, tokens);
-    }
-
-    function deployStrategyFor(
-        address strategyOwner,
-        UStrategyManager.StratMethod stratMethod,
-        address[] calldata tokens
-    ) external returns (address strategy, uint256 keeperId) {
-        if (strategyOwner == address(0)) revert ZeroAddress();
-        return _deployStrategy(strategyOwner, stratMethod, tokens);
     }
 
     function _deployStrategy(
@@ -104,7 +95,7 @@ contract UFloatStrategyFactoryV4 is Ownable {
         strat.bootstrapStrategy(
             strategyOwner,
             infra.swapRouter,
-            infra.triton,
+            infra.operatorRegistry,
             infra.keeper,
             stratMethod,
             tokens

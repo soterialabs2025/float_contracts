@@ -4,11 +4,14 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
+import "./interfaces/IOperatorRegistry.sol";
 import "./interfaces/IUFloatKeeper.sol";
 
 /// @title UfloatKeeper
 /// @notice Keeper for standalone `UfloatStrategyV4` contracts. No Float vault or contract manager.
-/// @dev `UfloatStrategyV4.mode()`: 3 = STABLE (skip upkeep / harvest).
+/// @dev    `UfloatStrategyV4.mode()`: 3 = STABLE (skip upkeep / harvest).
+///         Operators on `operatorRegistry` call upkeep/harvest (wallet sharding).
+///         Harvest is not throttled by upkeep `minInterval`; strategy enforces `minHarvestDelay`.
 contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     uint8 private constant MODE_STABLE = 3;
     uint32 public constant DEFAULT_MIN_INTERVAL = 3;
@@ -16,17 +19,18 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     struct WatchedStrategy {
         address stratAddr;
         uint32 minInterval;
-        uint32 lastAction;
+        uint32 lastUpkeep;
         bool active;
     }
 
+    IOperatorRegistry public immutable operatorRegistry;
     WatchedStrategy[] public watched;
 
-    address public tritonAddr;
     address public strategyFactory;
 
     error Unauthorized();
     error ZeroAddress();
+    error BadId();
 
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
     event StrategyUpdated(address indexed stratAddr);
@@ -42,14 +46,18 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     );
     event HarvestPerformed(uint256 indexed id, address indexed strat, address indexed keeper);
 
-    constructor(address _tritonAddr) Ownable(msg.sender) {
-        if (_tritonAddr == address(0)) revert ZeroAddress();
-        tritonAddr = _tritonAddr;
+    constructor(address operatorRegistry_) Ownable(msg.sender) {
+        if (operatorRegistry_ == address(0)) revert ZeroAddress();
+        operatorRegistry = IOperatorRegistry(operatorRegistry_);
     }
 
-    modifier onlyAuthorized() {
-        address s = _msgSender();
-        if (s != tritonAddr && s != owner() && s != strategyFactory) revert Unauthorized();
+    modifier onlyOperator() {
+        if (!operatorRegistry.isOperator(msg.sender) && msg.sender != owner()) revert Unauthorized();
+        _;
+    }
+
+    modifier onlyStrategyFactory() {
+        if (msg.sender != strategyFactory && msg.sender != owner()) revert Unauthorized();
         _;
     }
 
@@ -60,20 +68,20 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc IUFloatKeeper
-    function addStrategy(address strat) external onlyAuthorized returns (uint256 id) {
+    function addStrategy(address strat) external onlyStrategyFactory returns (uint256 id) {
         if (strat == address(0)) revert ZeroAddress();
         watched.push(WatchedStrategy({
             stratAddr: strat,
             minInterval: DEFAULT_MIN_INTERVAL,
-            lastAction: 0,
+            lastUpkeep: 0,
             active: true
         }));
         id = watched.length - 1;
         emit StrategyAdded(strat, DEFAULT_MIN_INTERVAL);
     }
 
-    function updateStrategy(uint256 id, bool active, uint32 minInterval) external onlyAuthorized {
-        require(id < watched.length, "bad id");
+    function updateStrategy(uint256 id, bool active, uint32 minInterval) external onlyOperator {
+        if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         ws.active = active;
         ws.minInterval = minInterval;
@@ -84,11 +92,11 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         return watched.length;
     }
 
-    function performUpkeep(uint256 id) external nonReentrant {
+    function performUpkeep(uint256 id) external nonReentrant onlyOperator {
         _performUpkeep(id, msg.sender);
     }
 
-    function performUpkeepBatch(uint256[] calldata ids) external nonReentrant {
+    function performUpkeepBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
         uint256 len = ids.length;
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
@@ -98,7 +106,7 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     }
 
     function _performUpkeep(uint256 id, address keeper) internal {
-        require(id < watched.length, "bad id");
+        if (id >= watched.length) revert BadId();
 
         WatchedStrategy storage ws = watched[id];
         address stratAddr = ws.stratAddr;
@@ -108,9 +116,9 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
             return;
         }
 
-        uint32 lastAction = ws.lastAction;
+        uint32 lastUpkeep = ws.lastUpkeep;
         uint32 minInterval = ws.minInterval;
-        if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
+        if (lastUpkeep != 0 && minInterval > 0 && uint32(block.timestamp) < lastUpkeep + minInterval) {
             return;
         }
 
@@ -122,58 +130,35 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
 
         bool didAct = strat.keeperCheck();
         if (didAct) {
-            ws.lastAction = uint32(block.timestamp);
+            ws.lastUpkeep = uint32(block.timestamp);
         }
     }
 
-    function performHarvest(uint256 id, bool skipIncreaseLiquidity) external nonReentrant {
-        require(id < watched.length, "bad id");
-
-        WatchedStrategy storage ws = watched[id];
-        if (!ws.active || ws.stratAddr == address(0)) return;
-
-        uint32 lastAction = ws.lastAction;
-        uint32 minInterval = ws.minInterval;
-        if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            return;
-        }
-
-        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(ws.stratAddr);
-        if (strat.mode() == MODE_STABLE) return;
-
-        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {
-            ws.lastAction = uint32(block.timestamp);
-            emit HarvestPerformed(id, ws.stratAddr, msg.sender);
-        } catch {}
+    /// @param skipIncreaseLiquidity Pass `true` to collect fees only (safer on Doppler / hooked pools).
+    function performHarvest(uint256 id, bool skipIncreaseLiquidity) external nonReentrant onlyOperator {
+        _performHarvest(id, skipIncreaseLiquidity, msg.sender);
     }
 
-    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external nonReentrant {
+    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external nonReentrant onlyOperator {
         uint256 len = ids.length;
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
             if (ids[i] >= maxId) continue;
-            _performHarvest(ids[i], skipIncreaseLiquidity);
+            _performHarvest(ids[i], skipIncreaseLiquidity, msg.sender);
         }
     }
 
-    function _performHarvest(uint256 id, bool skipIncreaseLiquidity) internal {
-        require(id < watched.length, "bad id");
+    function _performHarvest(uint256 id, bool skipIncreaseLiquidity, address keeper) internal {
+        if (id >= watched.length) revert BadId();
 
         WatchedStrategy storage ws = watched[id];
-        if (!ws.active || ws.stratAddr == address(0)) return;
+        address stratAddr = ws.stratAddr;
+        if (!ws.active || stratAddr == address(0)) return;
 
-        uint32 lastAction = ws.lastAction;
-        uint32 minInterval = ws.minInterval;
-        if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            return;
-        }
-
-        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(ws.stratAddr);
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
         if (strat.mode() == MODE_STABLE) return;
 
-        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {
-            ws.lastAction = uint32(block.timestamp);
-            emit HarvestPerformed(id, ws.stratAddr, msg.sender);
-        } catch {}
+        strat.harvestBoolean(skipIncreaseLiquidity);
+        emit HarvestPerformed(id, stratAddr, keeper);
     }
 }
