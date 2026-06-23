@@ -4,8 +4,6 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../../../libraries/TickMath.sol";
 
-/// @title TrailingFloorLib
-/// @notice Pure tick / trailing-floor math used by `FloatStrategyV4` only (no dependency on `LiquidityLibrary`).
 library TrailingFloorLib {
     error SqrtOverflow();
 
@@ -42,7 +40,6 @@ library TrailingFloorLib {
         }
     }
 
-    /// @notice token1/token0 price increase from `anchorTick` to `currentTick` in bps (10_000 = 100%), when current is above anchor; else 0.
     function priceDeviationBpsAbove(int24 anchorTick, int24 currentTick) internal pure returns (uint256 deviationBps) {
         if (currentTick <= anchorTick) return 0;
         uint160 sa = TickMath.getSqrtRatioAtTick(anchorTick);
@@ -59,7 +56,6 @@ library TrailingFloorLib {
         return Math.mulDiv(rallyBps, uint256(num), uint256(den));
     }
 
-    /// @notice Tick at or below the sqrt price that is `depthBps`/10000 below the current token1/token0 price (0 < depthBps < 10_000).
     function floorTickBelowCurrentByBps(int24 currentTick, uint256 depthBps) internal pure returns (int24) {
         if (depthBps == 0) return currentTick;
         if (depthBps >= 10_000) depthBps = 9999;
@@ -76,7 +72,6 @@ library TrailingFloorLib {
         return TickMath.getTickAtSqrtRatio(uint160(newSqrt256));
     }
 
-    /// @notice Tick at or above the sqrt price that is `riseBps`/10000 above the current token1/token0 price (0 < riseBps < 10_000).
     function ceilTickAboveCurrentByBps(int24 currentTick, uint256 riseBps) internal pure returns (int24) {
         if (riseBps == 0) return currentTick;
         if (riseBps >= 10_000) riseBps = 9999;

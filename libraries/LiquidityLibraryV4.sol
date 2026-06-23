@@ -14,16 +14,10 @@ import {PoolId, PoolIdLibrary} from "../lib/v4-core/src/types/PoolId.sol";
 import {IPoolManager} from "../lib/v4-core/src/interfaces/IPoolManager.sol";
 import {StateLibrary} from "../lib/v4-core/src/libraries/StateLibrary.sol";
 
-/// @dev Minimal surface to read v4 pool config without importing router types that shadow `LiquidityLibraryV4.PoolKey`.
 interface IV4PoolConfigSource {
     function getV4PoolConfig(address assetAddress) external view returns (CorePoolKey memory key, bytes memory hookData);
 }
 
-/**
- * @title LiquidityLibraryV4
- * @notice Drop-in replacement for LiquidityLibrary targeting Uniswap V4.
- *
- */
 library LiquidityLibraryV4 {
     using SafeERC20 for IERC20;
 
@@ -38,7 +32,7 @@ library LiquidityLibraryV4 {
     uint8 internal constant ACTION_MINT_POSITION      = 0x02;
     uint8 internal constant ACTION_INCREASE_LIQUIDITY = 0x00;
     uint8 internal constant ACTION_DECREASE_LIQUIDITY = 0x01;
-    uint8 internal constant ACTION_BURN_POSITION      = 0x03; // optional cleanup
+    uint8 internal constant ACTION_BURN_POSITION      = 0x03; 
     uint8 internal constant ACTION_SETTLE_PAIR        = 0x0d;
     uint8 internal constant ACTION_TAKE_PAIR          = 0x11;
     uint8 internal constant ACTION_CLOSE_CURRENCY     = 0x12;
@@ -48,27 +42,26 @@ library LiquidityLibraryV4 {
 
 
     struct PositionState {
-        uint256 positionId;   // ERC-721 token ID (0 = no open position)
+        uint256 positionId;     
         int24   tickLower;
         int24   tickUpper;
     }
 
     struct PoolKey {
-        address currency0;   // lower-sorted token (address(0) for native ETH)
-        address currency1;   // higher-sorted token
+        address currency0;   
+        address currency1;   
         uint24  fee;
         int24   tickSpacing;
-        address hooks;       // address(0) for no-hook pools
+        address hooks;       
     }
 
     struct MintContext {
         IPositionManagerV4  posm;
         IPoolManagerV4      poolManager;
         PoolKey             poolKey;
-        int24               m;            // width multiplier (same meaning as V3)
+        int24               m;            
         uint16              slippageBps;
         uint256             dust;
-        /// @dev Must match `setV4PoolConfig` on the strategy router for hooked pools.
         bytes               hookData;
     }
 
@@ -255,16 +248,14 @@ library LiquidityLibraryV4 {
     function mintNewPosition(
         PositionState storage ps,
         MintContext memory ctx,
-        uint256 bal0,   // balance of currency0 held by caller
-        uint256 bal1    // balance of currency1 held by caller
+        uint256 bal0,   
+        uint256 bal1    
     ) internal returns (uint256 newTokenId, uint128 newLiquidity) {
         if (bal0 == 0 && bal1 == 0) return (0, 0);
 
-        // Read state ONCE (fixes double-slot0 race in V3 library)
         (uint160 sqrtP, int24 currentTick) = getSlot0(ctx.poolManager, ctx.poolKey);
         if (sqrtP == 0) revert PoolNotInitialized();
 
-        // Compute tick range  (identical logic to V3 library)
         int24 base  = alignDown(currentTick, ctx.poolKey.tickSpacing);
         int24 total = int24(int256(ctx.m) * int256(ctx.poolKey.tickSpacing));
         if (total <= 0) revert ZeroWidth();
@@ -280,7 +271,6 @@ library LiquidityLibraryV4 {
         return mintNewPositionWithRange(ps, ctx, bal0, bal1, lower, upper);
     }
 
-    /// @notice Mint with an explicit tick range (reads current slot0 for price).
     function mintNewPositionWithRange(
         PositionState storage ps,
         MintContext memory ctx,
@@ -423,7 +413,6 @@ library LiquidityLibraryV4 {
         uint256 bal0Before = IERC20(ctx.poolKey.currency0).balanceOf(recipient);
         uint256 bal1Before = IERC20(ctx.poolKey.currency1).balanceOf(recipient);
 
-        // Zero-liquidity trick: decreasing by 0 credits fees to the delta
         bytes memory actions = abi.encodePacked(
             ACTION_DECREASE_LIQUIDITY,
             ACTION_TAKE_PAIR
@@ -431,9 +420,9 @@ library LiquidityLibraryV4 {
         bytes[] memory params = new bytes[](2);
         params[0] = abi.encode(
             ps.positionId,
-            uint256(0),  // liquidityDelta = 0 => fees only
-            uint128(0),  // amount0Min
-            uint128(0),  // amount1Min
+            uint256(0),  
+            uint128(0),  
+            uint128(0),  
             ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1, recipient);
@@ -455,7 +444,6 @@ library LiquidityLibraryV4 {
         uint128 liq = getPositionLiquidity(ps, ctx.posm);
         if (liq == 0) return 0;
 
-        // [DECREASE_LIQUIDITY (full), TAKE_PAIR]
         bytes memory actions = abi.encodePacked(
             ACTION_DECREASE_LIQUIDITY,
             ACTION_TAKE_PAIR
@@ -464,8 +452,8 @@ library LiquidityLibraryV4 {
         params[0] = abi.encode(
             ps.positionId,
             uint256(liq),
-            uint128(0), // amount0Min
-            uint128(0), // amount1Min
+            uint128(0), 
+            uint128(0), 
             ctx.hookData
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1, address(this));

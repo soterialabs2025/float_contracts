@@ -18,6 +18,19 @@ abstract contract UStrategyOperatorAuth {
         keeperStratAddr = keeper_;
     }
 
+    function keeper() external view returns (address) {
+        return keeperStratAddr;
+    }
+
+    function _requireKeeper() internal view {
+        if (_authCaller() != keeperStratAddr) revert Unauthorized();
+    }
+
+    modifier onlyKeeper() {
+        _requireKeeper();
+        _;
+    }
+
     function _authCaller() internal view virtual returns (address) {
         return msg.sender;
     }

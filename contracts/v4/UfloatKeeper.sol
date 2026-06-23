@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
+import "./interfaces/IUFloatStrategyWatched.sol";
 import "./interfaces/IOperatorRegistry.sol";
 import "./interfaces/IUFloatKeeper.sol";
 
@@ -41,8 +42,7 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         address indexed keeper,
         bool didAct,
         uint8 strategyMode,
-        uint256 consecutiveOffensiveCount,
-        uint256 defensiveEnteredAt
+        uint256 consecutiveOffensiveCount
     );
     event HarvestPerformed(uint256 indexed id, address indexed strat, address indexed keeper);
 
@@ -77,6 +77,7 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
             active: true
         }));
         id = watched.length - 1;
+        IUFloatStrategyWatched(strat).setWatched(true);
         emit StrategyAdded(strat, DEFAULT_MIN_INTERVAL);
     }
 
@@ -85,6 +86,7 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         WatchedStrategy storage ws = watched[id];
         ws.active = active;
         ws.minInterval = minInterval;
+        IUFloatStrategyWatched(ws.stratAddr).setWatched(active);
         emit StrategyUpdated(ws.stratAddr);
     }
 
@@ -112,7 +114,7 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         address stratAddr = ws.stratAddr;
 
         if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, keeper, false, 0, 0, 0);
+            emit UpkeepPerformed(id, stratAddr, keeper, false, 0, 0);
             return;
         }
 
