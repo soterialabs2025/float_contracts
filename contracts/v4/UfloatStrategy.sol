@@ -330,7 +330,6 @@ contract UFloatStrategyV4 is
         if (method == StratMethod.ReBalanceOnly) {
             return _remintAtTarget();
         }
-        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (method == StratMethod.OffensiveOnly) {
             _enterOffensive();
             return liqPos.positionId != 0;
@@ -339,12 +338,7 @@ contract UFloatStrategyV4 is
             _enterDefensive();
             return true;
         }
-        if (_isAllWeth(assetBal, wethBal)) {
-            _enterOffensive();
-            return liqPos.positionId != 0;
-        }
-        _enterDefensive();
-        return true;
+        return _handleOffensiveDefensiveOor();
     }
     function _remintAtTarget() internal returns (bool) {
         stratMode = Mode.NORMAL;
@@ -359,8 +353,41 @@ contract UFloatStrategyV4 is
         }
         return liqPos.positionId != 0;
     }
-    function _isAllWeth(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
-        return wethBal > LIQUIDITY_DUST && assetBal <= LIQUIDITY_DUST;
+    /// @dev Raw OOR side vs last LP band (Uniswap tick space).
+    function _oorExitSide() internal view returns (bool exitedAbove, bool exitedBelow) {
+        (int24 lower, int24 upper) = (liqPos.tickLower, liqPos.tickUpper);
+        if (lower == 0 && upper == 0) return (false, false);
+        (, int24 poolTick) = _readSlot0();
+        exitedAbove = poolTick >= upper;
+        exitedBelow = poolTick < lower;
+    }
+    /// @dev Map tick exit to ASSET strength in WETH terms (WETH = numéraire).
+    ///      WETH/ASSET pools on Base have WETH as token0: price up in tick space = ASSET weaker.
+    /// @dev Maps OOR exit side to asset strength using WETH as numéraire and the stored pool token order.
+    ///      Uniswap price is token1/token0: when WETH is token0, higher tick => weaker ASSET; when WETH is
+    ///      token1, higher tick => stronger ASSET.
+    function _assetStrengthAfterOor() internal view returns (bool assetStrong, bool assetWeak) {
+        (bool exitedAbove, bool exitedBelow) = _oorExitSide();
+        address weth = address(WETH);
+        if (poolKey.currency0 == weth) {
+            assetStrong = exitedBelow;
+            assetWeak = exitedAbove;
+        } else if (poolKey.currency1 == weth) {
+            assetStrong = exitedAbove;
+            assetWeak = exitedBelow;
+        }
+    }
+    function _handleOffensiveDefensiveOor() internal returns (bool) {
+        (bool assetStrong, bool assetWeak) = _assetStrengthAfterOor();
+        if (assetStrong) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
+        }
+        if (assetWeak) {
+            _enterDefensive();
+            return true;
+        }
+        return _remintAtTarget();
     }
     function _handleOffensiveStale() internal returns (bool) {
         if (stratMode == Mode.OFFENSIVE
@@ -416,12 +443,7 @@ contract UFloatStrategyV4 is
             _enterDefensive();
             return true;
         }
-        if (_isAllWeth(assetBal, wethBal)) {
-            _enterOffensive();
-            return liqPos.positionId != 0;
-        }
-        _enterDefensive();
-        return true;
+        return _handleOffensiveDefensiveOor();
     }
     function _enterDefensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();

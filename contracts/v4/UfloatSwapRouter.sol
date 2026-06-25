@@ -117,15 +117,21 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
 
     /// @dev Single-entry registrar used by `_seedV4PoolConfigs`. Args are typed as `uint160` and call sites
     ///      prepend a `00` to each 40-digit hex literal (making it 42 digits → not address-shaped) so we
-    ///      avoid Solidity's strict EIP-55 checksum requirement on `0x...` literals. `hookData` is
-    ///      intentionally empty for all seeded pools — new entries (or override of an existing entry's
-    ///      hookData) go through `setV4PoolConfig` (owner / configManager).
-    function _seed(uint160 asset, uint160 c0, uint160 c1, uint160 hooksAddr) private {
+    ///      avoid Solidity's strict EIP-55 checksum requirement on `0x...` literals. Currency order is
+    ///      derived automatically (currency0 < currency1). `hookData` is intentionally empty for all seeded
+    ///      pools — new entries (or override of an existing entry's hookData) go through `setV4PoolConfig`
+    ///      (owner / configManager).
+    function _seed(uint160 asset, uint160 hooksAddr) private {
         address a = address(asset);
+        address w = address(SEED_WETH);
+        if (a == w) revert ZeroAddress();
+        (Currency c0, Currency c1) = a < w
+            ? (Currency.wrap(a), Currency.wrap(w))
+            : (Currency.wrap(w), Currency.wrap(a));
         v4PoolConfig[a] = V4PoolConfig({
             key: PoolKey({
-                currency0:   Currency.wrap(address(c0)),
-                currency1:   Currency.wrap(address(c1)),
+                currency0:   c0,
+                currency1:   c1,
                 fee:         SEED_FEE,
                 tickSpacing: SEED_TICK_SPACING,
                 hooks:       IHooks(address(hooksAddr))
@@ -140,63 +146,63 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     ///      `00` (so it's 42 hex digits, not 40) to bypass Solidity's EIP-55 checksum validation.
     function _seedV4PoolConfigs() private {
         // 1  SAIRI
-        _seed(0x00de61878b0b21ce395266c44d4d548d1c72a3eb07, SEED_WETH, 0x00de61878b0b21ce395266c44d4d548d1c72a3eb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x00de61878b0b21ce395266c44d4d548d1c72a3eb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 2  MiroShark
-        _seed(0x00d7bc6a05a56655fb2052f742b012d1dfd66e1ba3, SEED_WETH, 0x00d7bc6a05a56655fb2052f742b012d1dfd66e1ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x00d7bc6a05a56655fb2052f742b012d1dfd66e1ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 3  EDGE
-        _seed(0x0062abe92f50c518165a5c010fe59f35023197fba3, SEED_WETH, 0x0062abe92f50c518165a5c010fe59f35023197fba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x0062abe92f50c518165a5c010fe59f35023197fba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 4  Litcoin (asset < WETH)
-        _seed(0x00316ffb9c875f900adcf04889e415cc86b564eba3, 0x00316ffb9c875f900adcf04889e415cc86b564eba3, SEED_WETH, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x00316ffb9c875f900adcf04889e415cc86b564eba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 5  LienFi (asset < WETH)
-        _seed(0x003722264ab15a1dfce5a5af89e6547f7949a8aba3, 0x003722264ab15a1dfce5a5af89e6547f7949a8aba3, SEED_WETH, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x003722264ab15a1dfce5a5af89e6547f7949a8aba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 6  ClawBank (asset < WETH)
-        _seed(0x0016332535e2c27da578bc2e82beb09ce9d3c8eb07, 0x0016332535e2c27da578bc2e82beb09ce9d3c8eb07, SEED_WETH, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x0016332535e2c27da578bc2e82beb09ce9d3c8eb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 7  gitlawb
-        _seed(0x005f980dcfc4c0fa3911554cf5ab288ed0eb13dba3, SEED_WETH, 0x005f980dcfc4c0fa3911554cf5ab288ed0eb13dba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x005f980dcfc4c0fa3911554cf5ab288ed0eb13dba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 8  Helixa Cred
-        _seed(0x00ab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3, SEED_WETH, 0x00ab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x00ab3f23c2abcb4e12cc8b593c218a7ba64ed17ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 9  CLAWNCH
-        _seed(0x00a1f72459dfa10bad200ac160ecd78c6b77a747be, SEED_WETH, 0x00a1f72459dfa10bad200ac160ecd78c6b77a747be, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x00a1f72459dfa10bad200ac160ecd78c6b77a747be, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 10 Moltbook
-        _seed(0x00b695559b26bb2c9703ef1935c37aeae9526bab07, SEED_WETH, 0x00b695559b26bb2c9703ef1935c37aeae9526bab07, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x00b695559b26bb2c9703ef1935c37aeae9526bab07, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 11 nookplot
-        _seed(0x00b233bdffd437e60fa451f62c6c09d3804d285ba3, SEED_WETH, 0x00b233bdffd437e60fa451f62c6c09d3804d285ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x00b233bdffd437e60fa451f62c6c09d3804d285ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 12 Hermes OS
-        _seed(0x0095ccfd2b81a9667b0cc979992632f98fc853eba3, SEED_WETH, 0x0095ccfd2b81a9667b0cc979992632f98fc853eba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x0095ccfd2b81a9667b0cc979992632f98fc853eba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 13 KellyClaude
-        _seed(0x0050d2280441372486beecdd328c1854743ebacb07, SEED_WETH, 0x0050d2280441372486beecdd328c1854743ebacb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x0050d2280441372486beecdd328c1854743ebacb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 14 Juno Agent
-        _seed(0x004e6c9f48f73e54ee5f3ab7e2992b2d733d0d0b07, SEED_WETH, 0x004e6c9f48f73e54ee5f3ab7e2992b2d733d0d0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x004e6c9f48f73e54ee5f3ab7e2992b2d733d0d0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 16 Darksol (asset < WETH)
-        _seed(0x0000cb1fbca324d51325a7264d54072bc073c28ba3, 0x0000cb1fbca324d51325a7264d54072bc073c28ba3, SEED_WETH, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x0000cb1fbca324d51325a7264d54072bc073c28ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 18 Doppel
-        _seed(0x00f27b8ef47842e6445e37804896f1bc5e29381b07, SEED_WETH, 0x00f27b8ef47842e6445e37804896f1bc5e29381b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x00f27b8ef47842e6445e37804896f1bc5e29381b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 19 FELIX
-        _seed(0x00f30bf00edd0c22db54c9274b90d2a4c21fc09b07, SEED_WETH, 0x00f30bf00edd0c22db54c9274b90d2a4c21fc09b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x00f30bf00edd0c22db54c9274b90d2a4c21fc09b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 20 BitVault Signal
-        _seed(0x00d88fd4a11255e51f64f78b4a7d74456325c2d8dc, SEED_WETH, 0x00d88fd4a11255e51f64f78b4a7d74456325c2d8dc, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x00d88fd4a11255e51f64f78b4a7d74456325c2d8dc, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 21 clawd.atg.eth
-        _seed(0x009f86db9fc6f7c9408e8fda3ff8ce4e78ac7a6b07, SEED_WETH, 0x009f86db9fc6f7c9408e8fda3ff8ce4e78ac7a6b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x009f86db9fc6f7c9408e8fda3ff8ce4e78ac7a6b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 22 Molten
-        _seed(0x0059c0d5c34c301ac0600147924d6c9be22a2f0b07, SEED_WETH, 0x0059c0d5c34c301ac0600147924d6c9be22a2f0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x0059c0d5c34c301ac0600147924d6c9be22a2f0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 23 BOTCOIN
-        _seed(0x00a601877977340862ca67f816eb079958e5bd0ba3, SEED_WETH, 0x00a601877977340862ca67f816eb079958e5bd0ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        _seed(0x00a601877977340862ca67f816eb079958e5bd0ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 24 Regent
-        _seed(0x006f89bca4ea5931edfcb09786267b251dee752b07, SEED_WETH, 0x006f89bca4ea5931edfcb09786267b251dee752b07, 0x00d60d6b218116cfd801e28f78d011a203d2b068cc);
+        _seed(0x006f89bca4ea5931edfcb09786267b251dee752b07, 0x00d60d6b218116cfd801e28f78d011a203d2b068cc);
         // 25 SelfClaw
-        _seed(0x009ae5f51d81ff510bf961218f833f79d57bfbab07, SEED_WETH, 0x009ae5f51d81ff510bf961218f833f79d57bfbab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x009ae5f51d81ff510bf961218f833f79d57bfbab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 26 machines-cash
-        _seed(0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, SEED_WETH, 0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
+        _seed(0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 27 Cody (asset < WETH)
-        _seed(0x003977fc913db86b01a257232c568317798b903b07, 0x003977fc913db86b01a257232c568317798b903b07, SEED_WETH, 0x0034a45c6b61876d739400bd71228cbcbd4f53e8cc);
+        _seed(0x003977fc913db86b01a257232c568317798b903b07, 0x0034a45c6b61876d739400bd71228cbcbd4f53e8cc);
        // 28 GitBank (asset < WETH)
-        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, SEED_WETH, 0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 29 Supergemma4 (asset < WETH)
-        _seed(0x00572c4fa77623652411574c51b5ddb7e1b750aba3, SEED_WETH, 0x00572c4fa77623652411574c51b5ddb7e1b750aba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x00572c4fa77623652411574c51b5ddb7e1b750aba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
           // 30 grantr (asset < WETH)
-        _seed(0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, SEED_WETH, 0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 31 wake (asset < WETH)
-        _seed(0x0050c2cc97c4f487aa0cd742ab4b6afe8b8511bba3, SEED_WETH, 0x0050c2cc97c4f487aa0cd742ab4b6afe8b8511bba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x0050c2cc97c4f487aa0cd742ab4b6afe8b8511bba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
