@@ -31,15 +31,6 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
     event StrategyUpdated(address indexed stratAddr);
     event StrategyRemoved(address indexed stratAddr, uint256 indexed id);
-    event UpkeepPerformed(
-        uint256 indexed id,
-        address indexed strat,
-        address indexed keeper,
-        bool didAct,
-        uint8 strategyMode,
-        uint256 consecutiveOffensiveCount,
-        uint256 defensiveEnteredAt
-    );
     event VaultPoolValueSnapshot(address indexed vault, address indexed caller);
 
     constructor(address _managerAddress) Ownable(msg.sender) {
@@ -98,17 +89,12 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
         address stratAddr = ws.stratAddr;
 
         if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, 0, 0, 0);
             return;
         }
 
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            IOutOfRangeStrategyV4 s0 = IOutOfRangeStrategyV4(stratAddr);
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt()
-            );
             return;
         }
 
@@ -116,21 +102,16 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
 
         uint8 strategyMode = strat.mode();
         if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
             return;
         }
 
-        bool keeperCheck = strat.keeperCheck();
-
-        if (!keeperCheck) {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
+        if (!strat.keeperCheck()) {
             return;
         }
 
+        try strat.harvestBoolean(true) returns (uint256) {} catch {}
+
+        ws.lastAction = uint32(block.timestamp);
     }
 
     function performUpkeepBatch(uint256[] calldata ids) external {
@@ -147,40 +128,26 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
         address stratAddr = ws.stratAddr;
 
         if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, 0, 0, 0);
             return;
         }
 
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
-            IOutOfRangeStrategyV4 s0 = IOutOfRangeStrategyV4(stratAddr);
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt()
-            );
             return;
         }
 
         IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
 
-        uint8 strategyMode = strat.mode(); 
+        uint8 strategyMode = strat.mode();
         if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strategyMode, strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
             return;
         }
 
         try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {} catch {
-            emit UpkeepPerformed(
-                id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-            );
             return;
         }
 
         ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(
-            id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt()
-        );
     }
 }

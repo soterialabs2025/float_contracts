@@ -75,6 +75,10 @@ contract UFloatStrategyV4 is
     function mode() external view override returns (uint8) {
         return uint8(uint256(stratMode));
     }
+    /// @inheritdoc IOutOfRangeStrategyV4
+    function defensiveEnteredAt() external pure returns (uint256) {
+        return 0;
+    }
     function setWatched(bool status) external onlyKeeper {
         watched = status;
     }
@@ -361,8 +365,6 @@ contract UFloatStrategyV4 is
         exitedAbove = poolTick >= upper;
         exitedBelow = poolTick < lower;
     }
-    /// @dev Map tick exit to ASSET strength in WETH terms (WETH = numéraire).
-    ///      WETH/ASSET pools on Base have WETH as token0: price up in tick space = ASSET weaker.
     /// @dev Maps OOR exit side to asset strength using WETH as numéraire and the stored pool token order.
     ///      Uniswap price is token1/token0: when WETH is token0, higher tick => weaker ASSET; when WETH is
     ///      token1, higher tick => stronger ASSET.

@@ -57,6 +57,10 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         bytes hookData;
     }
     mapping(address => V4PoolConfig) public v4PoolConfig;
+    /// @notice Enumeratable asset list for frontends (`getRegisteredAssets`).
+    address[] private _registeredAssets;
+    /// @notice 1-based index in `_registeredAssets`; 0 means not listed.
+    mapping(address => uint256) private _registeredAssetIndex;
 
     /// @notice O(1) membership for authorized `UfloatStrategy` swap callers.
     mapping(address => bool) public isAuthorizedStrategy;
@@ -139,6 +143,13 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
             hookData: ""
         });
         emit V4PoolConfigSet(a, v4PoolConfig[a].key, "");
+        _registerAsset(a);
+    }
+
+    function _registerAsset(address asset) private {
+        if (asset == address(0) || _registeredAssetIndex[asset] != 0) return;
+        _registeredAssets.push(asset);
+        _registeredAssetIndex[asset] = _registeredAssets.length;
     }
 
     /// @dev Pre-registers every Float-eligible v4 pool. All seeded pools use the `0x800000` dynamic-fee flag
@@ -196,13 +207,27 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         // 27 Cody (asset < WETH)
         _seed(0x003977fc913db86b01a257232c568317798b903b07, 0x0034a45c6b61876d739400bd71228cbcbd4f53e8cc);
        // 28 GitBank (asset < WETH)
-        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 29 Supergemma4 (asset < WETH)
         _seed(0x00572c4fa77623652411574c51b5ddb7e1b750aba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
           // 30 grantr (asset < WETH)
         _seed(0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 31 wake (asset < WETH)
         _seed(0x0050c2cc97c4f487aa0cd742ab4b6afe8b8511bba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+          // 29 aeon (WETH < asset)
+        _seed(0x00bf8e8f0e8866a7052f948c16508644347c57aba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+        // 30 Berry Finance (WETH < asset)
+        _seed(0x00778d347b2ffbadf31a2a1be9cf42b4c7ba8b1ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 31 Blocktronics (WETH < asset)
+        _seed(0x007afe438411ee3959c7de6f7fb76bf9c769320ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 32 Orlix AI (WETH < asset)
+        _seed(0x00799c28bac95b3e0b26534d1e9a586511895ecba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 33 1claw AI (WETH < asset)
+        _seed(0x0061d91cff0fc9fbbdb89f505cf8a7422bf95fdba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 34 evo- (WETH < asset)
+        _seed(0x00721b072dbb616f29eea73ac004e03fd4e884bba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+          // 35 Pitch (WETH < asset)
+        _seed(0x00eae13ea73bec936664a51734c8c01ec7c3b0699c, 0x000000000000000000000000000000000000000000);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -289,7 +314,18 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         address c1 = Currency.unwrap(key.currency1);
         if (assetAddress != c0 && assetAddress != c1) revert AssetNotInKey();
         v4PoolConfig[assetAddress] = V4PoolConfig({key: key, hookData: hookData});
+        _registerAsset(assetAddress);
         emit V4PoolConfigSet(assetAddress, key, hookData);
+    }
+
+    /// @inheritdoc IUFloatV4StrategySwapRouter
+    function getRegisteredAssets() external view returns (address[] memory) {
+        return _registeredAssets;
+    }
+
+    /// @inheritdoc IUFloatV4StrategySwapRouter
+    function registeredAssetCount() external view returns (uint256) {
+        return _registeredAssets.length;
     }
 
     /// @inheritdoc IUFloatV4StrategySwapRouter

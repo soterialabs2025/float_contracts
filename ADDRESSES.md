@@ -19,15 +19,59 @@
 - **FloatContractmanagerV4**:`0xD12D64925340Ffc277d79b02A212Dd576701EaC9`
 - **UFloatKeeperV4**:`0xA198E1De3258f63A43c2d0C1DFa0C9dB533eAabF`
 
-- **UFloatStrategyV4**:``
+ **UFloatStrategyV4**:`0x236Ea38af3D4CaF2ff7e95e5bc9D6A928382ce76`
+- **UFloatStrategyV4**:`0x8050ac2d3f511815dba51cDE020069c4437B9796`
 - **ASSET**:``
 - **AssetPoolV4**: `` 
 
-["0xD18BCbE684210C6091d3F35AA2CEa23473648068","0x704618C4E8C201F45536DFD583911F8335e853Dd","0xA198E1De3258f63A43c2d0C1DFa0C9dB533eAabF"]
+["0xa575f7f1CB5079D7ED18123AFDc01bdDD7b59E21","0x704618C4E8C201F45536DFD583911F8335e853Dd","0xA198E1De3258f63A43c2d0C1DFa0C9dB533eAabF"]
 
 
-3000000
 ############################################################################################################################
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+  **Triton**: `0x66d60E991D09447245d668671d079b57eB48f58E`
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+
+- **FloatContractmanagerV4**:`0xD12D64925340Ffc277d79b02A212Dd576701EaC9`
+- **FloatStrategyV4**: `0x65E5af8382eB7816Ec80a98a8Ef2e7730C0CC183`  --`0`
+- **FloatVaultV4**: `0xdcc0B49CefA6Ed0e54A3C6aE0C37f3fdAeBaA9c9`
+- **FloatSwapRouterV4**: `0x0A66709Bef715c7ea08A45d597f0b230cD48079A`
+- **FloatLiquidTokenV4**:`0x9eB486310Ed402c3249DCB8AE898ff48092558cd`
+- **FloatKeeperV4**:`0x8b54d03b776bD0e932836d8d7cBeBFfBcB9d30b1`
+- **ASSET**:`0x572c4fa77623652411574c51b5ddb7e1b750aba3`
+- **AssetPoolV4**: `` 
+
+**Fee**:`8388608`
+**hooks**:`0xbb7784a4d481184283ed89619a3e3ed143e1adc0`
+
+["FloatStrategyV4","FloatVaultV4","FloatSwapRouterV4","FloatLiquidTokenV4","FloatKeeperV4","ASSET","Demeter","Triton","WETH"],
+["0x65E5af8382eB7816Ec80a98a8Ef2e7730C0CC183","0xdcc0B49CefA6Ed0e54A3C6aE0C37f3fdAeBaA9c9","0x0A66709Bef715c7ea08A45d597f0b230cD48079A","0x9eB486310Ed402c3249DCB8AE898ff48092558cd","0x8b54d03b776bD0e932836d8d7cBeBFfBcB9d30b1","0x572c4fa77623652411574c51b5ddb7e1b750aba3","0x208169b1321a09e614a68b06b7f600dc0e007212","0x5A86759516C094607544BF17Fde6Ed46c8e7771f","0x4200000000000000000000000000000000000006"]
+
+############################################################################################################################
+
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+
+- **FloatContractmanager**:`0x8b8a48Db78e6f1d1e465b3abaBea88f2532c7154`
+- **FloatStrategy**:`0x87BeFaFdE21c6360d6DC2A05577F4f49be56dfF2` --`2`  
+- **FloatVault**: `0x4eb84c65766C5556D7c4843256eB83f38FdaB0c6`
+- **FloatSwapRouter**: `0x01e97028262BE1Bc8e5E6EFAA2b6cC7cC3d94070`
+- **FloatLiquidToken**:`0xaF5c46121f6D9491978257224952257e65C8BD11`
+- **FloatKeeper**: `0x3d99742330fC641c79eAAE3a67370EAd635e5473`
+- **ASSET**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b`
+ - **AssetPoolV3**: `0xaec085e5a5ce8d96a7bdd3eb3a62445d4f6ce703` 
+
+
+
+###########################################################################################################################
 
 ############################################################################################################################
  

@@ -20,6 +20,11 @@ interface IUFloatV4StrategySwapRouter {
     /// @notice True when `assetAddress` has a registered pool (either currency slot non-zero).
     function hasV4PoolConfig(address assetAddress) external view returns (bool);
 
+    /// @notice All asset addresses with a registered v4 pool config (constructor seeds + `setV4PoolConfig`).
+    function getRegisteredAssets() external view returns (address[] memory);
+
+    function registeredAssetCount() external view returns (uint256);
+
     function addAuthorizedStrategy(address strategy) external;
 
     function removeAuthorizedStrategy(address strategy) external;

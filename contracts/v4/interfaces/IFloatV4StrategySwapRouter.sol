@@ -21,4 +21,9 @@ interface IV4StrategySwapRouterStrict {
 
     /// @notice Read back the registered pool config for `assetAddress` (reverts if unset).
     function getV4PoolConfig(address assetAddress) external view returns (PoolKey memory key, bytes memory hookData);
+
+    /// @notice All asset addresses with a registered v4 pool config (constructor seeds + `setV4PoolConfig`).
+    function getRegisteredAssets() external view returns (address[] memory);
+
+    function registeredAssetCount() external view returns (uint256);
 }

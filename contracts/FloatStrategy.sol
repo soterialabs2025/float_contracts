@@ -276,19 +276,64 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     }
 
     function _handleIdleNoPosition() internal {
+        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return;
         if (mode != Mode.NORMAL && mode != Mode.OFFENSIVE) return;
         if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (assetBal <= _liquidityDust() && wethBal <= _liquidityDust()) return;
-        _enterDefensive();
+        _handleOffensiveDefensiveOor();
     }
 
-    function _isAllWeth(uint256 assetBal, uint256 wethBal) internal view returns (bool) {
-        return wethBal > _liquidityDust() && assetBal <= _liquidityDust();
+    /// @dev Raw OOR side vs last LP band (Uniswap tick space).
+    function _oorExitSide() internal view returns (bool exitedAbove, bool exitedBelow) {
+        (int24 lower, int24 upper) = (liqPos.tickLower, liqPos.tickUpper);
+        if (lower == 0 && upper == 0) return (false, false);
+        (, int24 poolTick, , , , , ) = pool.slot0();
+        exitedAbove = poolTick >= upper;
+        exitedBelow = poolTick < lower;
     }
 
-    function _isAllAsset(uint256 assetBal, uint256 wethBal) internal view returns (bool) {
-        return assetBal > _liquidityDust() && wethBal <= _liquidityDust();
+    /// @dev Maps OOR exit side to asset strength using WETH as numéraire and on-chain pool token order.
+    function _assetStrengthAfterOor() internal view returns (bool assetStrong, bool assetWeak) {
+        (bool exitedAbove, bool exitedBelow) = _oorExitSide();
+        address weth = address(WETH);
+        if (pool.token0() == weth) {
+            assetStrong = exitedBelow;
+            assetWeak = exitedAbove;
+        } else if (pool.token1() == weth) {
+            assetStrong = exitedAbove;
+            assetWeak = exitedBelow;
+        }
+    }
+
+    function _handleOffensiveDefensiveOor() internal returns (bool) {
+        (bool assetStrong, bool assetWeak) = _assetStrengthAfterOor();
+        if (assetStrong) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
+        }
+        if (assetWeak) {
+            _enterDefensive();
+            return true;
+        }
+        return _remintAtTarget();
+    }
+
+    function _remintAtTarget() internal returns (bool) {
+        mode = Mode.NORMAL;
+        consecutiveOffensiveCount = 0;
+        prevConsecutiveOffensiveCount = 0;
+        baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (assetBal <= _liquidityDust() && wethBal <= _liquidityDust()) return false;
+        _balanceTokens(assetBal, wethBal);
+        _mintAsymmetricPosition();
+        if (liqPos.positionId != 0) {
+            _noteHarvestActivity();
+            lastRebalanceTime = block.timestamp;
+            emit StrategyEvent(5, liqPos.positionId, baseTokenShareBps, 0);
+        }
+        return liqPos.positionId != 0;
     }
 
     function _handleOutOfRange() internal returns (bool) {
@@ -296,13 +341,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint128 remainingLiq = _drainPositionLiquidity(6);
         if (remainingLiq != 0) return true;
         liqPos.positionId = 0;
-        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (_isAllWeth(assetBal, wethBal)) {
-            _enterOffensive();
-            return liqPos.positionId != 0;
-        }
-        _enterDefensive();
-        return false;
+        return _handleOffensiveDefensiveOor();
     }
 
     function _enterDefensive() internal {

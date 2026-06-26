@@ -316,22 +316,67 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         return _handleOutOfRange();
     }
 
-    /// @dev No open LP but idle capital — enter DEFENSIVE so UI can `changeAsset` (e.g. post-OOR stuck NORMAL).
-    ///      Skips never-minted strategies (tick range unset) so first vault deposit can mint normally.
+    /// @dev No open LP but idle capital — use last band + tick for OOR side when NORMAL/OFFENSIVE;
+    ///      stay DEFENSIVE when already defensive (operator `changeAsset`). Skips never-minted strategies.
     function _handleIdleNoPosition() internal {
-        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return;
+        Mode m = stratMode;
+        if (m == Mode.DEFENSIVE || m == Mode.NEUTRAL) return;
+        if (m != Mode.NORMAL && m != Mode.OFFENSIVE) return;
         if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
-        _enterDefensive();
+        _handleOffensiveDefensiveOor();
     }
 
-    function _isAllWeth(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
-        return wethBal > LIQUIDITY_DUST && assetBal <= LIQUIDITY_DUST;
+    /// @dev Raw OOR side vs last LP band (Uniswap tick space).
+    function _oorExitSide() internal view returns (bool exitedAbove, bool exitedBelow) {
+        (int24 lower, int24 upper) = (liqPos.tickLower, liqPos.tickUpper);
+        if (lower == 0 && upper == 0) return (false, false);
+        (, int24 poolTick) = _readSlot0();
+        exitedAbove = poolTick >= upper;
+        exitedBelow = poolTick < lower;
     }
 
-    function _isAllAsset(uint256 assetBal, uint256 wethBal) internal pure returns (bool) {
-        return assetBal > LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST;
+    /// @dev Maps OOR exit side to asset strength using WETH as numéraire and stored pool token order.
+    function _assetStrengthAfterOor() internal view returns (bool assetStrong, bool assetWeak) {
+        (bool exitedAbove, bool exitedBelow) = _oorExitSide();
+        address weth = address(WETH);
+        if (poolKey.currency0 == weth) {
+            assetStrong = exitedBelow;
+            assetWeak = exitedAbove;
+        } else if (poolKey.currency1 == weth) {
+            assetStrong = exitedAbove;
+            assetWeak = exitedBelow;
+        }
+    }
+
+    function _handleOffensiveDefensiveOor() internal returns (bool) {
+        (bool assetStrong, bool assetWeak) = _assetStrengthAfterOor();
+        if (assetStrong) {
+            _enterOffensive();
+            return liqPos.positionId != 0;
+        }
+        if (assetWeak) {
+            _enterDefensive();
+            return true;
+        }
+        return _remintAtTarget();
+    }
+
+    function _remintAtTarget() internal returns (bool) {
+        stratMode = Mode.NORMAL;
+        consecutiveOffensiveCount = 0;
+        prevConsecutiveOffensiveCount = 0;
+        baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return false;
+        _balanceTokens(assetBal, wethBal);
+        _mintAsymmetricPosition();
+        if (liqPos.positionId != 0) {
+            _noteHarvestActivity();
+            lastRebalanceTime = block.timestamp;
+        }
+        return liqPos.positionId != 0;
     }
 
     function _handleOutOfRange() internal returns (bool) {
@@ -339,14 +384,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         uint128 remainingLiq = _drainPositionLiquidity(6);
         if (remainingLiq != 0) return true;
         liqPos.positionId = 0;
-        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (_isAllWeth(assetBal, wethBal)) {
-            _enterOffensive();
-            return liqPos.positionId != 0;
-        }
-        // All-asset, mixed, or failed offensive split — idle LP; UI rotates via changeAsset.
-        _enterDefensive();
-        return false;
+        return _handleOffensiveDefensiveOor();
     }
     function _enterDefensive() internal {
         if (liqPos.positionId != 0) revert PositionExists();
