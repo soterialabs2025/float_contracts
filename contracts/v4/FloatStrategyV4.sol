@@ -309,23 +309,22 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         if (stratMode == Mode.STABLE || stratMode == Mode.NEUTRAL) return false;
         if (_handleOffensiveStale()) return true;
         if (liqPos.positionId == 0) {
-            _handleIdleNoPosition();
-            return false;
+            return _handleIdleNoPosition();
         }
         if (_inRange()) return true;
         return _handleOutOfRange();
     }
 
-    /// @dev No open LP but idle capital — use last band + tick for OOR side when NORMAL/OFFENSIVE;
-    ///      stay DEFENSIVE when already defensive (operator `changeAsset`). Skips never-minted strategies.
-    function _handleIdleNoPosition() internal {
-        Mode m = stratMode;
-        if (m == Mode.DEFENSIVE || m == Mode.NEUTRAL) return;
-        if (m != Mode.NORMAL && m != Mode.OFFENSIVE) return;
-        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
+    /// @dev Idle capital with no LP — vault strategies enter DEFENSIVE for operator `changeAsset`.
+    ///      Tick-based offensive/defensive runs only in `_handleOutOfRange` after an active drain.
+    ///      (UFloat idle re-evaluates the last band; vault depositors should not auto-remint from stale ticks.)
+    function _handleIdleNoPosition() internal returns (bool) {
+        if (stratMode != Mode.NORMAL && stratMode != Mode.OFFENSIVE) return false;
+        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return false;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
-        _handleOffensiveDefensiveOor();
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return false;
+        _enterDefensive();
+        return true;
     }
 
     /// @dev Raw OOR side vs last LP band (Uniswap tick space).
@@ -403,7 +402,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         uint256 p = _spotPrice1e18();
         uint256 totalValue = assetBal + (p == 0 ? 0 : Math.mulDiv(wethBal, p, 1e18));
         if (assetBal == 0 && wethBal == 0 || p == 0 || totalValue == 0) {
-            _enterDefensive();
+            _offensiveFailedFallback();
             return;
         }
         stratMode = Mode.OFFENSIVE;
@@ -414,8 +413,13 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             defensiveEnteredAt = 0;
             lastRebalanceTime = block.timestamp;
         } else {
-            _enterDefensive();
+            _offensiveFailedFallback();
         }
+    }
+
+    /// @dev Vault LP: remint at target on failed offensive mint rather than idle DEFENSIVE.
+    function _offensiveFailedFallback() internal {
+        _remintAtTarget();
     }
 
     function _assetTargetBps() internal view returns (uint256) {

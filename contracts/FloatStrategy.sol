@@ -268,20 +268,21 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         if (mode == Mode.STABLE || mode == Mode.NEUTRAL) return false;
         if (_handleOffensiveStale()) return true;
         if (liqPos.positionId == 0) {
-            _handleIdleNoPosition();
-            return false;
+            return _handleIdleNoPosition();
         }
         if (_inRange()) return true;
         return _handleOutOfRange();
     }
 
-    function _handleIdleNoPosition() internal {
-        if (mode == Mode.DEFENSIVE || mode == Mode.NEUTRAL) return;
-        if (mode != Mode.NORMAL && mode != Mode.OFFENSIVE) return;
-        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return;
+    /// @dev Idle capital with no LP — vault strategies enter DEFENSIVE for operator `changeAsset`.
+    ///      Tick-based offensive/defensive runs only in `_handleOutOfRange` after an active drain.
+    function _handleIdleNoPosition() internal returns (bool) {
+        if (mode != Mode.NORMAL && mode != Mode.OFFENSIVE) return false;
+        if (liqPos.tickLower == 0 && liqPos.tickUpper == 0) return false;
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal <= _liquidityDust() && wethBal <= _liquidityDust()) return;
-        _handleOffensiveDefensiveOor();
+        if (assetBal <= _liquidityDust() && wethBal <= _liquidityDust()) return false;
+        _enterDefensive();
+        return true;
     }
 
     /// @dev Raw OOR side vs last LP band (Uniswap tick space).
@@ -361,7 +362,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint256 p = _spotPrice1e18();
         uint256 totalValue = assetBal + (p == 0 ? 0 : Math.mulDiv(wethBal, p, 1e18));
         if (assetBal == 0 && wethBal == 0 || p == 0 || totalValue == 0) {
-            _enterDefensive();
+            _offensiveFailedFallback();
             return;
         }
         mode = Mode.OFFENSIVE;
@@ -373,8 +374,13 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             lastRebalanceTime = block.timestamp;
             emit StrategyEvent(5, liqPos.positionId, baseTokenShareBps, 0);
         } else {
-            _enterDefensive();
+            _offensiveFailedFallback();
         }
+    }
+
+    /// @dev Vault LP: remint at target on failed offensive mint rather than idle DEFENSIVE.
+    function _offensiveFailedFallback() internal {
+        _remintAtTarget();
     }
 
     function _assetTargetBps() internal view returns (uint256) {

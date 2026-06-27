@@ -16,14 +16,14 @@ contract StrategyManagerV4 is Ownable {
     uint256 public targetAssetBps = 5000;
     /// @notice ASSET share target (bps) after `minFloorTickCount` consecutive OFFENSIVE entries.
     uint256 public offensiveAssetBps = 4000;
-    /// @notice Asymmetric LP range: bps below current tick (1000 = 10%).
-    uint256 public rangeBelowBps = 1000;
-    /// @notice Asymmetric LP range: bps above current tick (2000 = 20%).
-    uint256 public rangeAboveBps = 2000;
+    /// @notice Asymmetric LP range: bps below current tick 
+    uint256 public rangeBelowBps = 600;
+    /// @notice Asymmetric LP range: bps above current tick
+    uint256 public rangeAboveBps = 800;
     /// @notice OFFENSIVE re-mints use `offensiveAssetBps` only after this many consecutive OFFENSIVE entries.
     uint256 public minFloorTickCount = 2;
     uint256 public offensiveStaleDuration = 3 hours;
-    /// @notice Floor for tightened below-range during OFFENSIVE ratchet (200 = 2%).
+    /// @notice Floor for tightened below-range during OFFENSIVE ratchet 
     uint256 public minRangeBelowBps = 200;
     /// @notice Last consecutive OFFENSIVE entry that applies below-range ratchet tightening.
     uint256 public maxOffensiveRatchetCount = 4;
