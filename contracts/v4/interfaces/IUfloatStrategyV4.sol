@@ -28,6 +28,4 @@ interface IUFloatStrategyV4 is IUFloatStrategyAllowedTokens {
 
     /// @notice Pick an allowlisted token and mint LP from idle WETH after `exitToStable` (STABLE, no open position).
     function mintPosition(address token) external;
-
-    function totalLiquidity() external view returns (uint128);
 }

@@ -64,7 +64,6 @@ contract UFloatStrategyV4 is
     uint256 public consecutiveOffensiveCount;
     uint256 public prevConsecutiveOffensiveCount;
     bool public watched;
-
     function _lpModeActive() internal view returns (bool) {
         return stratMode == Mode.NORMAL || stratMode == Mode.OFFENSIVE;
     }
@@ -74,10 +73,6 @@ contract UFloatStrategyV4 is
     }
     function mode() external view override returns (uint8) {
         return uint8(uint256(stratMode));
-    }
-    /// @inheritdoc IOutOfRangeStrategyV4
-    function defensiveEnteredAt() external pure returns (uint256) {
-        return 0;
     }
     function setWatched(bool status) external onlyKeeper {
         watched = status;
@@ -104,14 +99,7 @@ contract UFloatStrategyV4 is
         positionManager = IPositionManagerV4(V4Deployments8453.POSITION_MANAGER);
         poolManager = IPoolManagerV4(V4Deployments8453.POOL_MANAGER);
     }
-    function bootstrapStrategy(
-        address owner_,
-        address swapRouter,
-        address operatorRegistry_,
-        address keeper,
-        StratMethod stratMethod_,
-        address[] calldata tokens
-    ) external {
+    function bootstrapStrategy(address owner_,address swapRouter,address operatorRegistry_,address keeper,StratMethod stratMethod_,address[] calldata tokens) external {
         if (msg.sender != factory) revert Unauthorized();
         if (owner_ == address(0) || swapRouter == address(0)) revert ZeroAddress();
         if (tokens.length == 0) revert TokenNotAllowed();
@@ -357,7 +345,6 @@ contract UFloatStrategyV4 is
         }
         return liqPos.positionId != 0;
     }
-    /// @dev Raw OOR side vs last LP band (Uniswap tick space).
     function _oorExitSide() internal view returns (bool exitedAbove, bool exitedBelow) {
         (int24 lower, int24 upper) = (liqPos.tickLower, liqPos.tickUpper);
         if (lower == 0 && upper == 0) return (false, false);
@@ -417,6 +404,10 @@ contract UFloatStrategyV4 is
         }
         if (liqPos.positionId == 0) {
             return _handleIdleNoPosition();
+        }
+        if (stopLoss > 0 && totalValueWeth() <= stopLoss) {
+            _exitToStable();
+            return true;
         }
         if (_inRange()) return true;
         return _handleOutOfRange();
@@ -587,7 +578,6 @@ contract UFloatStrategyV4 is
         if (consecutiveOffensiveCount < minFloorTickCount) return base;
 
         uint256 count = consecutiveOffensiveCount;
-        if (count > maxOffensiveRatchetCount) count = maxOffensiveRatchetCount;
         uint256 steps = count - minFloorTickCount + 1;
         uint256 effective = base;
         uint256 floorBps = minRangeBelowBps != 0 ? minRangeBelowBps : 200;
@@ -711,9 +701,6 @@ contract UFloatStrategyV4 is
         address p0 = poolKey.currency0;
         return p0 == address(WETH) ? (amount1, amount0) : (amount0, amount1);
     }
-    function totalLiquidity() external view override returns (uint128) {
-        return liqPos.getPositionLiquidity(positionManager);
-    }
     function _calculateLiquidityToRemove(uint256 amount) internal view returns (uint256) {
         if (liqPos.positionId == 0) return 0;
         (int24 _tickLower, int24 _tickUpper, uint128 liquidity) =
@@ -767,7 +754,10 @@ contract UFloatStrategyV4 is
     function changeAsset(address _newAssetAddr) external override onlyAuthorized {
         _changeAsset(_newAssetAddr);
     }
-    function exitToStable() external onlyOperatorOrOwner {
+    function exitToStable() public onlyOperatorOrOwner {
+        _exitToStable();
+    }
+    function _exitToStable() internal {
         _changeAsset(address(WETH));
     }
     function _changeAsset(address _newAssetAddr) internal {
