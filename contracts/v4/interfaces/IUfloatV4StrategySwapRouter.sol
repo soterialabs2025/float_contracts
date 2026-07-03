@@ -15,6 +15,8 @@ interface IUFloatV4StrategySwapRouter {
 
     function setV4PoolConfig(address assetAddress, PoolKey calldata key, bytes calldata hookData) external;
 
+    function removeV4PoolConfig(address assetAddress) external;
+
     function getV4PoolConfig(address assetAddress) external view returns (PoolKey memory key, bytes memory hookData);
 
     /// @notice True when `assetAddress` has a registered pool (either currency slot non-zero).

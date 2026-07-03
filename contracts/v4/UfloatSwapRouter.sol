@@ -79,6 +79,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         address indexed caller, address indexed recipient, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
     );
     event V4PoolConfigSet(address indexed asset, PoolKey key, bytes hookData);
+    event V4PoolConfigRemoved(address indexed asset);
     event StrictStrategySlippageBpsUpdated(uint16 strictStrategySlippageBps);
     event MaxPriceImpactBpsUpdated(uint16 maxPriceImpactBps);
     event MaxSlippageBpsUpdated(uint16 maxSlippageBps);
@@ -94,6 +95,8 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     error BpsOutOfRange();
     error SlippageExceedsMax();
     error AssetNotInKey();
+    error PoolKeyInvalid();
+    error AssetNotRegistered();
     error NoPoolConfig();
     error PoolNotInitialized();
     error InsufficientOutput();
@@ -146,10 +149,45 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         _registerAsset(a);
     }
 
+    /// @dev Ensures `currency0 < currency1` and the pair is `asset`/WETH (matches `_seed` and strategy `_poolKeyFromRouter`).
+    function _normalizePoolKey(address assetAddress, PoolKey memory key) internal pure returns (PoolKey memory) {
+        address weth = address(SEED_WETH);
+        if (assetAddress == address(0) || assetAddress == weth) revert ZeroAddress();
+        address c0 = Currency.unwrap(key.currency0);
+        address c1 = Currency.unwrap(key.currency1);
+        if (c0 == address(0) || c1 == address(0) || c0 == c1) revert PoolKeyInvalid();
+        if (assetAddress != c0 && assetAddress != c1) revert AssetNotInKey();
+        address other = assetAddress == c0 ? c1 : c0;
+        if (other != weth) revert PoolKeyInvalid();
+        (Currency sorted0, Currency sorted1) = assetAddress < weth
+            ? (Currency.wrap(assetAddress), Currency.wrap(weth))
+            : (Currency.wrap(weth), Currency.wrap(assetAddress));
+        return PoolKey({
+            currency0: sorted0,
+            currency1: sorted1,
+            fee: key.fee,
+            tickSpacing: key.tickSpacing,
+            hooks: key.hooks
+        });
+    }
+
     function _registerAsset(address asset) private {
         if (asset == address(0) || _registeredAssetIndex[asset] != 0) return;
         _registeredAssets.push(asset);
         _registeredAssetIndex[asset] = _registeredAssets.length;
+    }
+
+    function _unregisterAsset(address asset) private {
+        uint256 idx = _registeredAssetIndex[asset];
+        if (idx == 0) revert AssetNotRegistered();
+        uint256 last = _registeredAssets.length;
+        if (idx != last) {
+            address moved = _registeredAssets[last - 1];
+            _registeredAssets[idx - 1] = moved;
+            _registeredAssetIndex[moved] = idx;
+        }
+        _registeredAssets.pop();
+        delete _registeredAssetIndex[asset];
     }
 
     /// @dev Pre-registers every Float-eligible v4 pool. All seeded pools use the `0x800000` dynamic-fee flag
@@ -226,8 +264,8 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         _seed(0x0061d91cff0fc9fbbdb89f505cf8a7422bf95fdba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 34 evo- (WETH < asset)
         _seed(0x00721b072dbb616f29eea73ac004e03fd4e884bba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
-          // 35 Pitch (WETH < asset)
-        _seed(0x00eae13ea73bec936664a51734c8c01ec7c3b0699c, 0x000000000000000000000000000000000000000000);
+          // 35 DOT (WETH < asset)
+        _seed(0x0023a2847d772803f9efc64b4277b782b06296fe51, 0x000000000000000000000000000000000000000000);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -310,12 +348,19 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
     /// @inheritdoc IUFloatV4StrategySwapRouter
     function setV4PoolConfig(address assetAddress, PoolKey calldata key, bytes calldata hookData) external override onlyOwner {
         if (assetAddress == address(0)) revert ZeroAddress();
-        address c0 = Currency.unwrap(key.currency0);
-        address c1 = Currency.unwrap(key.currency1);
-        if (assetAddress != c0 && assetAddress != c1) revert AssetNotInKey();
-        v4PoolConfig[assetAddress] = V4PoolConfig({key: key, hookData: hookData});
+        PoolKey memory normalized = _normalizePoolKey(assetAddress, key);
+        v4PoolConfig[assetAddress] = V4PoolConfig({key: normalized, hookData: hookData});
         _registerAsset(assetAddress);
-        emit V4PoolConfigSet(assetAddress, key, hookData);
+        emit V4PoolConfigSet(assetAddress, normalized, hookData);
+    }
+
+    /// @inheritdoc IUFloatV4StrategySwapRouter
+    function removeV4PoolConfig(address assetAddress) external override onlyOwner {
+        if (assetAddress == address(0)) revert ZeroAddress();
+        if (!hasV4PoolConfig(assetAddress)) revert NoPoolConfig();
+        delete v4PoolConfig[assetAddress];
+        _unregisterAsset(assetAddress);
+        emit V4PoolConfigRemoved(assetAddress);
     }
 
     /// @inheritdoc IUFloatV4StrategySwapRouter
@@ -334,7 +379,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         if (Currency.unwrap(cfg.key.currency0) == address(0) && Currency.unwrap(cfg.key.currency1) == address(0)) {
             revert NoPoolConfig();
         }
-        key = cfg.key;
+        key = _normalizePoolKey(assetAddress, cfg.key);
         hookData = cfg.hookData;
     }
 

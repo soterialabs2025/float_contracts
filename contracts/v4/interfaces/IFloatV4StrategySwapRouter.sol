@@ -19,6 +19,8 @@ interface IV4StrategySwapRouterStrict {
     /// @dev    Restricted to `owner` or `configManager` on the implementation.
     function setV4PoolConfig(address assetAddress, PoolKey calldata key, bytes calldata hookData) external;
 
+    function removeV4PoolConfig(address assetAddress) external;
+
     /// @notice Read back the registered pool config for `assetAddress` (reverts if unset).
     function getV4PoolConfig(address assetAddress) external view returns (PoolKey memory key, bytes memory hookData);
 

@@ -8,8 +8,8 @@ contract UStrategyManager is Ownable {
     uint256 public constant DIVISOR = 10_000;
     uint256 internal constant DEFAULT_TARGET_ASSET_BPS = 5000;
     uint256 internal constant DEFAULT_OFFENSIVE_ASSET_BPS = 4000;
-    uint256 internal constant DEFAULT_RANGE_BELOW_BPS = 600;
-    uint256 internal constant DEFAULT_RANGE_ABOVE_BPS = 800;
+    uint256 internal constant DEFAULT_RANGE_BELOW_BPS = 400;
+    uint256 internal constant DEFAULT_RANGE_ABOVE_BPS = 600;
     uint256 internal constant DEFAULT_MIN_FLOOR_TICK_COUNT = 1;
     uint256 internal constant DEFAULT_OFFENSIVE_STALE_DURATION = 3 hours;
     uint256 internal constant DEFAULT_MIN_RANGE_BELOW_BPS = 200;
