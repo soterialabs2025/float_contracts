@@ -40,7 +40,7 @@ contract UFloatStrategyV4 is
     error InvalidSwapToken();
     error SwapAmountTooLarge();
     error PoolPriceUnavailable();
-
+    error StopLossReached();
     using SafeERC20 for IERC20;
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
 
@@ -155,6 +155,7 @@ contract UFloatStrategyV4 is
         return allowedTokens.length;
     }
     function mintPosition(address token) external onlyOwner nonReentrant {
+        if(totalValueWeth() <= stopLoss) revert StopLossReached();
         if (liqPos.positionId != 0) revert PositionExists();
         if (stratMode != Mode.STABLE) revert TokenNotAllowed();
         _changeAsset(token);
