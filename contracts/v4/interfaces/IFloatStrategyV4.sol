@@ -28,8 +28,11 @@ interface IFloatStrategyV4 {
     /// @param key           Pre-validated PoolKey for the ASSET/WETH pool to rotate into.
     function changeAsset(
         address _newAssetAddr,
-        LiquidityLibraryV4.PoolKey calldata key
+        LiquidityLibraryV4.PoolKey memory key
     ) external;
+
+    /// @notice Drain LP and remint current ASSET with current band params.
+    function mintNewPosition() external;
 
     function totalLiquidity() external view returns (uint128);
 }

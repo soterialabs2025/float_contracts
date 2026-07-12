@@ -26,6 +26,7 @@ interface IUFloatStrategyV4 is IUFloatStrategyAllowedTokens {
     /// @notice Flatten LP, swap to WETH, enter STABLE. Owner or demeter.
     function exitToStable() external;
 
-    /// @notice Pick an allowlisted token and mint LP from idle WETH after `exitToStable` (STABLE, no open position).
+    /// @notice Flatten if needed and mint via `_changeAsset`. Same ASSET remints with current band params;
+    ///         other allowlisted token rotates; WETH exits to STABLE.
     function mintPosition(address token) external;
 }

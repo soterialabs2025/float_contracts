@@ -3,7 +3,62 @@
     "type": "constructor",
     "inputs": [
       {
-        "name": "_factory",
+        "name": "weth_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "positionManager_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolManager_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_assetAddr",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_poolFeePips",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "_tickSpacing",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "_hooks",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_managerAddr",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_swapRouterAddr",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_vaultAddr",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_demeterAddr",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_keeperStrategyAddr",
         "type": "address",
         "internalType": "address"
       }
@@ -38,6 +93,19 @@
   },
   {
     "type": "function",
+    "name": "PrevHarvestTime",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "UniswapFeesCollected",
     "inputs": [],
     "outputs": [
@@ -45,64 +113,6 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "_execIncreaseLiquidity",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addAllowedToken",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "allowedTokenCount",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "allowedTokens",
-    "inputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -140,39 +150,21 @@
   },
   {
     "type": "function",
-    "name": "bootstrapStrategy",
-    "inputs": [
+    "name": "baseTokenShareBps",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "owner_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "swapRouter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "operatorRegistry_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "keeper",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "stratMethod_",
-        "type": "uint8",
-        "internalType": "enum UStrategyManager.StratMethod"
-      },
-      {
-        "name": "tokens",
-        "type": "address[]",
-        "internalType": "address[]"
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "beforeDeposit",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -184,6 +176,38 @@
         "name": "_newAssetAddr",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "key",
+        "type": "tuple",
+        "internalType": "struct LiquidityLibraryV4.PoolKey",
+        "components": [
+          {
+            "name": "currency0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "currency1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
+          },
+          {
+            "name": "tickSpacing",
+            "type": "int24",
+            "internalType": "int24"
+          },
+          {
+            "name": "hooks",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -204,7 +228,20 @@
   },
   {
     "type": "function",
-    "name": "depositWeth",
+    "name": "defensiveEnteredAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deposit",
     "inputs": [
       {
         "name": "amount",
@@ -217,23 +254,44 @@
   },
   {
     "type": "function",
-    "name": "exitToStable",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "factory",
-    "inputs": [],
-    "outputs": [
+    "name": "deposits",
+    "inputs": [
       {
         "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "token0",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token1",
         "type": "address",
         "internalType": "address"
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "enterNeutralFromVault",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -269,32 +327,13 @@
   },
   {
     "type": "function",
-    "name": "isAllowedToken",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "name": "harvestOnDeposit",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "keeper",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -328,6 +367,58 @@
   {
     "type": "function",
     "name": "lastOffensiveTime",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lastRebalanceTime",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lastUniswapFeeTotal",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "managerAddress",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxOffensiveRatchetCount",
     "inputs": [],
     "outputs": [
       {
@@ -379,14 +470,8 @@
   },
   {
     "type": "function",
-    "name": "mintPosition",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "name": "mintNewPosition",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -465,19 +550,6 @@
   },
   {
     "type": "function",
-    "name": "operatorRegistry",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IOperatorRegistry"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -485,6 +557,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "poolFeePips",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ],
     "stateMutability": "view"
@@ -563,6 +648,19 @@
   },
   {
     "type": "function",
+    "name": "prevOffensiveTime",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rangeAboveTicks",
     "inputs": [],
     "outputs": [
@@ -615,21 +713,48 @@
   },
   {
     "type": "function",
-    "name": "removeAllowedToken",
-    "inputs": [
+    "name": "readInRange",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "resumeNormalFromVault",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setGiveAllowances",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setHarvestOnDeposit",
+    "inputs": [
+      {
+        "name": "_harvestOnDeposit",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -654,11 +779,6 @@
       },
       {
         "name": "_rangeAboveTicks",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_stopLoss",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -686,6 +806,11 @@
         "internalType": "uint256"
       },
       {
+        "name": "_maxOffensiveRatchetCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "_ratchetNumerator",
         "type": "uint256",
         "internalType": "uint256"
@@ -694,32 +819,6 @@
         "name": "_ratchetDenominator",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setStratMethod",
-    "inputs": [
-      {
-        "name": "method",
-        "type": "uint8",
-        "internalType": "enum UStrategyManager.StratMethod"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setWatched",
-    "inputs": [
-      {
-        "name": "status",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -740,32 +839,6 @@
   },
   {
     "type": "function",
-    "name": "stopLoss",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "stratMethod",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "enum UStrategyManager.StratMethod"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "targetAssetBps",
     "inputs": [],
     "outputs": [
@@ -773,6 +846,24 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "tickRange",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "lower",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "upper",
+        "type": "int24",
+        "internalType": "int24"
       }
     ],
     "stateMutability": "view"
@@ -792,13 +883,13 @@
   },
   {
     "type": "function",
-    "name": "totalValueWeth",
+    "name": "totalLiquidity",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "uint128",
+        "internalType": "uint128"
       }
     ],
     "stateMutability": "view"
@@ -818,25 +909,22 @@
   },
   {
     "type": "function",
-    "name": "watched",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "withdrawWeth",
+    "name": "withdraw",
     "inputs": [
       {
-        "name": "wethAmount",
+        "name": "userShares",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "totalSupply_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "receiver",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -881,22 +969,32 @@
   },
   {
     "type": "error",
-    "name": "CannotAllowWeth",
+    "name": "InvalidBps",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "CannotRemoveActiveAsset",
+    "name": "InvalidCount",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidParam",
+    "name": "InvalidRangeTicks",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidSwapToken",
+    "name": "InvalidRatchet",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRatchetCap",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MustBeNeutral",
     "inputs": []
   },
   {
@@ -928,17 +1026,7 @@
   },
   {
     "type": "error",
-    "name": "PoolKeyInvalid",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "PoolNotInitialized",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PoolPriceUnavailable",
     "inputs": []
   },
   {
@@ -949,6 +1037,11 @@
   {
     "type": "error",
     "name": "RangeNotAlignedToSpacing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RatchetMustTighten",
     "inputs": []
   },
   {
@@ -966,31 +1059,6 @@
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "StopLossReached",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SwapAmountTooLarge",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TokenAlreadyAllowed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TokenNotAllowed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TokenNotOnRouter",
-    "inputs": []
   },
   {
     "type": "error",

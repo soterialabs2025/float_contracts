@@ -17,5 +17,7 @@ interface IFloatStrategy {
   function balanceOfIdle() external view returns (uint256);
   function balanceOfPool() external view returns (uint256 tokenAmt, uint256 wethAmt);
   function changeAsset(address _newAssetAddr, address _newPoolV3Addr) external;
+  /// @notice Drain LP and remint current ASSET with current band params.
+  function mintNewPosition() external;
   function totalLiquidity() external view returns (uint128);
 }

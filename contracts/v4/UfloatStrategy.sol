@@ -154,10 +154,10 @@ contract UFloatStrategyV4 is
     function allowedTokenCount() external view returns (uint256) {
         return allowedTokens.length;
     }
+    /// @dev Flatten + remint via `_changeAsset`. Same `ASSET` = remint with current band params;
+    ///      other allowlisted token = rotate; WETH = exit STABLE.
     function mintPosition(address token) external onlyOwner nonReentrant {
-        if(totalValueWeth() <= stopLoss) revert StopLossReached();
-        if (liqPos.positionId != 0) revert PositionExists();
-        if (stratMode != Mode.STABLE) revert TokenNotAllowed();
+        if (totalValueWeth() <= stopLoss) revert StopLossReached();
         _changeAsset(token);
     }
     function depositWeth(uint256 amount) external override onlyOwner nonReentrant {
@@ -470,20 +470,12 @@ contract UFloatStrategyV4 is
             _offensiveFailedFallback();
         }
     }
+    /// @dev Exact tick distances on the pool spacing grid (no silent rounding).
     function _asymmetricTicks(int24 currentTick) internal view returns (int24 lower, int24 upper) {
-        int24 spacing = poolKey.tickSpacing;
-        uint256 belowBps = _effectiveRangeBelowBps();
-        uint256 aboveBps = rangeAboveBps;
-        if (aboveBps == 0 || aboveBps >= 10_000) aboveBps = 2000;
-        lower = TrailingFloorLib.alignDown(
-            TrailingFloorLib.floorTickBelowCurrentByBps(currentTick, belowBps),
-            spacing
-        );
-        upper = TrailingFloorLib.alignUp(
-            TrailingFloorLib.ceilTickAboveCurrentByBps(currentTick, aboveBps),
-            spacing
-        );
-        if (lower >= upper) upper = lower + spacing;
+        uint256 belowTicks = _effectiveRangeBelowTicks();
+        uint256 aboveTicks = rangeAboveTicks;
+        if (aboveTicks == 0 || aboveTicks >= 10_000) aboveTicks = 600;
+        return TrailingFloorLib.asymmetricSpacedTicks(currentTick, poolKey.tickSpacing, belowTicks, aboveTicks);
     }
     function _mintAsymmetricPosition() internal {
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
@@ -573,22 +565,26 @@ contract UFloatStrategyV4 is
         if (targetAssetBps != 0) return targetAssetBps;
         return 5000;
     }
-    function _effectiveRangeBelowBps() internal view returns (uint256) {
-        uint256 base = rangeBelowBps;
-        if (base == 0 || base >= 10_000) base = 1000;
-        if (consecutiveOffensiveCount < minFloorTickCount) return base;
+    function _effectiveRangeBelowTicks() internal view returns (uint256) {
+        uint256 base = rangeBelowTicks;
+        if (base == 0 || base >= 10_000) base = 400;
+        if (consecutiveOffensiveCount < minFloorTickCount) {
+            return TrailingFloorLib.alignTicksDownToSpacing(base, poolKey.tickSpacing);
+        }
 
         uint256 count = consecutiveOffensiveCount;
         uint256 steps = count - minFloorTickCount + 1;
         uint256 effective = base;
-        uint256 floorBps = minRangeBelowBps != 0 ? minRangeBelowBps : 200;
+        uint256 floorTicks = minRangeBelowTicks != 0 ? minRangeBelowTicks : 200;
         uint256 num = ratchetNumerator != 0 ? ratchetNumerator : 1;
         uint256 den = ratchetDenominator != 0 ? ratchetDenominator : 3;
         for (uint256 i = 0; i < steps; i++) {
             effective = effective * num / den;
-            if (effective < floorBps) return floorBps;
+            if (effective < floorTicks) {
+                return TrailingFloorLib.alignTicksDownToSpacing(floorTicks, poolKey.tickSpacing);
+            }
         }
-        return effective;
+        return TrailingFloorLib.alignTicksDownToSpacing(effective, poolKey.tickSpacing);
     }
     function _balanceTokens(uint256 assetBal, uint256 wethBal) internal {
         if (assetBal == 0 && wethBal == 0) return;

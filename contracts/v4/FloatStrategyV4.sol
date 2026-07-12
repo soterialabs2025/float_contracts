@@ -431,39 +431,35 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     }
 
     /// @dev After `minFloorTickCount` OFFENSIVE re-mints, tighten below-range by `ratchetNumerator/ratchetDenominator` per step.
-    function _effectiveRangeBelowBps() internal view returns (uint256) {
-        uint256 base = rangeBelowBps;
-        if (base == 0 || base >= 10_000) base = 1000;
-        if (consecutiveOffensiveCount < minFloorTickCount) return base;
+    function _effectiveRangeBelowTicks() internal view returns (uint256) {
+        uint256 base = rangeBelowTicks;
+        if (base == 0 || base >= 10_000) base = 400;
+        if (consecutiveOffensiveCount < minFloorTickCount) {
+            return TrailingFloorLib.alignTicksDownToSpacing(base, poolKey.tickSpacing);
+        }
 
         uint256 count = consecutiveOffensiveCount;
         if (count > maxOffensiveRatchetCount) count = maxOffensiveRatchetCount;
         uint256 steps = count - minFloorTickCount + 1;
         uint256 effective = base;
-        uint256 floorBps = minRangeBelowBps != 0 ? minRangeBelowBps : 200;
+        uint256 floorTicks = minRangeBelowTicks != 0 ? minRangeBelowTicks : 200;
         uint256 num = ratchetNumerator != 0 ? ratchetNumerator : 1;
         uint256 den = ratchetDenominator != 0 ? ratchetDenominator : 4;
         for (uint256 i = 0; i < steps; i++) {
             effective = effective * num / den;
-            if (effective < floorBps) return floorBps;
+            if (effective < floorTicks) {
+                return TrailingFloorLib.alignTicksDownToSpacing(floorTicks, poolKey.tickSpacing);
+            }
         }
-        return effective;
+        return TrailingFloorLib.alignTicksDownToSpacing(effective, poolKey.tickSpacing);
     }
 
+    /// @dev Exact tick distances on the pool spacing grid (no silent rounding).
     function _asymmetricTicks(int24 currentTick) internal view returns (int24 lower, int24 upper) {
-        int24 spacing = poolKey.tickSpacing;
-        uint256 belowBps = _effectiveRangeBelowBps();
-        uint256 aboveBps = rangeAboveBps;
-        if (aboveBps == 0 || aboveBps >= 10_000) aboveBps = 2000;
-        lower = TrailingFloorLib.alignDown(
-            TrailingFloorLib.floorTickBelowCurrentByBps(currentTick, belowBps),
-            spacing
-        );
-        upper = TrailingFloorLib.alignUp(
-            TrailingFloorLib.ceilTickAboveCurrentByBps(currentTick, aboveBps),
-            spacing
-        );
-        if (lower >= upper) upper = lower + spacing;
+        uint256 belowTicks = _effectiveRangeBelowTicks();
+        uint256 aboveTicks = rangeAboveTicks;
+        if (aboveTicks == 0 || aboveTicks >= 10_000) aboveTicks = 600;
+        return TrailingFloorLib.asymmetricSpacedTicks(currentTick, poolKey.tickSpacing, belowTicks, aboveTicks);
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256 bal0, uint256 bal1) {
@@ -728,8 +724,13 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         if (address(ASSET) != address(0)) _approveTriple(ASSET, router, pm);
         _approveTriple(WETH, router, pm);
     }
-    function changeAsset(address _newAssetAddr, LiquidityLibraryV4.PoolKey calldata key)
-        external
+    /// @notice Drain LP (if any) and remint current ASSET with current band params (`rangeBelowTicks` / `rangeAboveTicks`).
+    function mintNewPosition() external onlyAuthorized {
+        changeAsset(address(ASSET), poolKey);
+    }
+
+    function changeAsset(address _newAssetAddr, LiquidityLibraryV4.PoolKey memory key)
+        public
         override
         onlyAuthorized
     {
