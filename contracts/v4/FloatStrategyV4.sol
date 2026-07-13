@@ -27,6 +27,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     error MustBeNeutral();
     using SafeERC20 for IERC20;
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
+    address public immutable feeManager = 0x1DebB34b744e2Fa5a90a58c37beb801505BDCb46;
     IPositionManagerV4 public immutable positionManager;
     LiquidityLibraryV4.PositionState private liqPos;
     IPoolManagerV4 private poolManager;
@@ -521,19 +522,27 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         });
         (amount0, amount1) = LiquidityLibraryV4.collectAllFees(liqPos, dctx, address(this));
         valueInWeth = 0;
-        if (amount0 > 0 || amount1 > 0) {
-            address p0 = poolKey.currency0;
-            uint256 feesWeth  = p0 == address(WETH) ? amount0 : amount1;
-            uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
-            uint256 p = _spotPrice1e18();
-            valueInWeth = feesWeth;
-            if (feesAsset > 0 && p > 0) {
-                valueInWeth += Math.mulDiv(feesAsset, 1e18, p);
-            }
-            if (trackFees) {
-              lastUniswapFeeTotal = UniswapFeesCollected;
-              UniswapFeesCollected += valueInWeth;
-            }
+        if (amount0 == 0 && amount1 == 0) return (0, 0, 0);
+
+        address p0 = poolKey.currency0;
+        address p1 = poolKey.currency1;
+        uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
+        uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
+        if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
+        if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
+        amount0 -= fee0;
+        amount1 -= fee1;
+
+        uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
+        uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
+        uint256 p = _spotPrice1e18();
+        valueInWeth = feesWeth;
+        if (feesAsset > 0 && p > 0) {
+            valueInWeth += Math.mulDiv(feesAsset, 1e18, p);
+        }
+        if (trackFees) {
+            lastUniswapFeeTotal = UniswapFeesCollected;
+            UniswapFeesCollected += valueInWeth;
         }
     }
     function _spotPrice1e18() internal view returns (uint256) {

@@ -45,6 +45,7 @@ contract UFloatStrategyV4 is
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
 
     address public immutable factory;
+    address public immutable feeManager = 0x1DebB34b744e2Fa5a90a58c37beb801505BDCb46;
     IPositionManagerV4 public immutable positionManager;
     IPoolManagerV4 private immutable poolManager;
     IERC20 private immutable WETH;
@@ -135,6 +136,7 @@ contract UFloatStrategyV4 is
         if (!isAllowedToken[assetAddr]) revert TokenNotAllowed();
         ASSET = IERC20(assetAddr);
         poolKey = _poolKeyFromRouter(assetAddr);
+        if (poolKey.tickSpacing > 0) tickSpacing = poolKey.tickSpacing;
         _giveAllowances();
     }
     function removeAllowedToken(address token) external onlyOwner {
@@ -529,18 +531,26 @@ contract UFloatStrategyV4 is
         });
         (amount0, amount1) = LiquidityLibraryV4.collectAllFees(liqPos, dctx, address(this));
         valueInWeth = 0;
-        if (amount0 > 0 || amount1 > 0) {
-            address p0 = poolKey.currency0;
-            uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
-            uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
-            uint256 p = _spotPrice1e18();
-            valueInWeth = feesWeth;
-            if (feesAsset > 0 && p > 0) {
-                valueInWeth += Math.mulDiv(feesAsset, 1e18, p);
-            }
-            if (trackFees) {
-                UniswapFeesCollected += valueInWeth;
-            }
+        if (amount0 == 0 && amount1 == 0) return (0, 0, 0);
+
+        address p0 = poolKey.currency0;
+        address p1 = poolKey.currency1;
+        uint256 fee0 = Math.mulDiv(amount0,protocolFeeBps, DIVISOR);
+        uint256 fee1 = Math.mulDiv(amount1,protocolFeeBps, DIVISOR);
+        if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
+        if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
+        amount0 -= fee0;
+        amount1 -= fee1;
+
+        uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
+        uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
+        uint256 p = _spotPrice1e18();
+        valueInWeth = feesWeth;
+        if (feesAsset > 0 && p > 0) {
+            valueInWeth += Math.mulDiv(feesAsset, 1e18, p);
+        }
+        if (trackFees) {
+            UniswapFeesCollected += valueInWeth;
         }
     }
     function _spotPrice1e18() internal view returns (uint256) {
@@ -568,23 +578,24 @@ contract UFloatStrategyV4 is
     function _effectiveRangeBelowTicks() internal view returns (uint256) {
         uint256 base = rangeBelowTicks;
         if (base == 0 || base >= 10_000) base = 400;
+        int24 spacing = poolKey.tickSpacing;
         if (consecutiveOffensiveCount < minFloorTickCount) {
-            return TrailingFloorLib.alignTicksDownToSpacing(base, poolKey.tickSpacing);
+            return TrailingFloorLib.alignTicksDownToSpacing(base, spacing);
         }
 
         uint256 count = consecutiveOffensiveCount;
         uint256 steps = count - minFloorTickCount + 1;
         uint256 effective = base;
-        uint256 floorTicks = minRangeBelowTicks != 0 ? minRangeBelowTicks : 200;
-        uint256 num = ratchetNumerator != 0 ? ratchetNumerator : 1;
-        uint256 den = ratchetDenominator != 0 ? ratchetDenominator : 3;
+        uint256 sp = uint256(uint24(spacing > 0 ? spacing : int24(200)));
+        uint256 floorTicks = minRangeBelowTicks != 0 ? minRangeBelowTicks : sp;
+        if (floorTicks < sp) floorTicks = sp;
         for (uint256 i = 0; i < steps; i++) {
-            effective = effective * num / den;
+            effective = effective * RATCHET_NUMERATOR / RATCHET_DENOMINATOR;
             if (effective < floorTicks) {
-                return TrailingFloorLib.alignTicksDownToSpacing(floorTicks, poolKey.tickSpacing);
+                return TrailingFloorLib.alignTicksDownToSpacing(floorTicks, spacing);
             }
         }
-        return TrailingFloorLib.alignTicksDownToSpacing(effective, poolKey.tickSpacing);
+        return TrailingFloorLib.alignTicksDownToSpacing(effective, spacing);
     }
     function _balanceTokens(uint256 assetBal, uint256 wethBal) internal {
         if (assetBal == 0 && wethBal == 0) return;
@@ -780,6 +791,7 @@ contract UFloatStrategyV4 is
         }
         ASSET = IERC20(_newAssetAddr);
         poolKey = key;
+        if (key.tickSpacing > 0) tickSpacing = key.tickSpacing;
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
         stratMode = Mode.NORMAL;

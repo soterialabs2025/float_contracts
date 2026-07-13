@@ -295,6 +295,19 @@
   },
   {
     "type": "function",
+    "name": "feeManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getPositionId",
     "inputs": [],
     "outputs": [
@@ -649,6 +662,19 @@
   {
     "type": "function",
     "name": "prevOffensiveTime",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "protocolFeeBps",
     "inputs": [],
     "outputs": [
       {

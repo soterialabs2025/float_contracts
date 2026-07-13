@@ -10,6 +10,8 @@ contract StrategyManagerV4 is Ownable {
     uint24 public poolFeePips = 10_000;
     int24 public tickSpacing = 200;
     uint256 public withdrawalFeeBps = 0;
+    /// @notice Share of collected Uniswap LP fees sent to `feeManager` (1000 = 10%).
+    uint256 public protocolFeeBps = 1000;
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
     /// @notice ASSET share target (bps) for NORMAL / DEFENSIVE / pre-confirmation OFFENSIVE re-mints.
@@ -28,7 +30,7 @@ contract StrategyManagerV4 is Ownable {
     /// @notice Last consecutive OFFENSIVE entry that applies below-range ratchet tightening.
     uint256 public maxOffensiveRatchetCount = 4;
     /// @notice OFFENSIVE below-range ratchet multiplier: effective *= numerator / denominator each step.
-    uint256 public ratchetNumerator = 1;
+    uint256 public ratchetNumerator = 2;
     uint256 public ratchetDenominator = 3;
 
     error InvalidBps();
