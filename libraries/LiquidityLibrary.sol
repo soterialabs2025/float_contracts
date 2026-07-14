@@ -281,7 +281,8 @@ library LiquidityLibrary {
             bal1 = wethBal;
         }
         uint128 liq = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
-        require(liq > 0, "no liq");
+        // Dust / one-sided in-range inventory → 0 liquidity; leave idle rather than revert the rotation.
+        if (liq == 0) return (ps.positionId, 0);
         (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
         if (need0 > bal0) need0 = bal0;
         if (need1 > bal1) need1 = bal1;
@@ -354,7 +355,8 @@ library LiquidityLibrary {
             bal1 = wethBal;
         }
         uint128 liq = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
-        require(liq > 0, "no liq");
+        // Dust / one-sided in-range inventory → 0 liquidity; leave idle rather than revert the rotation.
+        if (liq == 0) return (ps.positionId, 0);
         (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
         if (need0 > bal0) need0 = bal0;
         if (need1 > bal1) need1 = bal1;

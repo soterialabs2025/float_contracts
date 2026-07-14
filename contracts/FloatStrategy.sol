@@ -197,6 +197,13 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     function _syncPoolFeeParamsFromPool() internal {
         v3Fee = pool.fee();
         tickSpacing = pool.tickSpacing();
+        // Snap stored band widths onto the new pool's spacing grid (e.g. 200 → 60 on USDC 0.3%).
+        if (rangeBelowTicks != 0) {
+            rangeBelowTicks = TrailingFloorLib.alignTicksDownToSpacing(rangeBelowTicks, tickSpacing);
+        }
+        if (rangeAboveTicks != 0) {
+            rangeAboveTicks = TrailingFloorLib.alignTicksDownToSpacing(rangeAboveTicks, tickSpacing);
+        }
     }
     function _liquidityDust() private view returns (uint256) {
         return address(ASSET) == baseUSDC ? 1_000_000 : 1_000_000_000_000;
@@ -421,6 +428,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         uint256 belowTicks = _effectiveRangeBelowTicks();
         uint256 aboveTicks = rangeAboveTicks;
         if (aboveTicks == 0 || aboveTicks >= 10_000) aboveTicks = 600;
+        aboveTicks = TrailingFloorLib.alignTicksDownToSpacing(aboveTicks, tickSpacing);
         return TrailingFloorLib.asymmetricSpacedTicks(currentTick, tickSpacing, belowTicks, aboveTicks);
     }
 
@@ -494,12 +502,15 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
 
         address p0 = pool.token0();
         address p1 = pool.token1();
-        uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
-        uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
-        if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
-        if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
-        amount0 -= fee0;
-        amount1 -= fee1;
+        // Only skim on fee-only collects. Post-decrease collect includes principal — never skim that.
+        if (trackFees && protocolFeeBps > 0) {
+            uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
+            uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
+            if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
+            if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
+            amount0 -= fee0;
+            amount1 -= fee1;
+        }
 
         uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
         uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
@@ -703,10 +714,16 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
         if (assetAddr == baseUSDC) {
+            // STABLE: hold idle USDC (no LP mint). Minting USDC/WETH fails with "no liq" when
+            // inventory is WETH-only dust — `_balanceTokens` truncates `weth*price` to 0 USDC units
+            // then in-range getLiquidityForAmounts returns min(liq0, 0) = 0.
             mode = Mode.STABLE;
-        } else {
-            mode = Mode.NORMAL;
+            defensiveEnteredAt = block.timestamp;
+            baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
+            if (wethBal > 0) _swap(WETH, ASSET, wethBal);
+            return;
         }
+        mode = Mode.NORMAL;
         defensiveEnteredAt = 0;
         baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
         if (wethBal == 0 && assetBal == 0) {

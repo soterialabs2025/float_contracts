@@ -526,12 +526,15 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
 
         address p0 = poolKey.currency0;
         address p1 = poolKey.currency1;
-        uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
-        uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
-        if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
-        if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
-        amount0 -= fee0;
-        amount1 -= fee1;
+        // Only skim on fee-only collects. Post-decrease collect can include principal — never skim that.
+        if (trackFees && protocolFeeBps > 0) {
+            uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
+            uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
+            if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
+            if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
+            amount0 -= fee0;
+            amount1 -= fee1;
+        }
 
         uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
         uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;

@@ -123,8 +123,9 @@ contract FloatContractManager is Ownable {
 
         address vaultAddr = addresses["FloatVault"];
         address strategyAddr = addresses["FloatStrategy"];
-        address swapRouterAddr = addresses["FloatSwaprouter"];
-
+     
+        address swapRouterAddr = addresses["FloatSwapRouter"];
+  
         require(strategyAddr != address(0), "Strategy address not set");
 
         address newPoolV3Addr = _poolV3ForAsset(_newAssetAddr);
