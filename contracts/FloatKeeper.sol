@@ -26,15 +26,6 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
     event StrategyUpdated(address indexed stratAddr);
     event StrategyRemoved(address indexed stratAddr, uint256 indexed id);
-    event UpkeepPerformed(
-        uint256 indexed id,
-        address indexed strat,
-        address indexed keeper,
-        bool    didAct,
-        uint8   strategyMode,  // 0=NORMAL, 1=DEFENSIVE, 2=OFFENSIVE
-        uint256 consecutiveOffensiveCount,
-        uint256 defensiveEnteredAt
-    );
     event VaultPoolValueSnapshot(address indexed vault, address indexed caller);
 
     constructor(address _managerAddress) Ownable(msg.sender) {
@@ -108,14 +99,12 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
         require(id < watched.length, "bad id");
 
         WatchedStrategy storage ws = watched[id];
-        address stratAddr = ws.stratAddr; // Cache to avoid multiple storage reads
+        address stratAddr = ws.stratAddr;
         
         if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, 0, 0, 0);
             return;
         }
 
-        // Respect per-strategy interval (except on very first call)
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (
@@ -123,41 +112,25 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
             minInterval > 0 &&
             uint32(block.timestamp) < lastAction + minInterval
         ) {
-            IOutOfRangeStrategy s0 = IOutOfRangeStrategy(stratAddr);
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt());
             return;
         }
 
         IOutOfRangeStrategy strat = IOutOfRangeStrategy(stratAddr);
 
-        // Check if we need to perform any action (may transition mode / set defensiveEnteredAt on the strategy)
-        bool keeperCheck = strat.keeperCheck();
-        
-        // If neither condition is met, no action needed
-        if (!keeperCheck) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
+        // OOR remint / mode transitions happen inside keeperCheck.
+        if (!strat.keeperCheck()) {
             return;
         }
 
-        // Defensive recovery and idle paths run inside strategy _harvest. Strategy must authorize this keeper (keeperStratAddr).
-        try strat.harvestBoolean(true) returns (uint256) {
-        } catch {
-        }
-
+        // Fee collect is via `performHarvest` on a separate cadence — not every upkeep.
         ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
     }
 
     /// @notice Batch version to allow keepers to touch many strategies in one tx
     function performUpkeepBatch(uint256[] calldata ids) external  {
         uint256 len = ids.length;
         for (uint256 i = 0; i < len; i++) {
-            // we intentionally ignore failures per-id and just emit events
-            try this.performUpkeep(ids[i]) {
-                // no-op
-            } catch {
-                // avoid revert for whole batch
-            }
+            try this.performUpkeep(ids[i]) {} catch {}
         }
     }
 
@@ -169,14 +142,12 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
         require(id < watched.length, "bad id");
 
         WatchedStrategy storage ws = watched[id];
-        address stratAddr = ws.stratAddr; // Cache to avoid multiple storage reads
+        address stratAddr = ws.stratAddr;
         
         if (!ws.active || stratAddr == address(0)) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, 0, 0, 0);
             return;
         }
 
-        // Respect per-strategy interval (except on very first call)
         uint32 lastAction = ws.lastAction;
         uint32 minInterval = ws.minInterval;
         if (
@@ -184,8 +155,6 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
             minInterval > 0 &&
             uint32(block.timestamp) < lastAction + minInterval
         ) {
-            IOutOfRangeStrategy s0 = IOutOfRangeStrategy(stratAddr);
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, s0.mode(), s0.consecutiveOffensiveCount(), s0.defensiveEnteredAt());
             return;
         }
 
@@ -193,12 +162,10 @@ contract FloatKeeper is Ownable, ReentrancyGuard {
 
         try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {
         } catch {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
             return;
         }
 
         ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
     }
 
     /// @notice Batch harvest for multiple strategies in one tx

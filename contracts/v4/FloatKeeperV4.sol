@@ -9,6 +9,8 @@ import "./interfaces/IFloatVaultV4.sol";
 
 /// @title FloatKeeperV4
 /// @notice Same keeper/orchestration as `FloatKeeper`, wired to `FloatVaultV4` via manager key `FloatVaultV4`.
+/// @dev Batch upkeep uses an internal helper (not `try this.performUpkeep`) so the 63/64 external-call gas
+///      rule cannot OOG a real OOR remint while estimateGas / wallets treat the batch as a cheap no-op.
 contract FloatKeeperV4 is Ownable, ReentrancyGuard {
     /// @dev Must match `FloatStrategyV4.Mode`: 3 = NEUTRAL, 4 = STABLE (WETH-only idle).
     uint8 private constant MODE_NEUTRAL = 3;
@@ -84,7 +86,20 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
 
     function performUpkeep(uint256 id) external nonReentrant {
         require(id < watched.length, "bad id");
+        _performUpkeep(id);
+    }
 
+    /// @notice Batch upkeep. Invalid ids are skipped; strategy work runs in-process (full gas).
+    function performUpkeepBatch(uint256[] calldata ids) external nonReentrant {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _performUpkeep(ids[i]);
+        }
+    }
+
+    function _performUpkeep(uint256 id) internal {
         WatchedStrategy storage ws = watched[id];
         address stratAddr = ws.stratAddr;
 
@@ -105,25 +120,30 @@ contract FloatKeeperV4 is Ownable, ReentrancyGuard {
             return;
         }
 
+        // OOR remint / mode transitions happen inside keeperCheck.
         if (!strat.keeperCheck()) {
             return;
         }
 
-        try strat.harvestBoolean(true) returns (uint256) {} catch {}
-
+        // Fee collect is via `performHarvest` on a separate cadence — not every upkeep.
         ws.lastAction = uint32(block.timestamp);
-    }
-
-    function performUpkeepBatch(uint256[] calldata ids) external {
-        uint256 len = ids.length;
-        for (uint256 i = 0; i < len; i++) {
-            try this.performUpkeep(ids[i]) {} catch {}
-        }
     }
 
     function performHarvest(uint256 id, bool skipIncreaseLiquidity) external nonReentrant {
         require(id < watched.length, "bad id");
+        _performHarvest(id, skipIncreaseLiquidity);
+    }
 
+    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external nonReentrant {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _performHarvest(ids[i], skipIncreaseLiquidity);
+        }
+    }
+
+    function _performHarvest(uint256 id, bool skipIncreaseLiquidity) internal {
         WatchedStrategy storage ws = watched[id];
         address stratAddr = ws.stratAddr;
 
