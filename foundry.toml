@@ -50,7 +50,17 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 bytecode_hash = "none"
-skip = []
+skip = [
+    "FloatStrategy-With-Bands",
+    "UFloatStrategy-WBands",
+    "R_LiquidityLibrary",
+    # WIP / OZ-incompatible stubs under liquidContracts (filename match, not path)
+    "LiquidStratMinV4",
+    "LiquidSwapRouterV4",
+    "UFloatKeeperV4",
+    "UFloatStrategyFactoryV4",
+    "UFloatStrategyV4OperatorPatch",
+]
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",

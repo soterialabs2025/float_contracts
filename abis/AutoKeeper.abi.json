@@ -44,32 +44,13 @@
   },
   {
     "type": "function",
-    "name": "getPoolValueSnapshotCount",
-    "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "operatorRegistry",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IOperatorRegistry"
+        "internalType": "contract IAutoOperatorRegistry"
       }
     ],
     "stateMutability": "view"
@@ -151,40 +132,6 @@
   },
   {
     "type": "function",
-    "name": "poolValueSnapshots",
-    "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "valueWeth",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "uniswapFeesCollected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -205,7 +152,7 @@
   },
   {
     "type": "function",
-    "name": "snapshotPoolValue",
+    "name": "snapshotVaultPoolValue",
     "inputs": [
       {
         "name": "id",
@@ -223,7 +170,7 @@
   },
   {
     "type": "function",
-    "name": "snapshotPoolValueBatch",
+    "name": "snapshotVaultPoolValueBatch",
     "inputs": [
       {
         "name": "ids",
@@ -328,37 +275,17 @@
         "internalType": "uint32"
       },
       {
+        "name": "lastHarvest",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
         "name": "active",
         "type": "bool",
         "internalType": "bool"
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "HarvestPerformed",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "strat",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "keeper",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -413,7 +340,7 @@
   },
   {
     "type": "event",
-    "name": "StrategyPoolValueSnapshot",
+    "name": "VaultPoolValueSnapshot",
     "inputs": [
       {
         "name": "id",
@@ -422,54 +349,10 @@
         "internalType": "uint256"
       },
       {
-        "name": "strat",
+        "name": "vault",
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      },
-      {
-        "name": "valueWeth",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "uniswapFeesCollected",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "StrategyUpdated",
-    "inputs": [
-      {
-        "name": "stratAddr",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UpkeepPerformed",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
       },
       {
         "name": "strat",
@@ -478,28 +361,10 @@
         "internalType": "address"
       },
       {
-        "name": "keeper",
+        "name": "caller",
         "type": "address",
-        "indexed": true,
+        "indexed": false,
         "internalType": "address"
-      },
-      {
-        "name": "didAct",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      },
-      {
-        "name": "strategyMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
-      },
-      {
-        "name": "consecutiveOffensiveCount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false

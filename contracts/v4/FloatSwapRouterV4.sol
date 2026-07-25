@@ -87,6 +87,8 @@ contract FloatSwapRouterV4 is
     address public vaultAddr;
     /// @notice Demeter operator address — allowed to call swap entrypoints (parity with v3).
     address public demeterAddr;
+    /// @notice SoteriaFeeManager — allowed to call swap entrypoints for fee-token → WETH conversion.
+    address public feeManager;
 
     /// @notice Becomes true after `setUpContract` runs; swap entrypoints require it.
     bool public initialized;
@@ -106,6 +108,7 @@ contract FloatSwapRouterV4 is
     event MaxSlippageBpsUpdated(uint16 maxSlippageBps);
     event ContractSetUp(address indexed caller);
     event StrategySet(address indexed strategy);
+    event FeeManagerSet(address indexed feeManager);
     event AddressesRefreshed(address indexed strategy, address indexed vault, address indexed demeter);
 
     error ZeroAmount();
@@ -269,15 +272,16 @@ contract FloatSwapRouterV4 is
         _seed(0x0061d91cff0fc9fbbdb89f505cf8a7422bf95fdba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 34 evo- (WETH < asset)
         _seed(0x00721b072dbb616f29eea73ac004e03fd4e884bba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
-          // 35 DOT (WETH < asset)
-        _seed(0x0023a2847d772803f9efc64b4277b782b06296fe51, 0x000000000000000000000000000000000000000000);
+        // 34 surplus- (WETH < asset)
+        _seed(0x00c52aedec3374422d7510e294cfaa90799595cba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
+
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Authorized-caller gating (v3 parity: only Float contracts may swap)
     // ─────────────────────────────────────────────────────────────────────────────
 
-    /// @dev Allowlist for swap entrypoints: Strategy, Vault, Demeter, ContractManager, Owner.
+    /// @dev Allowlist for swap entrypoints: Strategy, Vault, Demeter, FeeManager, ContractManager, Owner.
     ///      Mirrors `FloatSwapRouter._msgSender()` checks while letting Owner/Demeter call directly for ops.
     modifier onlyAuthorized() {
         if (!initialized) revert NotInitialized();
@@ -286,6 +290,7 @@ contract FloatSwapRouterV4 is
             s != strategy &&
             s != vaultAddr &&
             s != demeterAddr &&
+            s != feeManager &&
             s != address(manager) &&
             s != owner()
         ) revert Unauthorized();
@@ -301,28 +306,32 @@ contract FloatSwapRouterV4 is
         emit ConfigManagerUpdated(newConfigManager);
     }
 
-    /// @notice One-shot init: pulls Strategy / Vault / Demeter from the registry and auto-grants
-    ///         the Float ContractManager `configManager` rights for `setV4PoolConfig`.
+    /// @notice One-shot init: pulls Strategy / Vault / Demeter / FeeManager from the registry and
+    ///         auto-grants the Float ContractManager `configManager` rights for `setV4PoolConfig`.
     /// @dev    Owner-only. Required before any swap entrypoint will accept calls (see `onlyAuthorized`).
+    ///         Register `SoteriaFeeManager` on the manager before or after; call `refreshAddresses` if after.
     function setUpContract() external onlyOwner {
-        address _strategy = manager.getAddress("FloatStrategyV4");
-        address _vault    = manager.getAddress("FloatVaultV4");
-        address _demeter  = manager.getAddress("Demeter");
+        address _strategy   = manager.getAddress("FloatStrategyV4");
+        address _vault      = manager.getAddress("FloatVaultV4");
+        address _demeter    = manager.getAddress("Demeter");
+        address _feeManager = manager.getAddress("SoteriaFeeManager");
         require(_strategy != address(0), "strategy=0");
 
         strategy    = _strategy;
         vaultAddr   = _vault;
         demeterAddr = _demeter;
+        feeManager  = _feeManager;
 
         configManager = address(manager);
         initialized = true;
 
         emit ContractSetUp(_msgSender());
         emit StrategySet(_strategy);
+        emit FeeManagerSet(_feeManager);
         emit ConfigManagerUpdated(address(manager));
     }
 
-    /// @notice Re-pull Strategy / Vault / Demeter from the registry after a registry-side change.
+    /// @notice Re-pull Strategy / Vault / Demeter / FeeManager from the registry after a registry-side change.
     /// @dev    Allowed for owner / demeter / manager (parity with v3 `updateAsset`).
     function refreshAddresses() external {
         address s = _msgSender();
@@ -331,8 +340,10 @@ contract FloatSwapRouterV4 is
         strategy    = manager.getAddress("FloatStrategyV4");
         vaultAddr   = manager.getAddress("FloatVaultV4");
         demeterAddr = manager.getAddress("Demeter");
+        feeManager  = manager.getAddress("SoteriaFeeManager");
         require(strategy != address(0), "strategy=0");
         emit AddressesRefreshed(strategy, vaultAddr, demeterAddr);
+        emit FeeManagerSet(feeManager);
     }
 
     function setMaxSlippageBps(uint16 bps) external onlyOwner {

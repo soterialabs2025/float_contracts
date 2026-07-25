@@ -5,19 +5,23 @@ import "../../interfaces/IPositionManagerV4.sol";
 import "../../interfaces/IPoolManagerV4.sol";
 import "./UStrategyManager.sol";
 import "./UStrategyOperatorAuth.sol";
-import {IUFloatV4StrategySwapRouter} from "./interfaces/IUFloatV4StrategySwapRouter.sol";
+import {IUFloatV4StrategySwapRouter} from "./interfaces/IUFloatV4StrategySwapRouter.sol"; 
 import "./interfaces/IOutOfRangeStrategyV4.sol";
-import "./interfaces/IUFloatStrategyWatched.sol";
-import "./interfaces/IUFloatStrategyV4.sol";
+import "./interfaces/IUFloatStrategyWatched.sol"; 
+import "./interfaces/IUFloatStrategyV4.sol"; 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol"; 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
 import "../../libraries/LiquidityLibraryV4.sol";
 import "../../interfaces/IAllowanceTransfer.sol";
 import "./V4Deployments8453.sol";
+
+interface IWETH is IERC20 {
+    function deposit() external payable;
+}
 
 contract UFloatStrategyV4 is
     IUFloatStrategyV4,
@@ -45,7 +49,7 @@ contract UFloatStrategyV4 is
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
 
     address public immutable factory;
-    address public immutable feeManager = 0x1DebB34b744e2Fa5a90a58c37beb801505BDCb46;
+    address public feeManager;
     IPositionManagerV4 public immutable positionManager;
     IPoolManagerV4 private immutable poolManager;
     IERC20 private immutable WETH;
@@ -100,14 +104,24 @@ contract UFloatStrategyV4 is
         positionManager = IPositionManagerV4(V4Deployments8453.POSITION_MANAGER);
         poolManager = IPoolManagerV4(V4Deployments8453.POOL_MANAGER);
     }
-    function bootstrapStrategy(address owner_,address swapRouter,address operatorRegistry_,address keeper,StratMethod stratMethod_,address[] calldata tokens) external {
+    function bootstrapStrategy(
+        address owner_,
+        address swapRouter,
+        address operatorRegistry_,
+        address keeper,
+        address feeManager_,
+        StratMethod stratMethod_,
+        address[] calldata tokens
+    ) external {
         if (msg.sender != factory) revert Unauthorized();
-        if (owner_ == address(0) || swapRouter == address(0)) revert ZeroAddress();
+        if (owner_ == address(0) || swapRouter == address(0) || feeManager_ == address(0)) revert ZeroAddress();
         if (tokens.length == 0) revert TokenNotAllowed();
         _setOperatorInfra(operatorRegistry_, keeper);
         swapRouterV4 = IUFloatV4StrategySwapRouter(swapRouter);
+        feeManager = feeManager_;
         _initStrategyDefaults();
         stratMethod = stratMethod_;
+        reserveAddress = owner_;
         uint256 len = tokens.length;
         for (uint256 i = 0; i < len; i++) {
             _addAllowedToken(tokens[i]);
@@ -156,15 +170,13 @@ contract UFloatStrategyV4 is
     function allowedTokenCount() external view returns (uint256) {
         return allowedTokens.length;
     }
-    /// @dev Flatten + remint via `_changeAsset`. Same `ASSET` = remint with current band params;
-    ///      other allowlisted token = rotate; WETH = exit STABLE.
     function mintPosition(address token) external onlyOwner nonReentrant {
         if (totalValueWeth() <= stopLoss) revert StopLossReached();
         _changeAsset(token);
     }
-    function depositWeth(uint256 amount) external override onlyOwner nonReentrant {
-        if (amount == 0) revert ZeroValue();
-        WETH.safeTransferFrom(_msgSender(), address(this), amount);
+    function depositETH() external payable override onlyOwner nonReentrant {
+        if (msg.value == 0) revert ZeroValue();
+        IWETH(address(WETH)).deposit{value: msg.value}();
         _processDeposit();
     }
     function withdrawWeth(uint256 wethAmount) external override onlyOwner nonReentrant {
@@ -174,7 +186,7 @@ contract UFloatStrategyV4 is
         uint256 notional = wethAmount == type(uint256).max ? totalValue : wethAmount;
         _withdrawWethNotional(notional, totalValue, _msgSender());
     }
-    function totalValueWeth() public view returns (uint256) {
+    function totalValueWeth() public view override returns (uint256) {
         return balanceOfIdle() + poolValue();
     }
     function _unwindPoolNotional(uint256 wethNotional, uint256 totalValue)
@@ -355,9 +367,6 @@ contract UFloatStrategyV4 is
         exitedAbove = poolTick >= upper;
         exitedBelow = poolTick < lower;
     }
-    /// @dev Maps OOR exit side to asset strength using WETH as numéraire and the stored pool token order.
-    ///      Uniswap price is token1/token0: when WETH is token0, higher tick => weaker ASSET; when WETH is
-    ///      token1, higher tick => stronger ASSET.
     function _assetStrengthAfterOor() internal view returns (bool assetStrong, bool assetWeak) {
         (bool exitedAbove, bool exitedBelow) = _oorExitSide();
         address weth = address(WETH);
@@ -472,7 +481,6 @@ contract UFloatStrategyV4 is
             _offensiveFailedFallback();
         }
     }
-    /// @dev Exact tick distances on the pool spacing grid (no silent rounding).
     function _asymmetricTicks(int24 currentTick) internal view returns (int24 lower, int24 upper) {
         uint256 belowTicks = _effectiveRangeBelowTicks();
         uint256 aboveTicks = rangeAboveTicks;
@@ -532,17 +540,30 @@ contract UFloatStrategyV4 is
         (amount0, amount1) = LiquidityLibraryV4.collectAllFees(liqPos, dctx, address(this));
         valueInWeth = 0;
         if (amount0 == 0 && amount1 == 0) return (0, 0, 0);
-
         address p0 = poolKey.currency0;
         address p1 = poolKey.currency1;
-        // Only skim on fee-only collects. Post-decrease collect can include principal — never skim that.
-        if (trackFees && protocolFeeBps > 0) {
-            uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
-            uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
-            if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
-            if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
-            amount0 -= fee0;
-            amount1 -= fee1;
+        if (trackFees) {
+            uint256 gross0 = amount0;
+            uint256 gross1 = amount1;
+            if (protocolFeeBps > 0) {
+                uint256 fee0 = Math.mulDiv(gross0, protocolFeeBps, DIVISOR);
+                uint256 fee1 = Math.mulDiv(gross1, protocolFeeBps, DIVISOR);
+                if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
+                if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
+                amount0 -= fee0;
+                amount1 -= fee1;
+            }
+            if (feeReserveBps > 0) {
+                address to = reserveAddress;
+                if (to != address(0)) {
+                    uint256 ext0 = Math.mulDiv(gross0, feeReserveBps, DIVISOR);
+                    uint256 ext1 = Math.mulDiv(gross1, feeReserveBps, DIVISOR);
+                    if (ext0 > 0) IERC20(p0).safeTransfer(to, ext0);
+                    if (ext1 > 0) IERC20(p1).safeTransfer(to, ext1);
+                    amount0 -= ext0;
+                    amount1 -= ext1;
+                }
+            }
         }
 
         uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
@@ -803,5 +824,8 @@ contract UFloatStrategyV4 is
         }
         _balanceTokens(assetBal, wethBal);
         _mintAsymmetricPosition();
+    }
+    receive() external payable {
+        revert("use depositETH");
     }
 }

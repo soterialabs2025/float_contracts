@@ -1,0 +1,119 @@
+
+############################################################################################################################
+ 
+  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+  **Triton**: `0x66d60E991D09447245d668671d079b57eB48f58E`
+  **Demeter_Two**: `0xa5eF8cEFEc50D33C3413ecE773CEe05aA0c8e1cB`
+  **Triton_Two**: `0x1CfA9B75FbA20A638b7ED10074c28087B2507f39`
+  **SoteriaFeeManager**:`0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe`
+
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+- **OperatorRegistry**:`0x704618C4E8C201F45536DFD583911F8335e853Dd`
+- **UFloatStrategyFactoryV4**: `0xC6e260F7DCff98426c8652eED85315DB3965409A`
+- **UFloatSwapRouter**: `0x45cb7972Fb88127435d4791eAb034f07ED53064a`
+- **FloatContractmanagerV4**:`0xD12D64925340Ffc277d79b02A212Dd576701EaC9`
+- **UFloatKeeperV4**:`0x7641E1F6EE149A88C710E453Aa65616F5F90D1a0`
+
+
+ **UFloatStrategyV4**:``
+- **UFloatStrategyV4**:``
+- **ASSET**:``
+- **AssetPoolV4**: `` 
+
+[`AutoSwapRouter`, `AutoOperatorRegistry`, `AutoKeeper`,`SoteriaFeeManager`]
+["0x45cb7972Fb88127435d4791eAb034f07ED53064a","0x704618C4E8C201F45536DFD583911F8335e853Dd","0x7641E1F6EE149A88C710E453Aa65616F5F90D1a0","0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe"]
+
+
+############################################################################################################################
+ 
+  **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+  **Triton**: `0x66d60E991D09447245d668671d079b57eB48f58E`
+  **Demeter_Two**: `0xa5eF8cEFEc50D33C3413ecE773CEe05aA0c8e1cB`
+  **Triton_Two**: `0x1CfA9B75FbA20A638b7ED10074c28087B2507f39`
+    **SoteriaFeeManager**:`0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe`
+
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+- **AutoOperatorRegistry**:`0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8`
+- **AutoFactory**:`0x0Fbca262D7CeBe0F5Df9fE6Eda4b8Ac9e84E7949`
+- **AutoSwapRouter**: `0x73fDB6Fc6C2F707cE93568998E94f8152909e7BC`
+- **AutoKeeper**:```0xaFAF34176F18Eaec107A002cc36E3B6c369C9950`
+
+**AutoVault**:`0x0Fbca262D7CeBe0F5Df9fE6Eda4b8Ac9e84E7949`
+**AutoStrategy**:``
+**AutoLiquidToken**:``
+
+
+
+ **UFloatStrategyV4**:``
+- **UFloatStrategyV4**:``
+- **ASSET**:``
+- **AssetPoolV4**: `` 
+
+[`AutoSwapRouter`, `AutoOperatorRegistry`, `AutoKeeper`]
+["0x73fDB6Fc6C2F707cE93568998E94f8152909e7BC","0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8","0xaFAF34176F18Eaec107A002cc36E3B6c369C9950"]
+
+
+############################################################################################################################
+
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+  **Triton**: `0x66d60E991D09447245d668671d079b57eB48f58E`
+  **SoteriaFeeManager**:`0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe`
+
+  **WETH**: `0x4200000000000000000000000000000000000006`
+
+ **POSITION_MANAGER**:`0x7C5f5A4bBd8fD63184577525326123B519429bDc`
+ **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
+
+
+- **FloatContractmanagerV4**:`0xD12D64925340Ffc277d79b02A212Dd576701EaC9`
+- **FloatStrategyV4**: `0xb03AFFAE4F77bb967baa8965F45b03d6C6fab1BF` -- `2` 
+- **FloatVaultV4**: `0x6bC0fEfBFE1E92608e40EBd5e9c68EbfE92D3AA1`
+- **FloatSwapRouterV4**:`0xd58D5ed35A04718D7AEC582AC5d69d762bD7311A`
+- **FloatLiquidTokenV4**:`0xdc8e384d3AA51D4344a12Ee263d18A4b5Df10B05`
+- **FloatKeeperV4**:`0xC76520DC0B70b708D4c45F0c04d7dF9A07082983`
+- **ASSET**:`0xbf8e8f0e8866a7052f948c16508644347c57aba3`
+- **AssetPoolV4**: `0x4a9b9e13975d26f4e3e17c655593bb82145dd4452aedafb826d856b817c9cfd4` 
+
+**Fee**:`8388608`
+**hooks**:`0xbb7784a4d481184283ed89619a3e3ed143e1adc0`
+
+["0x4200000000000000000000000000000000000006","0xbf8e8f0e8866a7052f948c16508644347c57aba3",8388608,200,"0xbb7784a4d481184283ed89619a3e3ed143e1adc0"]
+
+["FloatStrategyV4","FloatVaultV4","FloatSwapRouterV4","FloatLiquidTokenV4","FloatKeeperV4","ASSET","Demeter","Triton","WETH"],
+["0x65E5af8382eB7816Ec80a98a8Ef2e7730C0CC183","0xdcc0B49CefA6Ed0e54A3C6aE0C37f3fdAeBaA9c9","0x0A66709Bef715c7ea08A45d597f0b230cD48079A","0x9eB486310Ed402c3249DCB8AE898ff48092558cd","0x8b54d03b776bD0e932836d8d7cBeBFfBcB9d30b1","0x572c4fa77623652411574c51b5ddb7e1b750aba3","0x208169b1321a09e614a68b06b7f600dc0e007212","0x5A86759516C094607544BF17Fde6Ed46c8e7771f","0x4200000000000000000000000000000000000006"]
+
+############################################################################################################################
+
+ **Owner**: `0xc9ea49257ab99b4b8648df0641f15aec038c57e8`
+ 
+  **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
+  **SoteriaFeeManager**:`0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe`
+
+- **FloatContractmanager**:`0x8b8a48Db78e6f1d1e465b3abaBea88f2532c7154`
+- **FloatStrategy**: `0xf1f2447F6E78A7c69346EbC349d8D17cBf0980eA` - ``
+- **FloatVault**: `0x2C090e6fcA798DaD7c773Da9D1371ef5086f2337`
+- **FloatSwapRouter**: `0x01e97028262BE1Bc8e5E6EFAA2b6cC7cC3d94070`
+- **FloatLiquidToken**:`0xf2779B9B7F34bC46fB4bc2b860a6FCf0840BB41e`
+- **FloatKeeper**: `0x2Db9Cc1947593BF5056d12592989D3fc96C1fE4C`
+- **ASSET**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b`
+ - **AssetPoolV3**: `0xaec085e5a5ce8d96a7bdd3eb3a62445d4f6ce703` 
+
+
+
+###########################################################################################################################

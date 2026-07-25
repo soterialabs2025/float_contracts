@@ -61,6 +61,11 @@
         "name": "_keeperStrategyAddr",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_feeManagerAddr",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"

@@ -19,7 +19,7 @@
   },
   {
     "type": "function",
-    "name": "MAX_FEE_RESERVE_BPS",
+    "name": "TARGET_ASSET_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -32,7 +32,7 @@
   },
   {
     "type": "function",
-    "name": "RATCHET_DENOMINATOR",
+    "name": "innerAboveTicks",
     "inputs": [],
     "outputs": [
       {
@@ -45,33 +45,7 @@
   },
   {
     "type": "function",
-    "name": "RATCHET_NUMERATOR",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "feeReserveBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "minFloorTickCount",
+    "name": "innerBelowTicks",
     "inputs": [],
     "outputs": [
       {
@@ -85,45 +59,6 @@
   {
     "type": "function",
     "name": "minHarvestDelay",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "minRangeBelowTicks",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "offensiveAssetBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "offensiveStaleDuration",
     "inputs": [],
     "outputs": [
       {
@@ -195,26 +130,52 @@
   },
   {
     "type": "function",
-    "name": "reserveAddress",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "setMintParams",
+    "name": "setInnerBandParams",
     "inputs": [
       {
-        "name": "_targetAssetBps",
+        "name": "_innerBelowTicks",
         "type": "uint256",
         "internalType": "uint256"
       },
+      {
+        "name": "_innerAboveTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMinHarvestDelay",
+    "inputs": [
+      {
+        "name": "delay",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setProtocolFeeBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRangeParams",
+    "inputs": [
       {
         "name": "_rangeBelowTicks",
         "type": "uint256",
@@ -224,21 +185,6 @@
         "name": "_rangeAboveTicks",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "_stopLoss",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_feeReserveBps",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_reserveAddress",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -246,27 +192,12 @@
   },
   {
     "type": "function",
-    "name": "setOffensiveParams",
+    "name": "setSlippageBps",
     "inputs": [
       {
-        "name": "_minFloorTickCount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_offensiveStaleDuration",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_offensiveAssetBps",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_minRangeBelowTicks",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -274,12 +205,12 @@
   },
   {
     "type": "function",
-    "name": "setStratMethod",
+    "name": "setWithdrawalFeeBps",
     "inputs": [
       {
-        "name": "method",
-        "type": "uint8",
-        "internalType": "enum UStrategyManager.StratMethod"
+        "name": "bps",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -294,45 +225,6 @@
         "name": "",
         "type": "uint16",
         "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "stopLoss",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "stratMethod",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "enum UStrategyManager.StratMethod"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "targetAssetBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -394,6 +286,16 @@
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InnerNotInsideOuter",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InnerWiderThanOuter",
+    "inputs": []
   },
   {
     "type": "error",

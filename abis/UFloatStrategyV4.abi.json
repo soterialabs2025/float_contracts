@@ -11,6 +11,10 @@
     "stateMutability": "nonpayable"
   },
   {
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+  {
     "type": "function",
     "name": "ASSET",
     "inputs": [],
@@ -26,6 +30,19 @@
   {
     "type": "function",
     "name": "DIVISOR",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_FEE_RESERVE_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -189,6 +206,11 @@
         "internalType": "address"
       },
       {
+        "name": "feeManager_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "stratMethod_",
         "type": "uint8",
         "internalType": "enum UStrategyManager.StratMethod"
@@ -230,16 +252,10 @@
   },
   {
     "type": "function",
-    "name": "depositWeth",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "depositETH",
+    "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -270,6 +286,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "feeReserveBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -661,6 +690,19 @@
   },
   {
     "type": "function",
+    "name": "reserveAddress",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "setMintParams",
     "inputs": [
       {
@@ -682,6 +724,16 @@
         "name": "_stopLoss",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "_feeReserveBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_reserveAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],

@@ -24,7 +24,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     error MustBeNeutral();
     using SafeERC20 for IERC20;
     using LiquidityLibrary for LiquidityLibrary.PositionState;
-    address public immutable feeManager = 0x1DebB34b744e2Fa5a90a58c37beb801505BDCb46;
+    address public feeManager;
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     LiquidityLibrary.PositionState private liqPos;
     IUniswapV3PoolMinimal private pool;
@@ -83,13 +83,14 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
         nonfungiblePositionManager = INonfungiblePositionManager(nonfungiblePosManAddr);
         factory = IUniswapV3Factory(v3FactoryAddr);
     }
-    function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr) external onlyOwner {
+    function setUpContract(address _assetAddr, address _assetPoolV3Addr, address _managerAddr, address _swapRouterAddr, address _vaultAddr, address _demeterAddr, address _keeperStrategyAddr, address _feeManagerAddr) external onlyOwner {
         managerAddress = _managerAddr;
         assetAddr = _assetAddr;
         swapRouterAddr = _swapRouterAddr;
         vaultAddr = _vaultAddr;
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
+        feeManager = _feeManagerAddr;
         assetPoolV3 = _assetPoolV3Addr;
         pool = IUniswapV3PoolMinimal(assetPoolV3);
         _syncPoolFeeParamsFromPool();

@@ -15,10 +15,13 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+interface IWETH is IERC20 {
+  function deposit() external payable;
+}
+
 /// @title FloatVaultV4
-/// @notice WETH-only deposit vault. Mints `FloatLiquidTokenV4` shares pro-rata against `strategy.balance`,
-///         then forwards WETH to the strategy. Non-WETH inflows (and any router-side swap on deposit) are
-///         intentionally not supported — users must wrap to WETH before calling.
+/// @notice WETH / native-ETH deposit vault. Mints `FloatLiquidTokenV4` shares pro-rata against strategy NAV,
+///         then forwards WETH to the strategy. Non-WETH ERC-20 inflows (and in-vault token swaps) are not supported.
 /// @dev    `positionManagerV4` is the Base (8453) deployment constant from `V4Deployments8453`. Strategy
 ///         rebalances continue to route through `FloatSwapRouterV4` (asset-keyed strict swap), but the vault
 ///         itself no longer talks to the swap router.
@@ -54,7 +57,7 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   event StrategyNeutral(uint256 poolValue);
   event NeutralWithdrawal(address indexed receiver, uint256 shares, uint256 tokenAmount, uint256 wethAmount);
   event AssetChanged(address indexed newAsset);
-  event PoolValueSnapshotRecorded(uint256 valueWeth, uint64 timestamp);
+  event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp);
 
   /// @dev Scaled accumulator for `UniswapFeesCollected` growth per liquid share (WETH-notional attribution, not a claim).
   uint256 public constant FEES_PER_SHARE_PRECISION = 1e18;
@@ -63,9 +66,10 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
   uint256 public uniswapFeesCollectedSynced;
   mapping(address => uint256) public uniswapFeeDebt;
 
-  /// @notice WETH-denominated Uniswap position value from the strategy at snapshot time (see `IFloatStrategyV4.poolValue()`).
+  /// @notice WETH-denominated Uniswap position value + cumulative fees at snapshot time.
   struct PoolValueSnapshot {
     uint256 valueWeth;
+    uint256 uniswapFeesCollected;
     uint64 timestamp;
   }
 
@@ -120,10 +124,15 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     require(address(strategy) != address(0), "no strategy");
     _syncUniswapFees();
     uint256 pv = IFloatStrategyV4(address(strategy)).poolValue();
+    uint256 fees = IFloatStrategyV4(address(strategy)).UniswapFeesCollected();
     poolValueSnapshots.push(
-      PoolValueSnapshot({valueWeth: pv, timestamp: uint64(block.timestamp)})
+      PoolValueSnapshot({
+        valueWeth: pv,
+        uniswapFeesCollected: fees,
+        timestamp: uint64(block.timestamp)
+      })
     );
-    emit PoolValueSnapshotRecorded(pv, uint64(block.timestamp));
+    emit PoolValueSnapshotRecorded(pv, fees, uint64(block.timestamp));
   }
 
   /// @notice Number of stored pool value snapshots (newest at index `length - 1`).
@@ -210,20 +219,37 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     }
   }
 
-  /// @notice Deposit WETH and mint `FloatLiquidTokenV4` shares pro-rata against current vault NAV.
-  /// @dev    Caller must `WETH.approve(vault, amount)` first. No native ETH and no in-vault token swaps.
-  ///         Strategy's `beforeDeposit` is invoked before the pull so NAV is measured after any harvest.
-  function depositWeth(uint256 amount) external nonReentrant returns (uint256 shares) {
-    return _deposit(amount);
+  /// @notice Wrap native ETH to WETH and mint shares (same accounting as `depositWeth`).
+  function depositETH() external payable nonReentrant returns (uint256 shares) {
+    require(msg.value > 0, "zero");
+    require(address(weth) != address(0), "weth not set");
+    uint256 balBefore = weth.balanceOf(address(this));
+    IWETH(WETH_ADDR).deposit{value: msg.value}();
+    uint256 received = weth.balanceOf(address(this)) - balBefore;
+    require(received > 0, "no WETH received");
+    return _depositWethAmount(_msgSender(), received);
   }
 
-  function _deposit(uint256 amount) internal returns (uint256 shares) {
+  /// @notice Deposit WETH and mint `FloatLiquidTokenV4` shares pro-rata against current vault NAV.
+  /// @dev    Caller must `WETH.approve(vault, amount)` first. No in-vault token swaps.
+  ///         Strategy's `beforeDeposit` is invoked before mint math so NAV is measured after any harvest.
+  function depositWeth(uint256 amount) external nonReentrant returns (uint256 shares) {
+    require(amount > 0, "zero");
+    require(address(weth) != address(0), "weth not set");
+    address depositor = _msgSender();
+    uint256 balBefore = weth.balanceOf(address(this));
+    weth.safeTransferFrom(depositor, address(this), amount);
+    uint256 received = weth.balanceOf(address(this)) - balBefore;
+    require(received > 0, "no WETH received");
+    return _depositWethAmount(depositor, received);
+  }
+
+  /// @dev `received` WETH must already sit on this vault.
+  function _depositWethAmount(address depositor, uint256 received) internal returns (uint256 shares) {
     require(!neutral, "Vault neutral");
     require(contractSetUp, "not initialized");
     require(address(liquidToken) != address(0), "liquidToken not set");
-    require(address(weth) != address(0), "weth not set");
-    require(amount > 0, "zero");
-    address depositor = _msgSender();
+    require(received > 0, "zero");
 
     _syncUniswapFees();
     uint256 supply = totalSupply();
@@ -236,11 +262,6 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
       _syncUniswapFees();
       poolValueBefore = strategy.balanceOfIdle() + strategy.poolValue();
     }
-
-    uint256 balBefore = weth.balanceOf(address(this));
-    weth.safeTransferFrom(depositor, address(this), amount);
-    uint256 received = weth.balanceOf(address(this)) - balBefore;
-    require(received > 0, "no WETH received");
 
     _earn(received);
 
@@ -470,7 +491,9 @@ contract FloatVaultV4 is Ownable, ReentrancyGuard, Pausable, IFloatVaultV4 {
     neutralWithdrawalPaused = true;
   }
 
-
+  receive() external payable {
+    revert("use depositETH");
+  }
 }
 
 

@@ -27,7 +27,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     error MustBeNeutral();
     using SafeERC20 for IERC20;
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
-    address public immutable feeManager = 0x1DebB34b744e2Fa5a90a58c37beb801505BDCb46;
+    address public immutable feeManager;
     IPositionManagerV4 public immutable positionManager;
     LiquidityLibraryV4.PositionState private liqPos;
     IPoolManagerV4 private poolManager;
@@ -105,7 +105,8 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         address _swapRouterAddr,
         address _vaultAddr,
         address _demeterAddr,
-        address _keeperStrategyAddr
+        address _keeperStrategyAddr,
+        address _feeManagerAddr
     ) StrategyManagerV4() {
         if (weth_ == address(0) || positionManager_ == address(0) || poolManager_ == address(0)) revert ZeroAddress();
         WETH = IERC20(weth_);
@@ -115,6 +116,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         vaultAddr = _vaultAddr;
         demeterAddr = _demeterAddr;
         keeperStratAddr = _keeperStrategyAddr;
+        feeManager = _feeManagerAddr;
         swapRouterV4 = IV4StrategySwapRouterStrict(_swapRouterAddr);
         ASSET = IERC20(_assetAddr);
         _setPoolKey(LiquidityLibraryV4.PoolKey({

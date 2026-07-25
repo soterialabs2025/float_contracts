@@ -4,14 +4,14 @@ pragma solidity ^0.8.20;
 import "./IUFloatStrategyAllowedTokens.sol";
 
 /// @title IUFloatStrategyV4
-/// @notice Standalone v4 strategy (no FloatVault / share token). Owner funds and withdraws WETH directly.
+/// @notice Standalone v4 strategy (no FloatVault / share token). Owner funds via ETH; withdraws WETH.
 interface IUFloatStrategyV4 is IUFloatStrategyAllowedTokens {
     function UniswapFeesCollected() external view returns (uint256);
 
     function getPositionId() external view returns (uint256);
 
-    /// @notice Pull WETH from owner and deploy into LP per mode rules.
-    function depositWeth(uint256 amount) external;
+    /// @notice Wrap msg.value to WETH and deploy into LP per mode rules (owner only).
+    function depositETH() external payable;
 
     /// @notice Withdraw WETH notional to owner. Pass `type(uint256).max` (or any amount >= `totalValueWeth()`) to fully exit in one tx.
     function withdrawWeth(uint256 wethAmount) external;
@@ -19,6 +19,7 @@ interface IUFloatStrategyV4 is IUFloatStrategyAllowedTokens {
     function poolValue() external view returns (uint256);
     function balanceOfIdle() external view returns (uint256);
     function balanceOfPool() external view returns (uint256 tokenAmt, uint256 wethAmt);
+    function totalValueWeth() external view returns (uint256);
 
     /// @notice Rotate to `_newAssetAddr` (or WETH for STABLE exit). Pool key is read from `UFloatSwapRouter`.
     function changeAsset(address _newAssetAddr) external;

@@ -5,14 +5,13 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IOutOfRangeStrategyV4.sol";
 import "./interfaces/IUFloatStrategyWatched.sol";
+import "./interfaces/IUFloatStrategyV4.sol";
 import "./interfaces/IOperatorRegistry.sol";
 import "./interfaces/IUFloatKeeper.sol";
 
 /// @title UfloatKeeper
 /// @notice Keeper for standalone `UfloatStrategyV4` contracts. No Float vault or contract manager.
-/// @dev    `UfloatStrategyV4.mode()`: 3 = STABLE (skip upkeep / harvest).
-///         Operators on `operatorRegistry` call upkeep/harvest (wallet sharding).
-///         Harvest is not throttled by upkeep `minInterval`; strategy enforces `minHarvestDelay`.
+/// @dev    Snapshots are stored on the keeper, keyed by strategy address for frontend lookup.
 contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     uint8 private constant MODE_STABLE = 3;
     uint32 public constant DEFAULT_MIN_INTERVAL = 3;
@@ -26,8 +25,10 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
 
     IOperatorRegistry public immutable operatorRegistry;
     WatchedStrategy[] public watched;
-
     address public strategyFactory;
+
+    /// @notice strategy => snapshots (index 0 = oldest). Frontend key = strategy address.
+    mapping(address => PoolValueSnapshot[]) private _poolValueSnapshots;
 
     error Unauthorized();
     error ZeroAddress();
@@ -45,6 +46,13 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
         uint256 consecutiveOffensiveCount
     );
     event HarvestPerformed(uint256 indexed id, address indexed strat, address indexed keeper);
+    event StrategyPoolValueSnapshot(
+        uint256 indexed id,
+        address indexed strat,
+        uint256 valueWeth,
+        uint256 uniswapFeesCollected,
+        uint64 timestamp
+    );
 
     constructor(address operatorRegistry_) Ownable(msg.sender) {
         if (operatorRegistry_ == address(0)) revert ZeroAddress();
@@ -70,12 +78,11 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
     /// @inheritdoc IUFloatKeeper
     function addStrategy(address strat) external onlyStrategyFactory returns (uint256 id) {
         if (strat == address(0)) revert ZeroAddress();
-        watched.push(WatchedStrategy({
-            stratAddr: strat,
-            minInterval: DEFAULT_MIN_INTERVAL,
-            lastUpkeep: 0,
-            active: true
-        }));
+        watched.push(
+            WatchedStrategy({
+                stratAddr: strat, minInterval: DEFAULT_MIN_INTERVAL, lastUpkeep: 0, active: true
+            })
+        );
         id = watched.length - 1;
         IUFloatStrategyWatched(strat).setWatched(true);
         emit StrategyAdded(strat, DEFAULT_MIN_INTERVAL);
@@ -92,6 +99,20 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
 
     function strategiesLength() external view returns (uint256) {
         return watched.length;
+    }
+
+    function getPoolValueSnapshotCount(address strategy) external view override returns (uint256) {
+        return _poolValueSnapshots[strategy].length;
+    }
+
+    function poolValueSnapshots(address strategy, uint256 index)
+        external
+        view
+        override
+        returns (uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp)
+    {
+        PoolValueSnapshot storage s = _poolValueSnapshots[strategy][index];
+        return (s.valueWeth, s.uniswapFeesCollected, s.timestamp);
     }
 
     function performUpkeep(uint256 id) external nonReentrant onlyOperator {
@@ -162,5 +183,50 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
 
         strat.harvestBoolean(skipIncreaseLiquidity);
         emit HarvestPerformed(id, stratAddr, keeper);
+    }
+
+    /// @notice Harvest first (so `UniswapFeesCollected` is current), then snapshot on keeper keyed by strategy.
+    function snapshotPoolValue(uint256 id, bool skipIncreaseLiquidity)
+        external
+        override
+        nonReentrant
+        onlyOperator
+    {
+        _snapshotPoolValue(id, skipIncreaseLiquidity, msg.sender);
+    }
+
+    function snapshotPoolValueBatch(uint256[] calldata ids, bool skipIncreaseLiquidity)
+        external
+        nonReentrant
+        onlyOperator
+    {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _snapshotPoolValue(ids[i], skipIncreaseLiquidity, msg.sender);
+        }
+    }
+
+    function _snapshotPoolValue(uint256 id, bool skipIncreaseLiquidity, address caller) internal {
+        if (id >= watched.length) revert BadId();
+        WatchedStrategy storage ws = watched[id];
+        address stratAddr = ws.stratAddr;
+        if (!ws.active || stratAddr == address(0)) return;
+
+        IOutOfRangeStrategyV4 oor = IOutOfRangeStrategyV4(stratAddr);
+        if (oor.mode() == MODE_STABLE) return;
+
+        IUFloatStrategyV4 strat = IUFloatStrategyV4(stratAddr);
+        oor.harvestBoolean(skipIncreaseLiquidity);
+        emit HarvestPerformed(id, stratAddr, caller);
+
+        uint256 pv = strat.totalValueWeth();
+        uint256 fees = strat.UniswapFeesCollected();
+        uint64 ts = uint64(block.timestamp);
+        _poolValueSnapshots[stratAddr].push(
+            PoolValueSnapshot({valueWeth: pv, uniswapFeesCollected: fees, timestamp: ts})
+        );
+        emit StrategyPoolValueSnapshot(id, stratAddr, pv, fees, ts);
     }
 }

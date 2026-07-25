@@ -1,57 +1,174 @@
 [
   {
     "type": "constructor",
-    "inputs": [
-      {
-        "name": "operatorRegistry_",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "inputs": [],
     "stateMutability": "nonpayable"
   },
   {
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+  {
     "type": "function",
-    "name": "DEFAULT_MIN_INTERVAL",
+    "name": "asset",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint32",
-        "internalType": "uint32"
+        "type": "address",
+        "internalType": "contract IERC20"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "addStrategy",
+    "name": "balance",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "balanceOf",
     "inputs": [
       {
-        "name": "strat",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
     ],
     "outputs": [
       {
-        "name": "id",
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "bootstrap",
+    "inputs": [
+      {
+        "name": "owner_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "strategy_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "liquidToken_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "asset_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "bootstrapped",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "depositAsset",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "shares",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "depositETH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "depositWeth",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "enterNeutral",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "factory",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
     "name": "getPoolValueSnapshotCount",
-    "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "inputs": [],
     "outputs": [
       {
         "name": "",
@@ -63,13 +180,26 @@
   },
   {
     "type": "function",
-    "name": "operatorRegistry",
+    "name": "liquidToken",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IOperatorRegistry"
+        "internalType": "contract IAutoLiquidToken"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "neutral",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -89,75 +219,21 @@
   },
   {
     "type": "function",
-    "name": "performHarvest",
-    "inputs": [
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "id",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "skipIncreaseLiquidity",
+        "name": "",
         "type": "bool",
         "internalType": "bool"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "performHarvestBatch",
-    "inputs": [
-      {
-        "name": "ids",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "skipIncreaseLiquidity",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "performUpkeep",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "performUpkeepBatch",
-    "inputs": [
-      {
-        "name": "ids",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
     "name": "poolValueSnapshots",
     "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "internalType": "address"
-      },
       {
         "name": "index",
         "type": "uint256",
@@ -185,6 +261,13 @@
   },
   {
     "type": "function",
+    "name": "recordPoolValueSnapshot",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -192,75 +275,33 @@
   },
   {
     "type": "function",
-    "name": "setStrategyFactory",
-    "inputs": [
-      {
-        "name": "factory",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "name": "resumeNormal",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "snapshotPoolValue",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "skipIncreaseLiquidity",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "snapshotPoolValueBatch",
-    "inputs": [
-      {
-        "name": "ids",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "skipIncreaseLiquidity",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "strategiesLength",
+    "name": "strategy",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "address",
+        "internalType": "contract IAutoStrategy"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "strategyFactory",
+    "name": "totalSupply",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -280,84 +321,83 @@
   },
   {
     "type": "function",
-    "name": "updateStrategy",
+    "name": "weth",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IWETH"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
     "inputs": [
       {
-        "name": "id",
+        "name": "shares",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "active",
+        "name": "asAsset",
         "type": "bool",
         "internalType": "bool"
-      },
-      {
-        "name": "minInterval",
-        "type": "uint32",
-        "internalType": "uint32"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "watched",
-    "inputs": [
+    "outputs": [
       {
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "outputs": [
-      {
-        "name": "stratAddr",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "minInterval",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "lastUpkeep",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "active",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
+    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
-    "name": "HarvestPerformed",
+    "name": "Deposit",
     "inputs": [
       {
-        "name": "id",
-        "type": "uint256",
+        "name": "user",
+        "type": "address",
         "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "wethNotional",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "strat",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "keeper",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "shares",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NeutralEntered",
+    "inputs": [
+      {
+        "name": "poolValue",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NeutralExited",
+    "inputs": [],
     "anonymous": false
   },
   {
@@ -381,31 +421,12 @@
   },
   {
     "type": "event",
-    "name": "StrategyAdded",
+    "name": "Paused",
     "inputs": [
       {
-        "name": "stratAddr",
+        "name": "account",
         "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "minInterval",
-        "type": "uint32",
         "indexed": false,
-        "internalType": "uint32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "StrategyFactoryUpdated",
-    "inputs": [
-      {
-        "name": "factory",
-        "type": "address",
-        "indexed": true,
         "internalType": "address"
       }
     ],
@@ -413,20 +434,8 @@
   },
   {
     "type": "event",
-    "name": "StrategyPoolValueSnapshot",
+    "name": "PoolValueSnapshotRecorded",
     "inputs": [
-      {
-        "name": "id",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "strat",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
       {
         "name": "valueWeth",
         "type": "uint256",
@@ -450,12 +459,12 @@
   },
   {
     "type": "event",
-    "name": "StrategyUpdated",
+    "name": "Unpaused",
     "inputs": [
       {
-        "name": "stratAddr",
+        "name": "account",
         "type": "address",
-        "indexed": true,
+        "indexed": false,
         "internalType": "address"
       }
     ],
@@ -463,40 +472,28 @@
   },
   {
     "type": "event",
-    "name": "UpkeepPerformed",
+    "name": "Withdraw",
     "inputs": [
       {
-        "name": "id",
-        "type": "uint256",
+        "name": "user",
+        "type": "address",
         "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "shares",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "strat",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "keeper",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "didAct",
+        "name": "asAsset",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
       },
       {
-        "name": "strategyMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
-      },
-      {
-        "name": "consecutiveOffensiveCount",
+        "name": "outAmount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -506,7 +503,22 @@
   },
   {
     "type": "error",
-    "name": "BadId",
+    "name": "AlreadyBootstrapped",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EnforcedPause",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ExpectedPause",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotBootstrapped",
     "inputs": []
   },
   {
@@ -538,12 +550,28 @@
   },
   {
     "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "Unauthorized",
     "inputs": []
   },
   {
     "type": "error",
     "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroValue",
     "inputs": []
   }
 ]
