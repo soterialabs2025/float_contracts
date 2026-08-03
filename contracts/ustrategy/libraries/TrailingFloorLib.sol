@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "../../../libraries/TickMath.sol";
+import "./TickMath.sol";   
 
 library TrailingFloorLib {
     error SqrtOverflow();

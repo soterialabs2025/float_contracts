@@ -2,21 +2,21 @@
 pragma solidity ^0.8.20;
 
 import "./FloatLiquidToken.sol";  
-import "../interfaces/IContractManager.sol";
+import "./interfaces/IContractManager.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "../interfaces/IBurn.sol";
-import "../libraries/Math.sol";
-import "../interfaces/IFloatStrategy.sol";
-import "../interfaces/INonfungiblePositionManager.sol";
-import "../interfaces/ISwapRouter.sol";
-import "../interfaces/IFloatVault.sol";
-import "../interfaces/IUniswapV3PoolMinimal.sol";
-import "../interfaces/IUniswapV3Factory.sol";
+import "./interfaces/IBurn.sol";
+import "./libraries/Math.sol";
+import "./interfaces/IFloatStrategy.sol";
+import "./interfaces/INonfungiblePositionManager.sol";
+import "./interfaces/ISwapRouter.sol";
+import "./interfaces/IFloatVault.sol";
+import "./interfaces/IUniswapV3PoolMinimal.sol";
+import "./interfaces/IUniswapV3Factory.sol";
 
 interface IWETH is IERC20 {
   function deposit() external payable;

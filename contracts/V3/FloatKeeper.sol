@@ -3,9 +3,9 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IOutOfRangeStrategy.sol";  // Interface for the strategy
-import "../interfaces/IContractManager.sol";
-import "../interfaces/IFloatVault.sol";
+import "./interfaces/IOutOfRangeStrategy.sol";  // Interface for the strategy
+import "./interfaces/IContractManager.sol";
+import "./interfaces/IFloatVault.sol";
 
 contract FloatKeeper is Ownable, ReentrancyGuard {
 

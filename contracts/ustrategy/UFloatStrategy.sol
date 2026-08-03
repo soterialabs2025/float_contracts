@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../../interfaces/IPositionManagerV4.sol";
-import "../../interfaces/IPoolManagerV4.sol";
+import "./interfaces/IPositionManagerV4.sol";
+import "./interfaces/IPoolManagerV4.sol"; 
 import "./UStrategyManager.sol";
 import "./UStrategyOperatorAuth.sol";
 import {IUFloatV4StrategySwapRouter} from "./interfaces/IUFloatV4StrategySwapRouter.sol"; 
@@ -15,8 +15,8 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
-import "../../libraries/LiquidityLibraryV4.sol";
-import "../../interfaces/IAllowanceTransfer.sol";
+import "./libraries/LiquidityLibraryV4.sol"; 
+import "./interfaces/IAllowanceTransfer.sol"; 
 import "./V4Deployments8453.sol";
 
 interface IWETH is IERC20 {
@@ -45,6 +45,15 @@ contract UFloatStrategyV4 is
     error SwapAmountTooLarge();
     error PoolPriceUnavailable();
     error StopLossReached();
+
+    /// @notice Emitted when the strategy rotates ASSET (or exits to WETH/STABLE).
+    event AssetChanged(
+        address indexed oldAsset,
+        address indexed newAsset,
+        uint256 poolValue,
+        uint64 timestamp
+    );
+
     using SafeERC20 for IERC20;
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
 
@@ -794,15 +803,17 @@ contract UFloatStrategyV4 is
     }
     function _changeAsset(address _newAssetAddr) internal {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
+        address oldAsset = address(ASSET);
         address w = address(WETH);
         if (_newAssetAddr == w) {
             consecutiveOffensiveCount = 0;
             _flattenAllAndClearPosition();
-            if (address(ASSET) != w) {
+            if (oldAsset != w) {
                 uint256 oldAssetBal = ASSET.balanceOf(address(this));
                 if (oldAssetBal > 0) _swap(ASSET, oldAssetBal);
             }
             stratMode = Mode.STABLE;
+            emit AssetChanged(oldAsset, _newAssetAddr, totalValueWeth(), uint64(block.timestamp));
             return;
         }
         if (!isAllowedToken[_newAssetAddr]) revert TokenNotAllowed();
@@ -810,7 +821,7 @@ contract UFloatStrategyV4 is
         consecutiveOffensiveCount = 0;
         _flattenAllAndClearPosition();
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal > 0 && address(ASSET) != w) {
+        if (assetBal > 0 && oldAsset != w) {
             _swap(ASSET, assetBal);
         }
         ASSET = IERC20(_newAssetAddr);
@@ -819,11 +830,11 @@ contract UFloatStrategyV4 is
         _giveAllowances();
         (assetBal, wethBal) = _getTokenBalances();
         stratMode = Mode.NORMAL;
-        if (wethBal == 0 && assetBal == 0) {
-            return;
+        if (wethBal != 0 || assetBal != 0) {
+            _balanceTokens(assetBal, wethBal);
+            _mintAsymmetricPosition();
         }
-        _balanceTokens(assetBal, wethBal);
-        _mintAsymmetricPosition();
+        emit AssetChanged(oldAsset, _newAssetAddr, totalValueWeth(), uint64(block.timestamp));
     }
     receive() external payable {
         revert("use depositETH");

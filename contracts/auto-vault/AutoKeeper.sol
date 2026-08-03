@@ -130,46 +130,35 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         if (strat.mode() == MODE_NEUTRAL) return;
         strat.harvestBoolean(skipIncreaseLiquidity);
         ws.lastHarvest = uint32(block.timestamp);
+        _recordVaultPoolValueSnapshot(ws.stratAddr);
     }
 
-    /// @notice Harvest first (so `UniswapFeesCollected` is current), then snapshot vault NAV + fees.
-    function snapshotVaultPoolValue(uint256 id, bool skipIncreaseLiquidity)
-        external
-        override
-        nonReentrant
-        onlyOperator
-    {
-        _snapshotVaultPoolValue(id, skipIncreaseLiquidity);
+    /// @notice Record vault NAV + cumulative fees only (does not harvest or increase liquidity).
+    function snapshotVaultPoolValue(uint256 id) external override nonReentrant onlyOperator {
+        _snapshotVaultPoolValue(id);
     }
 
-    function snapshotVaultPoolValueBatch(uint256[] calldata ids, bool skipIncreaseLiquidity)
-        external
-        nonReentrant
-        onlyOperator
-    {
+    function snapshotVaultPoolValueBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
         uint256 len = ids.length;
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
             if (ids[i] >= maxId) continue;
-            _snapshotVaultPoolValue(ids[i], skipIncreaseLiquidity);
+            _snapshotVaultPoolValue(ids[i]);
         }
     }
 
-    function _snapshotVaultPoolValue(uint256 id, bool skipIncreaseLiquidity) internal {
+    function _snapshotVaultPoolValue(uint256 id) internal {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
+        if (IAutoStrategy(ws.stratAddr).mode() == MODE_NEUTRAL) return;
+        _recordVaultPoolValueSnapshot(ws.stratAddr);
+    }
 
-        IAutoStrategy strat = IAutoStrategy(ws.stratAddr);
-        if (strat.mode() == MODE_NEUTRAL) return;
-
-        // Collect fees into UniswapFeesCollected before the vault reads it.
-        strat.harvestBoolean(skipIncreaseLiquidity);
-        ws.lastHarvest = uint32(block.timestamp);
-
-        address vaultAddr = strat.vault();
+    /// @dev Caller must already enforce active + non-NEUTRAL.
+    function _recordVaultPoolValueSnapshot(address stratAddr) internal {
+        address vaultAddr = IAutoStrategy(stratAddr).vault();
         if (vaultAddr == address(0)) revert ZeroAddress();
         IAutoVault(vaultAddr).recordPoolValueSnapshot();
-        emit VaultPoolValueSnapshot(id, vaultAddr, ws.stratAddr, msg.sender);
     }
 }

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MIT 
 pragma solidity ^0.8.20;
 
-import "../interfaces/INonfungiblePositionManager.sol";
-import "../interfaces/IUniswapV3PoolMinimal.sol";
-import "../interfaces/IUniswapV3Factory.sol";
+import "./interfaces/INonfungiblePositionManager.sol";
+import "./interfaces/IUniswapV3PoolMinimal.sol";
+import "./interfaces/IUniswapV3Factory.sol";
 import "./StrategyManager.sol";
-import "../interfaces/ISwapRouter.sol";
+import "./interfaces/ISwapRouter.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import "../libraries/LiquidityLibrary.sol";
-import "./v4/libraries/TrailingFloorLib.sol";
-import "../interfaces/IFloatStrategy.sol";
-import "../interfaces/IContractManager.sol";
+import "./libraries/LiquidityLibrary.sol";
+import "./libraries/TrailingFloorLib.sol"; 
+import "./interfaces/IFloatStrategy.sol";
+import "./interfaces/IContractManager.sol";
 
 contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC721Receiver {         
     error Unauthorized();
@@ -22,6 +22,15 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
     error ZeroAddress();
     error PositionExists();
     error MustBeNeutral();
+
+    /// @notice Emitted when the strategy rotates ASSET (or exits to USDC/STABLE).
+    event AssetChanged(
+        address indexed oldAsset,
+        address indexed newAsset,
+        uint256 poolValue,
+        uint64 timestamp
+    );
+
     using SafeERC20 for IERC20;
     using LiquidityLibrary for LiquidityLibrary.PositionState;
     address public feeManager;
@@ -698,6 +707,7 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
 
     function changeAsset(address _newAssetAddr, address _newPoolV3Addr) public override onlyAuthorized {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
+        address oldAsset = assetAddr;
         consecutiveOffensiveCount = 0;
         _decreaseAllLiquidity();
         uint256 oldPositionId = liqPos.positionId;
@@ -722,19 +732,20 @@ contract FloatStrategy is IFloatStrategy, StrategyManager, ReentrancyGuard, IERC
             defensiveEnteredAt = block.timestamp;
             baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
             if (wethBal > 0) _swap(WETH, ASSET, wethBal);
+            emit AssetChanged(oldAsset, _newAssetAddr, poolValue(), uint64(block.timestamp));
             return;
         }
         mode = Mode.NORMAL;
         defensiveEnteredAt = 0;
         baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
-        if (wethBal == 0 && assetBal == 0) {
-            return;
+        if (wethBal != 0 || assetBal != 0) {
+            _balanceTokens(assetBal, wethBal);
+            _mintAsymmetricPosition();
+            if (liqPos.positionId != 0) {
+                lastRebalanceTime = block.timestamp;
+            }
         }
-        _balanceTokens(assetBal, wethBal);
-        _mintAsymmetricPosition();
-        if (liqPos.positionId != 0) {
-            lastRebalanceTime = block.timestamp;
-        }
+        emit AssetChanged(oldAsset, _newAssetAddr, poolValue(), uint64(block.timestamp));
     }
     function enterNeutralFromVault() external onlyAuthorized {
         mode = Mode.NEUTRAL;

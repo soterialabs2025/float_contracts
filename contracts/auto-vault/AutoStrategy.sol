@@ -9,10 +9,10 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "../v4/V4Deployments8453.sol";
 import "../v4/libraries/TrailingFloorLib.sol";
-import "../../libraries/LiquidityLibraryV4.sol";
-import "../../interfaces/IPositionManagerV4.sol";
-import "../../interfaces/IPoolManagerV4.sol";
-import "../../interfaces/IAllowanceTransfer.sol";
+import "./libraries/LiquidityLibraryV4.sol";
+import "./interfaces/IPositionManagerV4.sol";
+import "./interfaces/IPoolManagerV4.sol";
+import "./interfaces/IAllowanceTransfer.sol"; 
 
 import "./AutoStrategyManager.sol";
 import "./libraries/AutoBandLib.sol";

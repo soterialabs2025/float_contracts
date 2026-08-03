@@ -183,50 +183,40 @@ contract UFloatKeeper is IUFloatKeeper, Ownable, ReentrancyGuard {
 
         strat.harvestBoolean(skipIncreaseLiquidity);
         emit HarvestPerformed(id, stratAddr, keeper);
+        _recordPoolValueSnapshot(stratAddr);
     }
 
-    /// @notice Harvest first (so `UniswapFeesCollected` is current), then snapshot on keeper keyed by strategy.
-    function snapshotPoolValue(uint256 id, bool skipIncreaseLiquidity)
-        external
-        override
-        nonReentrant
-        onlyOperator
-    {
-        _snapshotPoolValue(id, skipIncreaseLiquidity, msg.sender);
+    /// @notice Record strategy NAV + cumulative fees on the keeper (no harvest / no liquidity increase).
+    function snapshotPoolValue(uint256 id) external override nonReentrant onlyOperator {
+        _snapshotPoolValue(id);
     }
 
-    function snapshotPoolValueBatch(uint256[] calldata ids, bool skipIncreaseLiquidity)
-        external
-        nonReentrant
-        onlyOperator
-    {
+    function snapshotPoolValueBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
         uint256 len = ids.length;
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
             if (ids[i] >= maxId) continue;
-            _snapshotPoolValue(ids[i], skipIncreaseLiquidity, msg.sender);
+            _snapshotPoolValue(ids[i]);
         }
     }
 
-    function _snapshotPoolValue(uint256 id, bool skipIncreaseLiquidity, address caller) internal {
+    function _snapshotPoolValue(uint256 id) internal {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         address stratAddr = ws.stratAddr;
         if (!ws.active || stratAddr == address(0)) return;
+        if (IOutOfRangeStrategyV4(stratAddr).mode() == MODE_STABLE) return;
+        _recordPoolValueSnapshot(stratAddr);
+    }
 
-        IOutOfRangeStrategyV4 oor = IOutOfRangeStrategyV4(stratAddr);
-        if (oor.mode() == MODE_STABLE) return;
-
+    /// @dev Caller must already enforce active + non-STABLE. Stores NAV/fees after harvest or standalone snapshot.
+    function _recordPoolValueSnapshot(address stratAddr) internal {
         IUFloatStrategyV4 strat = IUFloatStrategyV4(stratAddr);
-        oor.harvestBoolean(skipIncreaseLiquidity);
-        emit HarvestPerformed(id, stratAddr, caller);
-
         uint256 pv = strat.totalValueWeth();
         uint256 fees = strat.UniswapFeesCollected();
         uint64 ts = uint64(block.timestamp);
         _poolValueSnapshots[stratAddr].push(
             PoolValueSnapshot({valueWeth: pv, uniswapFeesCollected: fees, timestamp: ts})
         );
-        emit StrategyPoolValueSnapshot(id, stratAddr, pv, fees, ts);
     }
 }

@@ -3,8 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-
-import "../../libraries/LiquidityLibraryV4.sol";
+import "./libraries/LiquidityLibraryV4.sol";
 import "../v4/V4Deployments8453.sol";
 import "./AutoStrategy.sol";
 import "./AutoVault.sol";

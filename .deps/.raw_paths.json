@@ -35,5 +35,7 @@
   "@uniswap/v3-periphery@1.4.4/contracts/interfaces/IERC721Permit.sol": ".deps/npm/@uniswap/v3-periphery@1.4.4/contracts/interfaces/IERC721Permit.sol",
   "@uniswap/v3-periphery@1.4.4/contracts/interfaces/IPeripheryPayments.sol": ".deps/npm/@uniswap/v3-periphery@1.4.4/contracts/interfaces/IPeripheryPayments.sol",
   "@uniswap/v3-periphery@1.4.4/contracts/interfaces/IPeripheryImmutableState.sol": ".deps/npm/@uniswap/v3-periphery@1.4.4/contracts/interfaces/IPeripheryImmutableState.sol",
-  "@uniswap/v3-periphery@1.4.4/contracts/libraries/PoolAddress.sol": ".deps/npm/@uniswap/v3-periphery@1.4.4/contracts/libraries/PoolAddress.sol"
+  "@uniswap/v3-periphery@1.4.4/contracts/libraries/PoolAddress.sol": ".deps/npm/@uniswap/v3-periphery@1.4.4/contracts/libraries/PoolAddress.sol",
+  "libraries@0.0.3/LiquidityLibraryV4.sol": ".deps/npm/libraries@0.0.3/LiquidityLibraryV4.sol",
+  "libraries@0.0.3/TickMath.sol": ".deps/npm/libraries@0.0.3/TickMath.sol"
 }

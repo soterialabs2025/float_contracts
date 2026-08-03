@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../../interfaces/IPositionManagerV4.sol";
-import "../../interfaces/IPoolManagerV4.sol";
+import "./interfaces/IPositionManagerV4.sol";
+import "./interfaces/IPoolManagerV4.sol";
 import "./StrategyManagerV4.sol";
 import {IV4StrategySwapRouterStrict} from "./interfaces/IFloatV4StrategySwapRouter.sol";
 import "./interfaces/IFloatV4ContractManager.sol";
@@ -15,8 +15,8 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
-import "../../libraries/LiquidityLibraryV4.sol";
-import "../../interfaces/IAllowanceTransfer.sol";
+import "./libraries/LiquidityLibraryV4.sol";
+import "./interfaces/IAllowanceTransfer.sol"; 
 
 
 contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategyV4 {
@@ -25,6 +25,15 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     error ZeroAddress();
     error PositionExists();
     error MustBeNeutral();
+
+    /// @notice Emitted when the strategy rotates ASSET (or exits to WETH/STABLE).
+    event AssetChanged(
+        address indexed oldAsset,
+        address indexed newAsset,
+        uint256 poolValue,
+        uint64 timestamp
+    );
+
     using SafeERC20 for IERC20;
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
     address public immutable feeManager;
@@ -749,6 +758,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         onlyAuthorized
     {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
+        address oldAsset = address(ASSET);
         address w = address(WETH);
         uint256 oldPositionId;
         if (_newAssetAddr == w) {
@@ -759,13 +769,14 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
                 delete deposits[oldPositionId];
                 liqPos.positionId = 0;
             }
-            if (address(ASSET) != w) {
+            if (oldAsset != w) {
                 uint256 oldAssetBal = ASSET.balanceOf(address(this));
                 if (oldAssetBal > 0) _swap(ASSET, oldAssetBal);
             }
             // Keep ASSET as the prior token so `poolKey` / router config stay valid; holdings are WETH-only.
             stratMode = Mode.STABLE;
             defensiveEnteredAt = block.timestamp;
+            emit AssetChanged(oldAsset, _newAssetAddr, poolValue(), uint64(block.timestamp));
             return;
         }
         require(key.currency0 < key.currency1, ">=");
@@ -782,7 +793,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             liqPos.positionId = 0;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
-        if (assetBal > 0 && address(ASSET) != w) {
+        if (assetBal > 0 && oldAsset != w) {
             _swap(ASSET, assetBal);
         }
         ASSET = IERC20(_newAssetAddr);
@@ -792,14 +803,14 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         stratMode = Mode.NORMAL;
         defensiveEnteredAt = 0;
         baseTokenShareBps = targetAssetBps != 0 ? targetAssetBps : 5000;
-        if (wethBal == 0 && assetBal == 0) {
-            return;
+        if (wethBal != 0 || assetBal != 0) {
+            _balanceTokens(assetBal, wethBal);
+            _mintAsymmetricPosition();
+            if (liqPos.positionId != 0) {
+                lastRebalanceTime = block.timestamp;
+            }
         }
-        _balanceTokens(assetBal, wethBal);
-        _mintAsymmetricPosition();
-        if (liqPos.positionId != 0) {
-            lastRebalanceTime = block.timestamp;
-        }
+        emit AssetChanged(oldAsset, _newAssetAddr, poolValue(), uint64(block.timestamp));
     }
     function enterNeutralFromVault() external onlyAuthorized {
         stratMode = Mode.NEUTRAL;

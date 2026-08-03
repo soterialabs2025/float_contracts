@@ -211,11 +211,6 @@
         "name": "id",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "skipIncreaseLiquidity",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -229,11 +224,6 @@
         "name": "ids",
         "type": "uint256[]",
         "internalType": "uint256[]"
-      },
-      {
-        "name": "skipIncreaseLiquidity",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],

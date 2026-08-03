@@ -70,7 +70,7 @@ contract AutoVault is Ownable, ReentrancyGuard, Pausable, IAutoVault {
         _transferOwnership(owner_);
     }
 
-    /// @notice Record strategy NAV + cumulative `UniswapFeesCollected`. Keeper should harvest first.
+    /// @notice Record strategy NAV + cumulative `UniswapFeesCollected` (as currently stored on strategy).
     function recordPoolValueSnapshot() external override onlyAutoKeeper {
         if (!bootstrapped) revert NotBootstrapped();
         uint256 pv = strategy.poolValue();

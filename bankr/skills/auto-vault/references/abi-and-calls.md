@@ -1,6 +1,8 @@
 # Auto Vault — ABI and call details
 
-## AutoFactory (`0xEa4F673955c4B016862A4889EAc68230C146CD39`)
+Named vaults (surplus, nook, …): see `vault-names.md` — resolve **vault** from name before calling below.
+
+## AutoFactory (`0x0Fbca262D7CeBe0F5Df9fE6Eda4b8Ac9e84E7949`)
 
 ```solidity
 struct VaultRegistry {

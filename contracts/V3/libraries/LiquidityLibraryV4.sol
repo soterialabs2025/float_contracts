@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Math} from "../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "../interfaces/IPositionManagerV4.sol";
 import "../interfaces/IPoolManagerV4.sol";
 import "./TickMath.sol";
-import {PoolKey as CorePoolKey} from "../lib/v4-core/src/types/PoolKey.sol";
-import {Currency} from "../lib/v4-core/src/types/Currency.sol";
-import {IHooks} from "../lib/v4-core/src/interfaces/IHooks.sol";
-import {PoolId, PoolIdLibrary} from "../lib/v4-core/src/types/PoolId.sol";
-import {IPoolManager} from "../lib/v4-core/src/interfaces/IPoolManager.sol";
-import {StateLibrary} from "../lib/v4-core/src/libraries/StateLibrary.sol";
+import {PoolKey as CorePoolKey} from "../../../lib/v4-core/src/types/PoolKey.sol";
+import {Currency} from "../../../lib/v4-core/src/types/Currency.sol";
+import {IHooks} from "../../../lib/v4-core/src/interfaces/IHooks.sol";
+import {PoolId, PoolIdLibrary} from "../../../lib/v4-core/src/types/PoolId.sol";
+import {IPoolManager} from "../../../lib/v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "../../../lib/v4-core/src/libraries/StateLibrary.sol";
 
 interface IV4PoolConfigSource {
     function getV4PoolConfig(address assetAddress) external view returns (CorePoolKey memory key, bytes memory hookData);

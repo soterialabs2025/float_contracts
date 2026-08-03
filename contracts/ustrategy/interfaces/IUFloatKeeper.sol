@@ -17,7 +17,8 @@ interface IUFloatKeeper {
     function strategyFactory() external view returns (address);
 
     /// @notice Harvest then snapshot strategy NAV + UniswapFeesCollected for watched strategy `id`.
-    function snapshotPoolValue(uint256 id, bool skipIncreaseLiquidity) external;
+    /// @notice Snapshot strategy NAV + UniswapFeesCollected (no harvest).
+    function snapshotPoolValue(uint256 id) external;
 
     function getPoolValueSnapshotCount(address strategy) external view returns (uint256);
 
