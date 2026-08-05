@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../../../libraries/LiquidityLibraryV4.sol";
+import "../libraries/LiquidityLibraryV4.sol";
 
 /// @title IFloatStrategyV4
 /// @notice Float vault ↔ strategy surface for the Uniswap v4 stack only (not ABI-compatible with `IFloatStrategy`).

@@ -16,8 +16,12 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
 import "./libraries/LiquidityLibraryV4.sol";
-import "./interfaces/IAllowanceTransfer.sol"; 
+import "./interfaces/IAllowanceTransfer.sol";
 
+interface IWETH is IERC20 {
+    function deposit() external payable;
+    function withdraw(uint256) external;
+}
 
 contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategyV4 {
     error Unauthorized();
@@ -33,6 +37,8 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         uint256 poolValue,
         uint64 timestamp
     );
+    /// @notice Checkpoint when LP-owned idle ETH reserve changes (`previous` → `current` = `address(this).balance`).
+    event ReservedEthCheckpoint(uint256 previous, uint256 current, uint64 timestamp);
 
     using SafeERC20 for IERC20;
     using LiquidityLibraryV4 for LiquidityLibraryV4.PositionState;
@@ -57,6 +63,12 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     uint256 public baseTokenShareBps = 5_000;
     uint256 public UniswapFeesCollected; 
     uint256 public lastUniswapFeeTotal;
+    /// @notice Prior native ETH reserve (`address(this).balance`) before the latest unwrap/wrap checkpoint.
+    uint256 public lastReservedEth;
+    /// @notice LP-owned idle fee buffer held as native ETH (invisible to ERC20 LP/swap paths).
+    function reservedEth() external view returns (uint256) {
+        return address(this).balance;
+    }
     struct Deposit {address owner; uint128 liquidity; address token0; address token1;}
     mapping(uint256 => Deposit) public deposits;
     enum Mode { NORMAL, DEFENSIVE, OFFENSIVE, NEUTRAL, STABLE }
@@ -205,7 +217,10 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             }
             uint256 wethAfter = WETH.balanceOf(address(this));
             uint256 wethFromPool = wethAfter > idleWethBefore ? wethAfter - idleWethBefore : 0;
-            totalUserWeth = wethFromPool + Math.mulDiv(idleWethBefore, userShares, totalSupply_);
+            // Wrap pro-rata idle ETH reserve into WETH for the payout.
+            totalUserWeth = wethFromPool
+                + Math.mulDiv(idleWethBefore, userShares, totalSupply_)
+                + _wrapReservedEthShare(userShares, totalSupply_);
             wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
             totalUserWeth -= wethFee;
             if (wethFee > 0) {
@@ -232,7 +247,9 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             uint256 assetFromPool = assetAfter > idleAssetBefore ? assetAfter - idleAssetBefore : 0;
             uint256 wethFromPool  = wethAfter  > idleWethBefore  ? wethAfter  - idleWethBefore  : 0;
             totalUserAsset = assetFromPool + Math.mulDiv(idleAssetBefore, userShares, totalSupply_);
-            totalUserWeth  = wethFromPool  + Math.mulDiv(idleWethBefore,  userShares, totalSupply_);
+            totalUserWeth  = wethFromPool
+                + Math.mulDiv(idleWethBefore, userShares, totalSupply_)
+                + _wrapReservedEthShare(userShares, totalSupply_);
         }
         uint256 assetFee = Math.mulDiv(totalUserAsset, withdrawalFeeBps, DIVISOR);
         wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
@@ -547,10 +564,23 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             amount1 -= fee1;
         }
 
+        // LP-owned idle buffer: unwrap feeReserveBps of the WETH leg to ETH (invisible to ERC20 LP paths).
+        uint256 reservedThisCollect = 0;
+        if (trackFees && feeReserveBps > 0) {
+            uint256 wethLeg = p0 == address(WETH) ? amount0 : amount1;
+            reservedThisCollect = Math.mulDiv(wethLeg, feeReserveBps, DIVISOR);
+            if (reservedThisCollect > 0) {
+                if (p0 == address(WETH)) amount0 -= reservedThisCollect;
+                else amount1 -= reservedThisCollect;
+                _unwrapReservedEth(reservedThisCollect);
+            }
+        }
+
         uint256 feesWeth = p0 == address(WETH) ? amount0 : amount1;
         uint256 feesAsset = p0 == address(WETH) ? amount1 : amount0;
         uint256 p = _spotPrice1e18();
-        valueInWeth = feesWeth;
+        // Unwrapped ETH is still fee NAV owned by depositors.
+        valueInWeth = feesWeth + reservedThisCollect;
         if (feesAsset > 0 && p > 0) {
             valueInWeth += Math.mulDiv(feesAsset, 1e18, p);
         }
@@ -573,6 +603,27 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     function _getTokenBalances() internal view returns (uint256 assetBal, uint256 wethBal) {
         assetBal = ASSET.balanceOf(address(this));
         wethBal  = WETH.balanceOf(address(this));
+    }
+    /// @dev Unwrap WETH fee share to native ETH so mint/increase/swap cannot spend it.
+    function _unwrapReservedEth(uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 bal = WETH.balanceOf(address(this));
+        if (amount > bal) amount = bal;
+        if (amount == 0) return;
+        lastReservedEth = address(this).balance;
+        IWETH(address(WETH)).withdraw(amount);
+        emit ReservedEthCheckpoint(lastReservedEth, address(this).balance, uint64(block.timestamp));
+    }
+    /// @dev Wrap a pro-rata share of idle ETH back to WETH for withdraw payouts.
+    function _wrapReservedEthShare(uint256 userShares, uint256 totalSupply_) internal returns (uint256 ethShare) {
+        uint256 ethBal = address(this).balance;
+        if (ethBal == 0 || totalSupply_ == 0) return 0;
+        ethShare = Math.mulDiv(ethBal, userShares, totalSupply_);
+        if (ethShare == 0) return 0;
+        if (ethShare > ethBal) ethShare = ethBal;
+        lastReservedEth = ethBal;
+        IWETH(address(WETH)).deposit{value: ethShare}();
+        emit ReservedEthCheckpoint(lastReservedEth, address(this).balance, uint64(block.timestamp));
     }
     function _balanceTokens(uint256 assetBal, uint256 wethBal) internal {
         if (assetBal == 0 && wethBal == 0) return;
@@ -604,6 +655,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
             dust: LIQUIDITY_DUST,
             hookData: _poolHookData()
         });
+        // Reserved fees are native ETH — ERC20 balanceOf used by the library excludes them.
         liqAdded = liqPos.increaseLiquidityInternal(ctx, IERC20(p0), IERC20(p1));
         if (liqAdded > 0) {
             deposits[liqPos.positionId].liquidity += liqAdded;
@@ -688,13 +740,14 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         return wethInPool + assetAsWeth;
     }
     function balanceOfIdle() public view override returns (uint256) {
+        uint256 ethBal = address(this).balance;
         if (stratMode == Mode.STABLE) {
-            return WETH.balanceOf(address(this));
+            return WETH.balanceOf(address(this)) + ethBal;
         }
         (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
         uint256 p = _spotPrice1e18();
         uint256 assetAsWeth = p != 0 ? Math.mulDiv(assetBal, 1e18, p) : 0;
-        return wethBal + assetAsWeth;
+        return wethBal + assetAsWeth + ethBal;
     }
     function balanceOfPool() public view override returns (uint256 assetAmt, uint256 wethAmt) {
         if (liqPos.positionId == 0) return (0, 0);
@@ -824,4 +877,7 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
         defensiveEnteredAt = 0;
         lastRebalanceTime = block.timestamp;
     }
+
+    /// @dev Accept ETH from fee-reserve unwrap (`WETH.withdraw`).
+    receive() external payable {}
 }

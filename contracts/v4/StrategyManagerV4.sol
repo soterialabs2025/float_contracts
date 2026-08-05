@@ -12,6 +12,8 @@ contract StrategyManagerV4 is Ownable {
     uint256 public withdrawalFeeBps = 0;
     /// @notice Share of collected Uniswap LP fees sent to `feeManager` (1000 = 10%).
     uint256 public protocolFeeBps = 1000;
+    /// @notice Share of the WETH leg of fee-only collects unwrapped to ETH (idle, not deployed to LP). LP-owned.
+    uint256 public feeReserveBps = 500;
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
     /// @notice ASSET share target (bps) for NORMAL / DEFENSIVE / pre-confirmation OFFENSIVE re-mints.
@@ -39,6 +41,11 @@ contract StrategyManagerV4 is Ownable {
     error InvalidRatchetCap();
     error InvalidRatchet();
     error RatchetMustTighten();
+
+    function setFeeReserveBps(uint256 bps) external onlyOwner {
+        if (bps > 5_000) revert InvalidBps();
+        feeReserveBps = bps;
+    }
 
     function setMintParams(
         uint256 _targetAssetBps,
