@@ -13,10 +13,7 @@ import {IHooks} from "../../../lib/v4-core/src/interfaces/IHooks.sol";
 import {PoolId, PoolIdLibrary} from "../../../lib/v4-core/src/types/PoolId.sol";
 import {IPoolManager} from "../../../lib/v4-core/src/interfaces/IPoolManager.sol";
 import {StateLibrary} from "../../../lib/v4-core/src/libraries/StateLibrary.sol";
-
-interface IV4PoolConfigSource {
-    function getV4PoolConfig(address assetAddress) external view returns (CorePoolKey memory key, bytes memory hookData);
-}
+import {IV4PoolConfigSource} from "../interfaces/IV4PoolConfigSource.sol";
 
 library LiquidityLibraryV4 {
     using SafeERC20 for IERC20;

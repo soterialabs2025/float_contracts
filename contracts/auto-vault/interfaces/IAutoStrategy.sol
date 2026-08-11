@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../../../libraries/LiquidityLibraryV4.sol";
+import "../libraries/LiquidityLibraryV4.sol";
 
 interface IAutoStrategy {
     enum Mode { NORMAL, NEUTRAL }

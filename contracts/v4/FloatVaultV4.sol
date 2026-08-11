@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "./interfaces/IFloatV4ContractManager.sol";
 import "./interfaces/IFloatStrategyV4.sol";
 import "./interfaces/IFloatVaultV4.sol";
-import "../../interfaces/IPositionManagerV4.sol";
+import "./interfaces/IPositionManagerV4.sol";
 import "./interfaces/IFloatLiquidTokenVault.sol";
 import "./interfaces/IFloatStrategyV4Ticks.sol";
 import "./V4Deployments8453.sol";

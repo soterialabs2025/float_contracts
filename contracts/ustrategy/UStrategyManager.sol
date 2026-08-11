@@ -11,14 +11,14 @@ contract UStrategyManager is Ownable {
     int24 public tickSpacing = 200;
     uint256 internal constant DEFAULT_TARGET_ASSET_BPS = 5000;
     uint256 internal constant DEFAULT_OFFENSIVE_ASSET_BPS = 4500;
-    uint256 internal constant DEFAULT_RANGE_BELOW_TICKS = 400;
+    uint256 internal constant DEFAULT_RANGE_BELOW_TICKS = 600;
     uint256 internal constant DEFAULT_RANGE_ABOVE_TICKS = 600;
     uint256 internal constant DEFAULT_MIN_FLOOR_TICK_COUNT = 1;
     uint256 internal constant DEFAULT_OFFENSIVE_STALE_DURATION = 3 hours;
     uint256 internal constant DEFAULT_MIN_RANGE_BELOW_TICKS = 200;
     uint16 internal constant DEFAULT_SLIPPAGE_BPS = 100;
     uint256 internal constant DEFAULT_MIN_HARVEST_DELAY = 2 hours;
-    uint256 internal constant DEFAULT_WITHDRAWAL_FEE_BPS = 50;
+    uint256 internal constant DEFAULT_WITHDRAWAL_FEE_BPS = 100;
     uint256 internal constant DEFAULT_PROTOCOL_FEE_BPS = 1000;
     uint256 public constant MAX_FEE_RESERVE_BPS = 9000;
     uint256 internal constant DEFAULT_FEE_RESERVE_BPS = 0;

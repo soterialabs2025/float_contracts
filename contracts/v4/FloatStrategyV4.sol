@@ -16,12 +16,13 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./libraries/TrailingFloorLib.sol";
 import "./libraries/LiquidityLibraryV4.sol";
+import "./libraries/LiquidityLibraryV5.sol";
 import "./interfaces/IAllowanceTransfer.sol";
 
 interface IWETH is IERC20 {
     function deposit() external payable;
     function withdraw(uint256) external;
-}
+} 
 
 contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard, IERC721Receiver, IOutOfRangeStrategyV4 {
     error Unauthorized();
@@ -802,15 +803,32 @@ contract FloatStrategyV4 is IFloatStrategyV4, StrategyManagerV4, ReentrancyGuard
     }
     /// @notice Drain LP (if any) and remint current ASSET with current band params (`rangeBelowTicks` / `rangeAboveTicks`).
     function mintNewPosition() external onlyAuthorized {
-        changeAsset(address(ASSET), poolKey);
+        changeAsset(
+            address(ASSET),
+            LiquidityLibraryV5.PoolKey({
+                currency0: poolKey.currency0,
+                currency1: poolKey.currency1,
+                fee: poolKey.fee,
+                tickSpacing: poolKey.tickSpacing,
+                hooks: poolKey.hooks
+            })
+        );
     }
 
-    function changeAsset(address _newAssetAddr, LiquidityLibraryV4.PoolKey memory key)
+    function changeAsset(address _newAssetAddr, LiquidityLibraryV5.PoolKey memory keyV5)
         public
         override
         onlyAuthorized
     {
         if (_newAssetAddr == address(0)) revert ZeroAddress();
+        // Interface uses V5 PoolKey; LP ops still use V4 library types (identical layout).
+        LiquidityLibraryV4.PoolKey memory key = LiquidityLibraryV4.PoolKey({
+            currency0: keyV5.currency0,
+            currency1: keyV5.currency1,
+            fee: keyV5.fee,
+            tickSpacing: keyV5.tickSpacing,
+            hooks: keyV5.hooks
+        });
         address oldAsset = address(ASSET);
         address w = address(WETH);
         uint256 oldPositionId;

@@ -9,7 +9,7 @@ contract StrategyManagerV4 is Ownable {
     uint256 public constant DIVISOR = 10_000;
     uint24 public poolFeePips = 10_000;
     int24 public tickSpacing = 200;
-    uint256 public withdrawalFeeBps = 0;
+    uint256 public withdrawalFeeBps = 200;
     /// @notice Share of collected Uniswap LP fees sent to `feeManager` (1000 = 10%).
     uint256 public protocolFeeBps = 1000;
     /// @notice Share of the WETH leg of fee-only collects unwrapped to ETH (idle, not deployed to LP). LP-owned.
@@ -20,9 +20,9 @@ contract StrategyManagerV4 is Ownable {
     uint256 public targetAssetBps = 5000;
     /// @notice ASSET share target (bps) after `minFloorTickCount` consecutive OFFENSIVE entries.
     uint256 public offensiveAssetBps = 4000;
-    /// @notice Tick distance below base (multiple of `tickSpacing`). Default 400 = 2×200 ≈ one Uni slider step pair.
-    uint256 public rangeBelowTicks = 400;
-    /// @notice Tick distance above base (multiple of `tickSpacing`). Default 600 = 3×200.
+    /// @notice Tick distance below base (multiple of `tickSpacing`). Default 
+    uint256 public rangeBelowTicks = 600;
+    /// @notice Tick distance above base (multiple of `tickSpacing`). Default
     uint256 public rangeAboveTicks = 600;
     /// @notice OFFENSIVE re-mints use `offensiveAssetBps` only after this many consecutive OFFENSIVE entries.
     uint256 public minFloorTickCount = 2;
@@ -36,11 +36,6 @@ contract StrategyManagerV4 is Ownable {
     uint256 public ratchetDenominator = 3;
 
     error InvalidBps();
-    error InvalidRangeTicks();
-    error InvalidCount();
-    error InvalidRatchetCap();
-    error InvalidRatchet();
-    error RatchetMustTighten();
 
     function setFeeReserveBps(uint256 bps) external onlyOwner {
         if (bps > 5_000) revert InvalidBps();
@@ -53,12 +48,6 @@ contract StrategyManagerV4 is Ownable {
         uint256 _rangeBelowTicks,
         uint256 _rangeAboveTicks
     ) external onlyOwner {
-        if (_targetAssetBps == 0 || _targetAssetBps >= 10_000) revert InvalidBps();
-        if (_offensiveAssetBps == 0 || _offensiveAssetBps >= 10_000) revert InvalidBps();
-        if (_rangeBelowTicks == 0 || _rangeBelowTicks >= 10_000) revert InvalidRangeTicks();
-        if (_rangeAboveTicks == 0 || _rangeAboveTicks >= 10_000) revert InvalidRangeTicks();
-        if (_rangeBelowTicks % uint256(uint24(tickSpacing)) != 0) revert InvalidRangeTicks();
-        if (_rangeAboveTicks % uint256(uint24(tickSpacing)) != 0) revert InvalidRangeTicks();
         targetAssetBps = _targetAssetBps;
         offensiveAssetBps = _offensiveAssetBps;
         rangeBelowTicks = _rangeBelowTicks;
@@ -73,12 +62,6 @@ contract StrategyManagerV4 is Ownable {
         uint256 _ratchetNumerator,
         uint256 _ratchetDenominator
     ) external onlyOwner {
-        if (_minFloorTickCount == 0) revert InvalidCount();
-        if (_minRangeBelowTicks == 0 || _minRangeBelowTicks >= 10_000) revert InvalidRangeTicks();
-        if (_minRangeBelowTicks % uint256(uint24(tickSpacing)) != 0) revert InvalidRangeTicks();
-        if (_maxOffensiveRatchetCount < _minFloorTickCount) revert InvalidRatchetCap();
-        if (_ratchetNumerator == 0 || _ratchetDenominator == 0) revert InvalidRatchet();
-        if (_ratchetNumerator >= _ratchetDenominator) revert RatchetMustTighten();
         minFloorTickCount = _minFloorTickCount;
         offensiveStaleDuration = _offensiveStaleDuration;
         minRangeBelowTicks = _minRangeBelowTicks;

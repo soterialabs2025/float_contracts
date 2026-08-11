@@ -23,6 +23,9 @@ contract UFloatStrategyFactoryV4 is Ownable {
     InfraConfig public infra;
     address public immutable implementation;
 
+    /// @notice Strategies deployed for each owner (append-only; index 0 = oldest).
+    mapping(address => address[]) private _strategiesByOwner;
+
     error ZeroAddress();
     error EmptyTokenList();
     error AssetNotOnRouter();
@@ -63,6 +66,15 @@ contract UFloatStrategyFactoryV4 is Ownable {
         return _deployStrategy(msg.sender, stratMethod, tokens);
     }
 
+    /// @notice All strategies deployed for `owner_` via this factory (oldest first).
+    function getStrategies(address owner_) external view returns (address[] memory) {
+        return _strategiesByOwner[owner_];
+    }
+
+    function strategiesOfOwnerLength(address owner_) external view returns (uint256) {
+        return _strategiesByOwner[owner_].length;
+    }
+
     function _deployStrategy(
         address strategyOwner,
         UStrategyManager.StratMethod stratMethod,
@@ -88,6 +100,7 @@ contract UFloatStrategyFactoryV4 is Ownable {
         );
         router.addAuthorizedStrategy(strategy);
         keeperId = IUFloatKeeper(infra.keeper).addStrategy(strategy);
+        _strategiesByOwner[strategyOwner].push(strategy);
         emit StrategyDeployed(strategy, strategyOwner, tokens[0], keeperId, len);
     }
 }

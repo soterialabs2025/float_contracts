@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "../../libraries/LiquidityLibraryV4.sol";
+import "./libraries/LiquidityLibraryV5.sol";
 import "./interfaces/IFloatStrategyV4.sol";
 import "./interfaces/IFloatV4StrategySwapRouter.sol";
 import "./V4Deployments8453.sol";
@@ -106,12 +106,12 @@ contract FloatContractManagerV4 is Ownable {
         // 1. Pull the canonical PoolKey from the swap router's pre-seeded registry.
         //    Low-level staticcall so we avoid importing the v4-core `PoolKey` here; the router's
         //    `(Currency, Currency, uint24, int24, IHooks)` struct is wire-compatible with
-        //    `LiquidityLibraryV4.PoolKey`'s `(address, address, uint24, int24, address)`.
+        //    `LiquidityLibraryV5.PoolKey`'s `(address, address, uint24, int24, address)`.
         (bool ok, bytes memory ret) = swapRouterAddr.staticcall(
             abi.encodeWithSignature("getV4PoolConfig(address)", _newAssetAddr)
         );
         if (!ok) _bubbleRevert(ret, "getV4PoolConfig failed");
-        (LiquidityLibraryV4.PoolKey memory key, ) = abi.decode(ret, (LiquidityLibraryV4.PoolKey, bytes));
+        (LiquidityLibraryV5.PoolKey memory key, ) = abi.decode(ret, (LiquidityLibraryV5.PoolKey, bytes));
 
         // 2. Defense-in-depth validation: the router only enforces `assetAddress in {c0, c1}`, not that the
         //    other side is WETH. The Float strategy assumes ASSET/WETH; reject anything else early.
@@ -140,7 +140,7 @@ contract FloatContractManagerV4 is Ownable {
         address strategyAddr = addresses["FloatStrategyV4"];
         require(strategyAddr != address(0), "Strategy address not set");
 
-        LiquidityLibraryV4.PoolKey memory key;
+        LiquidityLibraryV5.PoolKey memory key;
         IFloatStrategyV4(strategyAddr).changeAsset(baseWETH, key);
 
         addresses["ASSET"] = baseWETH;

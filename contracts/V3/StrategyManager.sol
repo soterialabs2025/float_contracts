@@ -9,7 +9,7 @@ contract StrategyManager is Ownable {
     uint256 public constant DIVISOR = 10_000;
     uint24 public v3Fee = 10_000;
     int24 public tickSpacing = 200;
-    uint256 public withdrawalFeeBps = 0;
+    uint256 public withdrawalFeeBps = 200;
     /// @notice Share of collected Uniswap LP fees sent to `feeManager` (1000 = 10%).
     uint256 public protocolFeeBps = 1000;
     uint16 public slippageBps = 100;
@@ -18,9 +18,9 @@ contract StrategyManager is Ownable {
     uint256 public targetAssetBps = 5000;
     /// @notice ASSET share target (bps) after `minFloorTickCount` consecutive OFFENSIVE entries.
     uint256 public offensiveAssetBps = 4000;
-    /// @notice Tick distance below base (multiple of `tickSpacing`). Default 400 = 2×200.
-    uint256 public rangeBelowTicks = 400;
-    /// @notice Tick distance above base (multiple of `tickSpacing`). Default 600 = 3×200.
+    /// @notice Tick distance below base (multiple of `tickSpacing`). Default
+    uint256 public rangeBelowTicks = 600;
+    /// @notice Tick distance above base (multiple of `tickSpacing`). Default 
     uint256 public rangeAboveTicks = 600;
     /// @notice OFFENSIVE re-mints use `offensiveAssetBps` only after this many consecutive OFFENSIVE entries.
     uint256 public minFloorTickCount = 2;

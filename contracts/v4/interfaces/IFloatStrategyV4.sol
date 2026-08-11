@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../libraries/LiquidityLibraryV4.sol";
+import "../libraries/LiquidityLibraryV5.sol";
 
 /// @title IFloatStrategyV4
 /// @notice Float vault ↔ strategy surface for the Uniswap v4 stack only (not ABI-compatible with `IFloatStrategy`).
+/// @dev PoolKey type comes from LiquidityLibraryV5 (latest). Struct layout matches the prior V4 library PoolKey.
 interface IFloatStrategyV4 {
     function UniswapFeesCollected() external view returns (uint256);
 
@@ -28,7 +29,7 @@ interface IFloatStrategyV4 {
     /// @param key           Pre-validated PoolKey for the ASSET/WETH pool to rotate into.
     function changeAsset(
         address _newAssetAddr,
-        LiquidityLibraryV4.PoolKey memory key
+        LiquidityLibraryV5.PoolKey memory key
     ) external;
 
     /// @notice Drain LP and remint current ASSET with current band params.
