@@ -54,6 +54,8 @@ skip = [
     "FloatStrategy-With-Bands",
     "UFloatStrategy-WBands",
     "R_LiquidityLibrary",
+    # Broken relative import (points at missing root libraries/LiquidityLibraryV4.sol)
+    "**/ustrategy/**",
     # WIP / OZ-incompatible stubs under liquidContracts (filename match, not path)
     "LiquidStratMinV4",
     "LiquidSwapRouterV4",

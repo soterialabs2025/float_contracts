@@ -6,7 +6,7 @@
   **Demeter**: `0x208169b1321a09e614a68b06b7f600dc0e007212`
   **Triton**: `0x66d60E991D09447245d668671d079b57eB48f58E`
   **Demeter_Two**: `0xa5eF8cEFEc50D33C3413ecE773CEe05aA0c8e1cB`
-  **Triton_Two**: `0x1CfA9B75FbA20A638b7ED10074c28087B2507f39`
+  **Triton_Two**: `re`
   **SoteriaFeeManager**:`0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe`
 
 
@@ -49,7 +49,8 @@
  **POOL_MANAGER**: `0x498581fF718922c3f8e6A244956aF099B2652b2b`
 
 - **AutoOperatorRegistry**:`0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8`
-- **AutoFactory**: `0x79166c4E766830c1ba4e7893d633901068Cd0bD9` - `V2`
+- **AutoFactory**:  `0x623222FCFA9Fb59F450a9991Ff644B0b76d32195`
+`0x79166c4E766830c1ba4e7893d633901068Cd0bD9` - `V2`
 `0x0Fbca262D7CeBe0F5Df9fE6Eda4b8Ac9e84E7949`
 - **AutoSwapRouter**: `0x73fDB6Fc6C2F707cE93568998E94f8152909e7BC`
 - **AutoKeeper**:`0xf99D6314cc03137732a0D749eC4E97bc64d0b0d3`
@@ -68,6 +69,7 @@
 
 [`AutoSwapRouter`, `AutoOperatorRegistry`, `AutoKeeper`]
 ["0x73fDB6Fc6C2F707cE93568998E94f8152909e7BC","0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8","0xf99D6314cc03137732a0D749eC4E97bc64d0b0d3"]
+
 
 
 ############################################################################################################################
@@ -123,9 +125,106 @@
 - **FloatLiquidToken**:`0xB26AEE244E88fF2cFAb5Fd2c989BD1357283a642`
 `0xf2779B9B7F34bC46fB4bc2b860a6FCf0840BB41e`
 - **FloatKeeper**: `0x2Db9Cc1947593BF5056d12592989D3fc96C1fE4C`
-- **ASSET**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b`
- - **AssetPoolV3**: `0xaec085e5a5ce8d96a7bdd3eb3a62445d4f6ce703` 
+- **ASSET**:`0x1bc0c42215582d5a085795f4badbac3ff36d1bcb`
+ - **AssetPoolV3**: `0xc1a6fbedae68e1472dbb91fe29b51f7a0bd44f97` 
 
 
 
 ###########################################################################################################################
+
+
+
+**Permit2**: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+**UniversalRouter**: `0x06AfBA43Fd06227fA663b0DAecF536f6EaA6bf99`
+**SwapProxy**: `0x0000000085E102724e78eCd2F45DC9cA239Affad`
+
+**CaliburEntry**: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+
+## Robinhood Chain Uniswap V4 Addresses
+## Chain ID - 4663
+
+**WETH (aeWETH)**: `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`
+**Permit2**: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+**PoolManager**: `0x8366a39CC670B4001A1121B8F6A443A643e40951`
+**PositionManager**: `0x58daec3116aae6D93017bAAea7749052E8a04fA7`
+**PositionDescriptor**: `0x9639443158E8C5efa35Bd45287bf2EFfd3D8dC06`
+**V4Quoter**: `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`
+**StateView**: `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b`
+**ReservesLens**: `0x0000001b173C3bbF3984D417d8614E3eed34865B`
+**UniversalRouter**: `0x8876789976dEcBfCbBbe364623C63652db8C0904`
+**ERC7914Detector**: `0xc470458fc6A7E43471b31e6a2eB2612215A7102e`
+
+## Robinhood Chain Uniswap V3 Addresses
+## Chain ID - 4663
+
+**UniswapV3Factory**: `0x1f7d7550B1b028f7571E69A784071F0205FD2EfA`
+**NonfungiblePositionManager**: `0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3`
+**SwapRouter02**: `0xCaf681a66D020601342297493863E78C959E5cb2`
+**QuoterV2**: `0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7`
+**TickLens**: `0x7DfD4F31be6814D2906BDE155c3e1B146EAc1468`
+**NFTDescriptor**: `0x2E9D45Bb7b30549F5216813aDA9a6b7982C5B3ED`
+**NonfungibleTokenPositionDescriptor**: `0x6F84dAE9c064ff453E5C8af51EfB819f8f610225`
+**UniswapInterfaceMulticall**: `0x282A3C4D320Cc7f0d5eaf56B8029e4B88338f0a3`
+
+## UniswapX (Robinhood)
+**DutchV3OrderReactor**: `0x000000007A1C8e570011EeDF86A2A35593013cBA`
+**OrderQuoter**: `0x00000000a3db63Df9078cBF3dF88B4CAdD5a7F58`
+
+## Robinhood AutoVault (deploy blanks)
+**AutoOperatorRegistry**: `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E`
+**AutoFactoryV4Rh**: ``
+**AutoSwapRouterV4Rh**: ``
+**AutoKeeperV4Rh**: ``
+
+**feeManager / SoteriaFeeManagerRh**: `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE`
+**USDG**: `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`
+
+**AutoOperatorRegistry**: `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E`
+**AutoFactoryV3Rh**: `0x53a2430Eb649FdA4A8000a6Da3550EAB8E0D3882`
+**AutoSwapRouterV3Rh**: `0xB76cdfF814220334Bb46C247F5D7f5d6bE7c8d3B`
+**AutoKeeperV3Rh**: `0x6ef6afF9Dc71202252B9A0c95E1193aD7D1e5795`
+
+**Asset**":`0x020bfc650a365f8bb26819deaabf3e21291018b4` - `10000` `cash cat`
+
+["swapRouter","operatorRegistry","keeper","feeManager"]
+
+["0xB76cdfF814220334Bb46C247F5D7f5d6bE7c8d3B","0x7df1120a04D82eA92EA2d5AA005e3316B37b936E","0x6ef6afF9Dc71202252B9A0c95E1193aD7D1e5795","0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE"]
+
+
+**strategy**: `0xD5909BCefBfFb5fA7e36312b0247156D0ad0427B`
+
+**vault**: `0xFd6f1F71F2aAe90f89c5b11bdfa03871e263F13A`
+
+**liquidToken**: `0xe9E1618EB2806cd2d5a96E1f1d56FAbA2C13eC25`
+
+**poolFee**: `10000`
+**active**: `true`
+
+Common tiers: 100 (0.01%), 500 (0.05%), 3000 (0.3%), 10000 (1%). The pool must already exist at that fee via factory.getPool(asset, WETH, poolFee).
+
+147 x 14
+I'll lock sensible defaults from the research (Auto V2 + RH deployments libs) and write the port plan.
+
+Port AutoStrategyV2 dual-bucket Auto vaults into empty auto-vaults-rh-v3 and auto-vault-rh-v4 folders for Robinhood Chain (4663), retargeting verified Uniswap addresses and aeWETH, and pin @uniswap/v3-sdk / @uniswap/sdk-core to latest npm.
+
+RH AutoVault V3 + V4 port is in place and compiles under FOUNDRY_PROFILE=v4.
+
+Done
+Addresses: Fixed ADDRESSES_2.md RH V3/V4 tables (real PosM/Quoter/StateView), aeWETH 0x0Bd7…, removed bad ERC20ETH label
+SDKs: @uniswap/v3-sdk@3.31.1, @uniswap/sdk-core@7.19.0, @uniswap/v4-sdk@2.3.1
+contracts/auto-vault-rh-v4: Auto V2 stack on V4Deployments4663; feeManager via factory InfraConfig
+contracts/auto-vaults-rh-v3: New Auto-on-V3 (AutoStrategyV3Rh, AutoVaultV3Rh, AutoFactoryV3Rh, AutoSwapRouterV3Rh) with dual-bucket reserve + NPM/SwapRouter02
+Build: forge build OK with via-IR; skipped broken ustrategy in foundry.toml
+Deploy order (both chains of Auto)
+AutoOperatorRegistry
+AutoSwapRouter / AutoSwapRouterV3Rh → setStrategyFactory
+AutoKeeper(registry) → setStrategyFactory
+Factory with {swapRouter, operatorRegistry, keeper, feeManager}
+deployVaultPackage (V4: PoolKey+hookData; V3: asset+poolFee)
+Use aeWETH 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73, not Base 0x4200….
+
+
+TRITON_RH_1=0xbED21b27411A80a557bBA5BDd4e31E05E09E09f4
+TRITON_RH_2=0xDaFb1B9789F4ECb75A006F65F99081802c871Ed4
+DEMETER_RH_1=0x3ec00017066Eb2e2348D82d0e21D5fDB3357CE16
+DEMETER_RH_2=0xa16c8cc08674F7c120A64d94f432377D427901a0

@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
-import "../v4/V4Deployments8453.sol";
+import "./V4Deployments4663.sol";
 import "../v4/libraries/TrailingFloorLib.sol";
 import "./libraries/LiquidityLibraryV4.sol";
 import "./interfaces/IPositionManagerV4.sol";
@@ -23,7 +23,7 @@ import "./interfaces/IAutoSwapRouter.sol";
 import "./interfaces/IAutoOperatorRegistry.sol";
 
 /// @title AutoStrategyV2
-/// @notice AutoStrategy with dual-bucket reserve: `reserveBps` of deposits/fees stay idle (ASSET+WETH);
+/// @notice RH (4663) AutoStrategy with dual-bucket reserve: `reserveBps` of deposits/fees stay idle (ASSET+WETH);
 ///         remint pulls deficit from reserve before swapping. Reserve is not re-seeded after remint.
 contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiver, IAutoStrategy {
     using SafeERC20 for IERC20;
@@ -31,12 +31,12 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
 
     error E();
 
-    address public immutable feeManager = 0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe;
+    address public feeManager;
     address public immutable factory;
     IPositionManagerV4 public immutable positionManager;
     IPoolManagerV4 private immutable poolManager;
     IERC20 private immutable WETH;
-    address private constant PERMIT2 = V4Deployments8453.PERMIT2;
+    address private constant PERMIT2 = V4Deployments4663.PERMIT2;
 
     LiquidityLibraryV4.PositionState private liqPos;
     LiquidityLibraryV4.PoolKey private _poolKey;
@@ -65,9 +65,9 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
 
     constructor(address factory_) AutoStrategyManagerV2() {
         factory = factory_;
-        WETH = IERC20(V4Deployments8453.WETH);
-        positionManager = IPositionManagerV4(V4Deployments8453.POSITION_MANAGER);
-        poolManager = IPoolManagerV4(V4Deployments8453.POOL_MANAGER);
+        WETH = IERC20(V4Deployments4663.WETH);
+        positionManager = IPositionManagerV4(V4Deployments4663.POSITION_MANAGER);
+        poolManager = IPoolManagerV4(V4Deployments4663.POOL_MANAGER);
         _initAutoDefaults();
     }
 
@@ -77,6 +77,7 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         address swapRouter_,
         address operatorRegistry_,
         address keeper_,
+        address feeManager_,
         address asset_,
         LiquidityLibraryV4.PoolKey calldata key,
         bytes calldata hookData_
@@ -85,7 +86,8 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         if (msg.sender != factory) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0)
-                || operatorRegistry_ == address(0) || keeper_ == address(0) || asset_ == address(0)
+                || operatorRegistry_ == address(0) || keeper_ == address(0) || feeManager_ == address(0)
+                || asset_ == address(0)
         ) revert E();
         if (
             !((key.currency0 == asset_ && key.currency1 == address(WETH))
@@ -96,6 +98,7 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         swapRouter = IAutoSwapRouter(swapRouter_);
         operatorRegistry = IAutoOperatorRegistry(operatorRegistry_);
         keeper = keeper_;
+        feeManager = feeManager_;
         _asset = IERC20(asset_);
         _poolKey = key;
         _hookData = hookData_;
