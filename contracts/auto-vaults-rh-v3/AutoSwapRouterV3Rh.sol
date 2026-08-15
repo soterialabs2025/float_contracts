@@ -17,7 +17,7 @@ contract AutoSwapRouterV3Rh is IAutoSwapRouterV3, Ownable, ReentrancyGuard {
 
     IUniswapRouter public immutable router = IUniswapRouter(V3Deployments4663.SWAP_ROUTER02);
     IQuoterV2 public immutable quoter = IQuoterV2(V3Deployments4663.QUOTER_V2);
-    uint16 public strictStrategySlippageBps = 200;
+    uint16 public strictStrategySlippageBps = 100;
     address public strategyFactory;
     mapping(address => bool) public isAuthorizedStrategy;
 

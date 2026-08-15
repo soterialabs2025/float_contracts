@@ -9,12 +9,8 @@ interface IAutoVault {
     }
 
     function depositETH() external payable returns (uint256 shares);
-    function depositWeth(uint256 amount) external returns (uint256 shares);
-    function depositAsset(uint256 amount) external returns (uint256 shares);
     /// @param asAsset true → receive ASSET; false → receive WETH
     function withdraw(uint256 shares, bool asAsset) external returns (uint256 assets);
-    function enterNeutral() external;
-    function resumeNormal() external;
 
     /// @notice Strategy NAV in WETH-notional (forwards to strategy).
     function balance() external view returns (uint256);

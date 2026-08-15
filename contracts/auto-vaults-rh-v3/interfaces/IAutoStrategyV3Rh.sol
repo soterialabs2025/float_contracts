@@ -2,10 +2,6 @@
 pragma solidity ^0.8.20;
 
 interface IAutoStrategyV3Rh {
-    enum Mode {
-        NORMAL,
-        NEUTRAL
-    }
     enum WithdrawToken {
         WETH,
         ASSET
@@ -23,9 +19,6 @@ interface IAutoStrategyV3Rh {
     function keeperCheck() external returns (bool);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
     function deposit(uint256 amount) external;
-    function ingestAndDeploy() external;
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external;
-    function enterNeutralFromVault() external;
-    function resumeNormalFromVault() external;
     function setWatched(bool status) external;
 }

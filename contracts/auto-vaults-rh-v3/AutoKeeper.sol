@@ -11,7 +11,6 @@ import "./interfaces/IAutoVault.sol";
 /// @title AutoKeeper
 /// @notice Upkeep = remint path only (`keeperCheck`); harvest is a separate cadence.
 contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
-    uint8 private constant MODE_NEUTRAL = 1;
     uint32 public constant DEFAULT_MIN_INTERVAL = 3;
 
     struct WatchedStrategy {
@@ -98,7 +97,6 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
             return;
         }
         IAutoStrategyV3Rh strat = IAutoStrategyV3Rh(ws.stratAddr);
-        if (strat.mode() == MODE_NEUTRAL) return;
         if (strat.keeperCheck()) {
             ws.lastUpkeep = uint32(block.timestamp);
         }
@@ -126,7 +124,6 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
         IAutoStrategyV3Rh strat = IAutoStrategyV3Rh(ws.stratAddr);
-        if (strat.mode() == MODE_NEUTRAL) return;
         strat.harvestBoolean(skipIncreaseLiquidity);
         ws.lastHarvest = uint32(block.timestamp);
         _recordVaultPoolValueSnapshot(ws.stratAddr);
@@ -150,11 +147,9 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
-        if (IAutoStrategyV3Rh(ws.stratAddr).mode() == MODE_NEUTRAL) return;
         _recordVaultPoolValueSnapshot(ws.stratAddr);
     }
 
-    /// @dev Caller must already enforce active + non-NEUTRAL.
     function _recordVaultPoolValueSnapshot(address stratAddr) internal {
         address vaultAddr = IAutoStrategyV3Rh(stratAddr).vault();
         if (vaultAddr == address(0)) revert ZeroAddress();

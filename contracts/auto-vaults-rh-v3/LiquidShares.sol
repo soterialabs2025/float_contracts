@@ -4,11 +4,11 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/IAutoLiquidToken.sol";
+import "./interfaces/ILiquidShares.sol";
 
-/// @title AutoLiquidToken
+/// @title LiquidShares
 /// @notice Cloneable share token; `initialize` sets vault + metadata (OZ ERC20 constructor does not run on clones).
-contract AutoLiquidToken is Ownable, IAutoLiquidToken {
+contract LiquidShares is Ownable, ILiquidShares {
     string private _name;
     string private _symbol;
     uint8 private constant _decimals = 18;
@@ -30,7 +30,7 @@ contract AutoLiquidToken is Ownable, IAutoLiquidToken {
     /// @dev Implementation-only; clones skip constructors — `initialize` records the factory.
     constructor() Ownable(msg.sender) {}
 
-    function initialize(address vault_, string memory name_, string memory symbol_) public {
+    function initialize(address vault_, string memory name_, string memory symbol_) public override {
         if (initialized) revert AlreadyInitialized();
         if (vault_ == address(0)) revert ZeroAddress();
         factory = msg.sender;
@@ -42,7 +42,7 @@ contract AutoLiquidToken is Ownable, IAutoLiquidToken {
     }
 
     function bootstrap(address vault_) external override {
-        initialize(vault_, "Auto Liquid Token", "aLT");
+        initialize(vault_, "Liquid Shares", "aLS");
     }
 
     function name() external view returns (string memory) { return _name; }

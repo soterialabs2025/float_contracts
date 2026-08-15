@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "./V3Deployments4663.sol";
 import "./interfaces/IAutoVaultV2.sol";
 import "./interfaces/IAutoStrategyV3Rh.sol";
-import "./interfaces/IAutoLiquidToken.sol";
+import "./interfaces/ILiquidShares.sol";
 
 interface IWETHV3Rh is IERC20 {
     function deposit() external payable;
@@ -22,24 +22,26 @@ contract AutoVaultV3Rh is Ownable, ReentrancyGuard, Pausable, IAutoVaultV2 {
 
     IWETHV3Rh public immutable weth;
     IAutoStrategyV3Rh public strategy;
-    IAutoLiquidToken public liquidToken;
+    ILiquidShares public liquidShares;
+    address public shareStaking;
     IERC20 public asset;
     address public factory;
     bool public bootstrapped;
-    bool public neutral;
+    /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
+    bool public ownershipLocked;
     PoolValueSnapshot[] private _poolValueSnapshots;
 
     event Deposit(address indexed user, uint256 wethNotional, uint256 shares);
     event Withdraw(address indexed user, uint256 shares, bool asAsset, uint256 outAmount);
-    event NeutralEntered(uint256 poolValue);
-    event NeutralExited();
     event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp);
+    event OwnershipLocked(address indexed owner);
 
     error Unauthorized();
     error ZeroAddress();
     error ZeroValue();
     error AlreadyBootstrapped();
     error NotBootstrapped();
+    error OwnershipIsLocked();
 
     constructor() Ownable(msg.sender) {
         weth = IWETHV3Rh(V3Deployments4663.WETH);
@@ -50,17 +52,47 @@ contract AutoVaultV3Rh is Ownable, ReentrancyGuard, Pausable, IAutoVaultV2 {
         _;
     }
 
-    function bootstrap(address owner_, address strategy_, address liquidToken_, address asset_) external {
+    function bootstrap(
+        address owner_,
+        address strategy_,
+        address liquidShares_,
+        address shareStaking_,
+        address asset_
+    ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
-        if (owner_ == address(0) || strategy_ == address(0) || liquidToken_ == address(0) || asset_ == address(0)) {
+        if (
+            owner_ == address(0) || strategy_ == address(0) || liquidShares_ == address(0)
+                || shareStaking_ == address(0) || asset_ == address(0)
+        ) {
             revert ZeroAddress();
         }
         factory = msg.sender;
         strategy = IAutoStrategyV3Rh(strategy_);
-        liquidToken = IAutoLiquidToken(liquidToken_);
+        liquidShares = ILiquidShares(liquidShares_);
+        shareStaking = shareStaking_;
         asset = IERC20(asset_);
         bootstrapped = true;
         _transferOwnership(owner_);
+    }
+
+    /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
+    function transferOwnershipFromFactory(address newOwner) external {
+        if (msg.sender != factory) revert Unauthorized();
+        if (newOwner == address(0)) revert ZeroAddress();
+        if (ownershipLocked) revert OwnershipIsLocked();
+        _transferOwnership(newOwner);
+        ownershipLocked = true;
+        emit OwnershipLocked(newOwner);
+    }
+
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if (ownershipLocked) revert OwnershipIsLocked();
+        super.transferOwnership(newOwner);
+    }
+
+    function renounceOwnership() public override onlyOwner {
+        if (ownershipLocked) revert OwnershipIsLocked();
+        super.renounceOwnership();
     }
 
     function strategyPull(address token, uint256 amount) external override {
@@ -95,37 +127,17 @@ contract AutoVaultV3Rh is Ownable, ReentrancyGuard, Pausable, IAutoVaultV2 {
     }
 
     function balanceOf(address account) public view override returns (uint256) {
-        return liquidToken.balanceOf(account);
+        return liquidShares.balanceOf(account);
     }
 
     function totalSupply() public view override returns (uint256) {
-        return liquidToken.totalSupply();
+        return liquidShares.totalSupply();
     }
 
     function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         weth.deposit{value: msg.value}();
         return _mintSharesAndDeploy(msg.value);
-    }
-
-    function depositWeth(uint256 amount) external override nonReentrant whenNotPaused returns (uint256 shares) {
-        if (amount == 0) revert ZeroValue();
-        IERC20(address(weth)).safeTransferFrom(msg.sender, address(this), amount);
-        return _mintSharesAndDeploy(amount);
-    }
-
-    function depositAsset(uint256 amount) external override nonReentrant whenNotPaused returns (uint256 shares) {
-        if (amount == 0) revert ZeroValue();
-        if (!bootstrapped) revert NotBootstrapped();
-        uint256 navBefore = balance();
-        asset.safeTransferFrom(msg.sender, address(strategy), amount);
-        strategy.ingestAndDeploy();
-        uint256 navAfter = balance();
-        uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
-        shares = _sharesForDeposit(credited, navBefore);
-        if (shares == 0) revert ZeroValue();
-        liquidToken.mint(msg.sender, shares);
-        emit Deposit(msg.sender, credited, shares);
     }
 
     function _mintSharesAndDeploy(uint256 amount) internal returns (uint256 shares) {
@@ -137,7 +149,7 @@ contract AutoVaultV3Rh is Ownable, ReentrancyGuard, Pausable, IAutoVaultV2 {
         uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
         shares = _sharesForDeposit(credited, navBefore);
         if (shares == 0) revert ZeroValue();
-        liquidToken.mint(msg.sender, shares);
+        liquidShares.mint(msg.sender, shares);
         emit Deposit(msg.sender, credited, shares);
     }
 
@@ -152,24 +164,11 @@ contract AutoVaultV3Rh is Ownable, ReentrancyGuard, Pausable, IAutoVaultV2 {
             asAsset ? IAutoStrategyV3Rh.WithdrawToken.ASSET : IAutoStrategyV3Rh.WithdrawToken.WETH;
         uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
         strategy.withdraw(shares, msg.sender, out);
-        liquidToken.burn(msg.sender, shares);
+        liquidShares.burn(msg.sender, shares);
         uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
         uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
         emit Withdraw(msg.sender, shares, asAsset, received);
         return received;
-    }
-
-    function enterNeutral() external override onlyOwner {
-        strategy.enterNeutralFromVault();
-        neutral = true;
-        emit NeutralEntered(balance());
-    }
-
-    function resumeNormal() external override onlyOwner {
-        strategy.resumeNormalFromVault();
-        strategy.ingestAndDeploy();
-        neutral = false;
-        emit NeutralExited();
     }
 
     receive() external payable {

@@ -19,6 +19,7 @@ import "./interfaces/IAutoVault.sol";
 import "./interfaces/INonfungiblePositionManager.sol";
 import "./interfaces/IUniswapV3Factory.sol";
 import "./interfaces/IUniswapV3PoolMinimal.sol";
+import "./interfaces/IShareStaking.sol";
 
 contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiver, IAutoStrategyV3Rh {
     using SafeERC20 for IERC20;
@@ -40,10 +41,12 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
     address public vault;
     address public keeper;
     address public feeManager;
+    address public shareStaking;
     uint24 public poolFee;
     bool public watched;
     bool public bootstrapped;
-    Mode internal stratMode;
+    /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
+    bool public ownershipLocked;
     int24 public lastBandBaseTick;
     bool public hasBandBase;
     uint256 public lastHarvest;
@@ -68,13 +71,15 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
         address operatorRegistry_,
         address keeper_,
         address feeManager_,
+        address shareStaking_,
         address asset_,
         uint24 poolFee_
     ) external {
         if (bootstrapped || msg.sender != factory) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0) || operatorRegistry_ == address(0)
-                || keeper_ == address(0) || feeManager_ == address(0) || asset_ == address(0) || asset_ == address(WETH)
+                || keeper_ == address(0) || feeManager_ == address(0) || shareStaking_ == address(0)
+                || asset_ == address(0) || asset_ == address(WETH)
         ) revert E();
         address pool_ = v3Factory.getPool(asset_, address(WETH), poolFee_);
         if (pool_ == address(0)) revert E();
@@ -84,6 +89,7 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
         operatorRegistry = IAutoOperatorRegistry(operatorRegistry_);
         keeper = keeper_;
         feeManager = feeManager_;
+        shareStaking = shareStaking_;
         _asset = IERC20(asset_);
         _pool = IUniswapV3PoolMinimal(pool_);
         poolFee = poolFee_;
@@ -91,11 +97,28 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
         _initAutoDefaults();
         tickSpacing = _pool.tickSpacing();
         if (tickSpacing <= 0) revert E();
-        stratMode = Mode.NORMAL;
         bootstrapped = true;
         _asset.forceApprove(address(positionManager), type(uint256).max);
         WETH.forceApprove(address(positionManager), type(uint256).max);
         _transferOwnership(owner_);
+    }
+
+    /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
+    function transferOwnershipFromFactory(address newOwner) external {
+        if (msg.sender != factory) revert E();
+        if (newOwner == address(0)) revert E();
+        if (ownershipLocked) revert E();
+        _transferOwnership(newOwner);
+        ownershipLocked = true;
+    }
+
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if (ownershipLocked) revert E();
+        super.transferOwnership(newOwner);
+    }
+
+    function renounceOwnership() public pure override {
+        revert E();
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -110,13 +133,35 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
         return address(_pool);
     }
 
-    function mode() external view override returns (uint8) {
-        return uint8(stratMode);
+    function mode() external pure override returns (uint8) {
+        return 0;
     }
 
     function setWatched(bool status) external override {
         if (msg.sender != keeper && msg.sender != factory && msg.sender != owner()) revert E();
         watched = status;
+    }
+
+    function _stakingShareBpsEditable() internal view override returns (bool) {
+        return ownershipLocked;
+    }
+
+    /// @dev Split protocol fee token amount: stakingShareBps → ShareStaking (as epoch rewards), rest → feeManager.
+    ///      ShareStaking soft-fails ASSET→WETH swaps; try/catch here still protects harvest if notify reverts.
+    function _routeProtocolFee(address token, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
+        uint256 toFeeManager = amount - toStaking;
+        if (toStaking > 0 && shareStaking != address(0)) {
+            IERC20(token).safeTransfer(shareStaking, toStaking);
+            try IShareStaking(shareStaking).notifyReward(token, toStaking) {}
+            catch {
+                // Tokens already in ShareStaking (WETH credited or ASSET stranded for rescue/retry).
+            }
+        } else if (toStaking > 0) {
+            toFeeManager += toStaking;
+        }
+        if (toFeeManager > 0) IERC20(token).safeTransfer(feeManager, toFeeManager);
     }
 
     function _onlyVault() internal view {
@@ -150,7 +195,6 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
 
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
-        if (stratMode == Mode.NEUTRAL) return false;
         if (liqPos.positionId == 0) {
             (uint256 a, uint256 w) = _getDeployableBalances();
             if (
@@ -166,7 +210,7 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
 
     function harvestBoolean(bool skipIncreaseLiquidity) external override nonReentrant returns (uint256) {
         _onlyKeeper();
-        if (stratMode == Mode.NEUTRAL || liqPos.positionId == 0) return poolValue();
+        if (liqPos.positionId == 0) return poolValue();
         (,, uint256 valueInWeth) = _collectAllFees(true);
         if (skipIncreaseLiquidity) return poolValue();
         if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
@@ -183,14 +227,8 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
     function deposit(uint256 amount) external override nonReentrant {
         _onlyVault();
         if (amount == 0) revert E();
-        if (stratMode == Mode.NEUTRAL) return;
         WETH.safeTransferFrom(msg.sender, address(this), amount);
         _deposit();
-    }
-
-    function ingestAndDeploy() external override nonReentrant {
-        _onlyVault();
-        if (stratMode != Mode.NEUTRAL) _deposit();
     }
 
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external override nonReentrant {
@@ -251,18 +289,6 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
             userAsset = _min(userAsset, _asset.balanceOf(address(this)));
             if (userAsset > 0) _asset.safeTransfer(receiver, userAsset);
         }
-    }
-
-    function enterNeutralFromVault() external override {
-        _onlyVault();
-        stratMode = Mode.NEUTRAL;
-    }
-
-    function resumeNormalFromVault() external override {
-        _onlyVault();
-        if (stratMode != Mode.NEUTRAL) revert E();
-        stratMode = Mode.NORMAL;
-        lastRebalanceTime = block.timestamp;
     }
 
     function _deposit() internal {
@@ -381,8 +407,8 @@ contract AutoStrategyV3Rh is AutoStrategyManagerV2, ReentrancyGuard, IERC721Rece
         if (trackFees && protocolFeeBps > 0) {
             uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
             uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
-            if (fee0 > 0) IERC20(token0).safeTransfer(feeManager, fee0);
-            if (fee1 > 0) IERC20(_pool.token1()).safeTransfer(feeManager, fee1);
+            if (fee0 > 0) _routeProtocolFee(token0, fee0);
+            if (fee1 > 0) _routeProtocolFee(_pool.token1(), fee1);
             amount0 -= fee0;
             amount1 -= fee1;
         }

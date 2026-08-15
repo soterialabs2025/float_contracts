@@ -26,6 +26,10 @@ contract AutoStrategyManagerV2 is Ownable {
     uint256 public protocolFeeBps = 500;
     /// @notice Share of post-protocol deposit/fee capital kept idle as reserve (default 5000 = 50%).
     uint256 public reserveBps = 5000;
+    /// @notice Share of protocolFeeBps proceeds sent to ShareStaking (rest to feeManager). Default 75%.
+    uint256 public stakingShareBps = 7500;
+    /// @notice True after TBA/post-transfer owner calls `setStakingShareBps` once; cannot change again.
+    bool public stakingShareBpsLocked;
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -37,6 +41,21 @@ contract AutoStrategyManagerV2 is Ownable {
         targetAssetBps = bps;
     }
 
+    /// @notice One-time set of staking/feeManager split. Only after package → TBA ownership lock.
+    /// @dev Deployer cannot change the default (7500). TBA may set once, then `stakingShareBpsLocked`.
+    function setStakingShareBps(uint256 bps) external onlyOwner {
+        if (!_stakingShareBpsEditable() || stakingShareBpsLocked || bps > DIVISOR) revert StakingShareBps();
+        stakingShareBps = bps;
+        stakingShareBpsLocked = true;
+    }
+
+    /// @dev Strategy overrides: true after factory package ownership transfer (TBA).
+    function _stakingShareBpsEditable() internal view virtual returns (bool) {
+        return false;
+    }
+
+    error StakingShareBps();
+
     function _spacing() internal view returns (int24) {
         int24 sp = tickSpacing;
         return sp > 0 ? sp : int24(200);
@@ -44,8 +63,8 @@ contract AutoStrategyManagerV2 is Ownable {
 
     function _initAutoDefaults() internal {
         tickSpacing = 200;
-        rangeBelowTicks = 800;
-        rangeAboveTicks = 800;
+        rangeBelowTicks = 1000;
+        rangeAboveTicks = 1000;
         innerBelowTicks = 200;
         innerAboveTicks = 200;
         slippageBps = 100;
@@ -54,6 +73,8 @@ contract AutoStrategyManagerV2 is Ownable {
         protocolFeeBps = 500;
         reserveBps = 5000;
         targetAssetBps = 5000;
+        stakingShareBps = 7500;
+        stakingShareBpsLocked = false;
     }
 
     function setRangeParams(uint256 _rangeBelowTicks, uint256 _rangeAboveTicks) external onlyOwner {

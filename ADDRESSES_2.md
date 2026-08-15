@@ -180,7 +180,8 @@
 **USDG**: `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`
 
 **AutoOperatorRegistry**: `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E`
-**AutoFactoryV3Rh**: `0x53a2430Eb649FdA4A8000a6Da3550EAB8E0D3882`
+**AutoFactoryV3Rh**: `0xFd6f1F71F2aAe90f89c5b11bdfa03871e263F13A`
+`0x53a2430Eb649FdA4A8000a6Da3550EAB8E0D3882`
 **AutoSwapRouterV3Rh**: `0xB76cdfF814220334Bb46C247F5D7f5d6bE7c8d3B`
 **AutoKeeperV3Rh**: `0x6ef6afF9Dc71202252B9A0c95E1193aD7D1e5795`
 
@@ -190,8 +191,10 @@
 
 ["0xB76cdfF814220334Bb46C247F5D7f5d6bE7c8d3B","0x7df1120a04D82eA92EA2d5AA005e3316B37b936E","0x6ef6afF9Dc71202252B9A0c95E1193aD7D1e5795","0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE"]
 
+###########################################################################################################################
 
-**strategy**: `0xD5909BCefBfFb5fA7e36312b0247156D0ad0427B`
+
+**strategy**: `0xB8BF48DAc14aCEF0612CfdD9Ed1A1dba4F686dAd`
 
 **vault**: `0xFd6f1F71F2aAe90f89c5b11bdfa03871e263F13A`
 
@@ -200,31 +203,37 @@
 **poolFee**: `10000`
 **active**: `true`
 
-Common tiers: 100 (0.01%), 500 (0.05%), 3000 (0.3%), 10000 (1%). The pool must already exist at that fee via factory.getPool(asset, WETH, poolFee).
+Common fee tiers: `100` (0.01%), `500` (0.05%), `3000` (0.3%), `10000` (1%). The pool must already exist at that fee via `factory.getPool(asset, WETH, poolFee)`.
 
-147 x 14
-I'll lock sensible defaults from the research (Auto V2 + RH deployments libs) and write the port plan.
+## RH AutoVault port notes
 
-Port AutoStrategyV2 dual-bucket Auto vaults into empty auto-vaults-rh-v3 and auto-vault-rh-v4 folders for Robinhood Chain (4663), retargeting verified Uniswap addresses and aeWETH, and pin @uniswap/v3-sdk / @uniswap/sdk-core to latest npm.
+Port AutoStrategyV2 dual-bucket Auto vaults into `auto-vaults-rh-v3` and `auto-vault-rh-v4` for Robinhood Chain (`4663`), retargeting verified Uniswap addresses and aeWETH, and pin `@uniswap/v3-sdk` / `@uniswap/sdk-core` to latest npm.
 
-RH AutoVault V3 + V4 port is in place and compiles under FOUNDRY_PROFILE=v4.
+RH AutoVault V3 + V4 port is in place and compiles under `FOUNDRY_PROFILE=v4`.
 
-Done
-Addresses: Fixed ADDRESSES_2.md RH V3/V4 tables (real PosM/Quoter/StateView), aeWETH 0x0Bd7…, removed bad ERC20ETH label
-SDKs: @uniswap/v3-sdk@3.31.1, @uniswap/sdk-core@7.19.0, @uniswap/v4-sdk@2.3.1
-contracts/auto-vault-rh-v4: Auto V2 stack on V4Deployments4663; feeManager via factory InfraConfig
-contracts/auto-vaults-rh-v3: New Auto-on-V3 (AutoStrategyV3Rh, AutoVaultV3Rh, AutoFactoryV3Rh, AutoSwapRouterV3Rh) with dual-bucket reserve + NPM/SwapRouter02
-Build: forge build OK with via-IR; skipped broken ustrategy in foundry.toml
-Deploy order (both chains of Auto)
-AutoOperatorRegistry
-AutoSwapRouter / AutoSwapRouterV3Rh → setStrategyFactory
-AutoKeeper(registry) → setStrategyFactory
-Factory with {swapRouter, operatorRegistry, keeper, feeManager}
-deployVaultPackage (V4: PoolKey+hookData; V3: asset+poolFee)
-Use aeWETH 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73, not Base 0x4200….
+### Done
 
+- **Addresses:** Fixed RH V3/V4 tables (real PosM/Quoter/StateView), aeWETH `0x0Bd7...`, removed bad ERC20ETH label
+- **SDKs:** `@uniswap/v3-sdk@3.31.1`, `@uniswap/sdk-core@7.19.0`, `@uniswap/v4-sdk@2.3.1`
+- **`contracts/auto-vault-rh-v4`:** Auto V2 stack on `V4Deployments4663`; `feeManager` via factory `InfraConfig`
+- **`contracts/auto-vaults-rh-v3`:** Auto-on-V3 (`AutoStrategyV3Rh`, `AutoVaultV3Rh`, `AutoFactoryV3Rh`, `AutoSwapRouterV3Rh`) with dual-bucket reserve + NPM/SwapRouter02
+- **Build:** `forge build` OK with via-IR; skipped broken `ustrategy` in `foundry.toml`
 
-TRITON_RH_1=0xbED21b27411A80a557bBA5BDd4e31E05E09E09f4
-TRITON_RH_2=0xDaFb1B9789F4ECb75A006F65F99081802c871Ed4
-DEMETER_RH_1=0x3ec00017066Eb2e2348D82d0e21D5fDB3357CE16
-DEMETER_RH_2=0xa16c8cc08674F7c120A64d94f432377D427901a0
+### Deploy order (V3 and V4 Auto)
+
+1. `AutoOperatorRegistry`
+2. `AutoSwapRouter` / `AutoSwapRouterV3Rh` -> `setStrategyFactory`
+3. `AutoKeeper(registry)` -> `setStrategyFactory`
+4. Factory with `{swapRouter, operatorRegistry, keeper, feeManager}`
+5. `deployVaultPackage` (V4: PoolKey + hookData; V3: asset + poolFee)
+
+Use aeWETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`, not Base `0x4200...`.
+
+### RH asset tokens
+
+| Name | Address |
+|------|---------|
+| `TRITON_RH_1` | `0xbED21b27411A80a557bBA5BDd4e31E05E09E09f4` |
+| `TRITON_RH_2` | `0xDaFb1B9789F4ECb75A006F65F99081802c871Ed4` |
+| `DEMETER_RH_1` | `0x3ec00017066Eb2e2348D82d0e21D5fDB3357CE16` |
+| `DEMETER_RH_2` | `0xa16c8cc08674F7c120A64d94f432377D427901a0` |
