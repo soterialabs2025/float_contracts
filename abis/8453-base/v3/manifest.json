@@ -1,0 +1,37 @@
+{
+  "chainId": 8453,
+  "version": "v3",
+  "profile": "ustrategy-v3",
+  "contracts": {
+    "UFloatSwapRouterV3": {
+      "address": "0x052Fc86811Ec67E5af3DcA37d398aC72832E5A13",
+      "artifact": "artifacts/UFloatSwapRouterV3.sol/UFloatSwapRouterV3.json",
+      "abiEntries": 45
+    },
+    "UFloatKeeperV3": {
+      "address": "0x3eB9aa6eB9d70485918eD87cE0ed1263d0bD6f24",
+      "artifact": "artifacts/UFloatKeeperV3.sol/UFloatKeeperV3.json",
+      "abiEntries": 31
+    },
+    "UFloatStrategyFactoryV3": {
+      "address": "0x40a338E05cccD484bbA1a8da6a98fff0E302f12f",
+      "artifact": "artifacts/UFloatStrategyFactoryV3.sol/UFloatStrategyFactoryV3.json",
+      "abiEntries": 19
+    },
+    "UFloatStrategyV3": {
+      "address": null,
+      "artifact": "artifacts/UFloatStrategyV3.sol/UFloatStrategyV3.json",
+      "abiEntries": 86
+    },
+    "UStrategyManager": {
+      "address": null,
+      "artifact": "artifacts/UStrategyManager.sol/UStrategyManager.json",
+      "abiEntries": 31
+    },
+    "LiquidityLibraryV2": {
+      "address": null,
+      "artifact": "artifacts/LiquidityLibraryV2.sol/LiquidityLibraryV2.json",
+      "abiEntries": 4
+    }
+  }
+}

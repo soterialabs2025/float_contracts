@@ -35,6 +35,8 @@ contract ShareStaking is Ownable, ReentrancyGuard, IShareStaking {
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
+    /// @notice One-shot open switch. Starts false; activate() can flip to true once.
+    bool public active;
 
     /// @notice Share of each epoch's WETH pot credited to `ownerRewardRecipient` at finalize. Default 0; max 10%.
     /// @dev Only settable after ownership is locked (second/last owner). Deployer cannot raise above 0.
@@ -78,12 +80,15 @@ contract ShareStaking is Ownable, ReentrancyGuard, IShareStaking {
     error InvalidBps();
     error InsufficientStake();
     error OwnershipIsLocked();
+    error AlreadyActive();
+    error NotActive();
     error SettingsLockedToDeployer();
     error EpochExitLocked();
     error InsufficientRescuable();
 
     // Core lifecycle only — Ownable OwnershipTransferred covers ownership moves.
     event Staked(address indexed user, uint256 amount);
+    event Activated(address indexed by, uint64 timestamp);
     event Unstaked(address indexed user, uint256 amount);
     /// @dev `wethAdded == 0` means ASSET→WETH soft-fail (tokens stranded for rescue/retry).
     event RewardNotified(address indexed token, uint256 amountIn, uint256 wethAdded, uint256 epoch);
@@ -147,6 +152,19 @@ contract ShareStaking is Ownable, ReentrancyGuard, IShareStaking {
         revert OwnershipIsLocked();
     }
 
+    /// @notice One-shot: open staking. Starts inactive; cannot be turned off after activate.
+    function activate() external onlyOwner {
+        if (active) revert AlreadyActive();
+        if (!bootstrapped) revert NotBootstrapped();
+        active = true;
+        emit Activated(msg.sender, uint64(block.timestamp));
+    }
+
+    modifier whenActive() {
+        if (!active) revert NotActive();
+        _;
+    }
+
     modifier onlyPostTransferOwner() {
         _checkOwner();
         // Deployer (first owner) cannot change reward-split settings; TBA/second owner can after lock.
@@ -200,7 +218,7 @@ contract ShareStaking is Ownable, ReentrancyGuard, IShareStaking {
                 uint256 delta = totalStaked * (to - t);
                 if (ep == currentEpoch) {
                     totalWeightCurrent += delta;
-                } else {
+        } else {
                     // Should not happen if epochs finalized in order; keep safe.
                     epochTotalWeight[ep] += delta;
                 }
@@ -254,7 +272,7 @@ contract ShareStaking is Ownable, ReentrancyGuard, IShareStaking {
         userLastCheckpoint[user] = until;
     }
 
-    function stake(uint256 amount) external nonReentrant {
+    function stake(uint256 amount) external nonReentrant whenActive {
         if (!bootstrapped) revert NotBootstrapped();
         if (amount == 0) revert ZeroAmount();
         _checkpointUser(msg.sender);

@@ -43,14 +43,196 @@ out = "artifacts"
 extra_output_files = ["abi"]
 test = "test"
 libs = ["lib", "node_modules"]
-solc_version = "0.8.20"
+solc_version = "0.8.25"
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
-skip = ["FloatStrategyKeeperOffensive", "TrailingFloor"]
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "IPositionManagerV4", "auto-vault-rh-v4", "ustrategy-rh-v4"]
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",
+]
+
+# Base Uniswap V3 AutoVault (RH auto-vaults-rh-v3 twin).
+[profile.base-v3]
+src = "contracts/auto-vaults-base-v3"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "IPositionManagerV4", "auto-vault-rh-v4", "ustrategy-rh-v4"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+# Base Uniswap V4 AutoVault (`contracts/auto-vault-base-v4`).
+[profile.base-v4]
+src = "contracts/auto-vault-base-v4"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+    "@uniswap/v4-core/=lib/v4-core/",
+    "@uniswap/v4-periphery/=lib/v4-periphery/",
+    "@uniswap/universal-router/=lib/universal-router/",
+    "@uniswap/v3-periphery/=lib/universal-router/lib/v3-periphery/",
+    "permit2/=lib/v4-periphery/lib/permit2/",
+    "solmate/=lib/v4-core/lib/solmate/",
+]
+
+# SushiSwap clAMM AutoVault on Robinhood (4663).
+[profile.rh-sushi]
+src = "contracts/auto-vaults-rh-sushi-v3"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t", "IPositionManagerV4", "auto-vault-rh-v4", "ustrategy-rh-v4"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+
+# Base Uniswap V4 UFloat.
+[profile.ustrategy]
+src = "contracts/ustrategy"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+    "@uniswap/v4-core/=lib/v4-core/",
+    "@uniswap/v4-periphery/=lib/v4-periphery/",
+    "@uniswap/universal-router/=lib/universal-router/",
+    "@uniswap/v3-periphery/=lib/universal-router/lib/v3-periphery/",
+    "permit2/=lib/v4-periphery/lib/permit2/",
+    "solmate/=lib/v4-core/lib/solmate/",
+]
+
+# Base Uniswap V3 UFloat (ustrategy twin).
+[profile.ustrategy-v3]
+src = "contracts/ustrategy-v3"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t", "auto-vault-rh-v4", "IPositionManagerV4"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+# Robinhood Uniswap V3 UFloat (Base ustrategy-v3 twin).
+[profile.ustrategy-rh-v3]
+src = "contracts/ustrategy-rh-v3"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t", "auto-vault-rh-v4", "IPositionManagerV4"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+# Robinhood Uniswap V4 UFloat (Base ustrategy twin).
+[profile.ustrategy-rh-v4]
+src = "contracts/ustrategy-rh-v4"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+    "@uniswap/v4-core/=lib/v4-core/",
+    "@uniswap/v4-periphery/=lib/v4-periphery/",
+    "@uniswap/universal-router/=lib/universal-router/",
+    "@uniswap/v3-periphery/=lib/universal-router/lib/v3-periphery/",
+    "permit2/=lib/v4-periphery/lib/permit2/",
+    "solmate/=lib/v4-core/lib/solmate/",
+]
+
+# RH AutoVault V4 package only (ABI export under artifacts/).
+[profile.rh-v4]
+src = "contracts/auto-vault-rh-v4"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "ShareStaking.t"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+    "@uniswap/v4-core/=lib/v4-core/",
+    "@uniswap/v4-periphery/=lib/v4-periphery/",
+    "@uniswap/universal-router/=lib/universal-router/",
+    "@uniswap/v3-periphery/=lib/universal-router/lib/v3-periphery/",
+    "permit2/=lib/v4-periphery/lib/permit2/",
+    "solmate/=lib/v4-core/lib/solmate/",
 ]
 
 # Uniswap v4 + Universal Router (see https://docs.uniswap.org/contracts/v4/guides/swap-routing).

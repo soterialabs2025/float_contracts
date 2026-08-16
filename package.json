@@ -4,7 +4,8 @@
   "description": "terminal_bank_contracts",
   "main": "index.js",
   "scripts": {
-    "test": "dev"
+    "test": "dev",
+    "find-rh-v4-pool": "node scripts/find-rh-v4-poolkey.mjs"
   },
   "author": "",
   "license": "MIT",

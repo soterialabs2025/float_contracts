@@ -40,9 +40,11 @@ contract AutoSwapRouter is IAutoSwapRouter, IUnlockCallback, Ownable, Reentrancy
     error ZeroAddress();
     error ZeroAmount();
     error AlreadyAuthorized();
+    error BadSlippage();
 
     event StrategyFactoryUpdated(address indexed factory);
     event StrategyAuthorized(address indexed strategy);
+    event StrictStrategySlippageUpdated(uint16 bps);
     event SwapExecuted(
         address indexed caller, address indexed recipient, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
     );
@@ -69,6 +71,12 @@ contract AutoSwapRouter is IAutoSwapRouter, IUnlockCallback, Ownable, Reentrancy
         if (isAuthorizedStrategy[strategy]) revert AlreadyAuthorized();
         isAuthorizedStrategy[strategy] = true;
         emit StrategyAuthorized(strategy);
+    }
+
+    function setStrictStrategySlippageBps(uint16 bps) external onlyOwner {
+        if (bps > 5_000) revert BadSlippage();
+        strictStrategySlippageBps = bps;
+        emit StrictStrategySlippageUpdated(bps);
     }
 
     function swapExactInputSingleStrict(

@@ -11,7 +11,6 @@ import "./interfaces/IAutoVault.sol";
 /// @title AutoKeeper
 /// @notice Upkeep = remint path only (`keeperCheck`); harvest is a separate cadence.
 contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
-    uint8 private constant MODE_NEUTRAL = 1;
     uint32 public constant DEFAULT_MIN_INTERVAL = 3;
 
     struct WatchedStrategy {
@@ -32,12 +31,7 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
 
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
     event StrategyFactoryUpdated(address indexed factory);
-    event VaultPoolValueSnapshot(
-        uint256 indexed id,
-        address indexed vault,
-        address indexed strat,
-        address caller
-    );
+    event VaultPoolValueSnapshot(uint256 indexed id, address indexed vault, address indexed strat, address caller);
 
     constructor(address operatorRegistry_) Ownable(msg.sender) {
         if (operatorRegistry_ == address(0)) revert ZeroAddress();
@@ -102,9 +96,7 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         if (ws.lastUpkeep != 0 && ws.minInterval > 0 && uint32(block.timestamp) < ws.lastUpkeep + ws.minInterval) {
             return;
         }
-        IAutoStrategy strat = IAutoStrategy(ws.stratAddr);
-        if (strat.mode() == MODE_NEUTRAL) return;
-        if (strat.keeperCheck()) {
+        if (IAutoStrategy(ws.stratAddr).keeperCheck()) {
             ws.lastUpkeep = uint32(block.timestamp);
         }
     }
@@ -113,7 +105,11 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         _performHarvest(id, skipIncreaseLiquidity);
     }
 
-    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external nonReentrant onlyOperator {
+    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity)
+        external
+        nonReentrant
+        onlyOperator
+    {
         uint256 len = ids.length;
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
@@ -126,14 +122,11 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
-        IAutoStrategy strat = IAutoStrategy(ws.stratAddr);
-        if (strat.mode() == MODE_NEUTRAL) return;
-        strat.harvestBoolean(skipIncreaseLiquidity);
+        IAutoStrategy(ws.stratAddr).harvestBoolean(skipIncreaseLiquidity);
         ws.lastHarvest = uint32(block.timestamp);
         _recordVaultPoolValueSnapshot(ws.stratAddr);
     }
 
-    /// @notice Record vault NAV + cumulative fees only (does not harvest or increase liquidity).
     function snapshotVaultPoolValue(uint256 id) external override nonReentrant onlyOperator {
         _snapshotVaultPoolValue(id);
     }
@@ -151,11 +144,9 @@ contract AutoKeeper is IAutoKeeper, Ownable, ReentrancyGuard {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
-        if (IAutoStrategy(ws.stratAddr).mode() == MODE_NEUTRAL) return;
         _recordVaultPoolValueSnapshot(ws.stratAddr);
     }
 
-    /// @dev Caller must already enforce active + non-NEUTRAL.
     function _recordVaultPoolValueSnapshot(address stratAddr) internal {
         address vaultAddr = IAutoStrategy(stratAddr).vault();
         if (vaultAddr == address(0)) revert ZeroAddress();

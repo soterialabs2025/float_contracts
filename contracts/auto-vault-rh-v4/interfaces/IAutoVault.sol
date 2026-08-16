@@ -9,18 +9,14 @@ interface IAutoVault {
     }
 
     function depositETH() external payable returns (uint256 shares);
-    function depositWeth(uint256 amount) external returns (uint256 shares);
-    function depositAsset(uint256 amount) external returns (uint256 shares);
     /// @param asAsset true → receive ASSET; false → receive WETH
     function withdraw(uint256 shares, bool asAsset) external returns (uint256 assets);
-    function enterNeutral() external;
-    function resumeNormal() external;
 
     /// @notice Strategy NAV in WETH-notional (forwards to strategy).
     function balance() external view returns (uint256);
-    /// @notice Share balance (forwards to liquid token).
+    /// @notice Share balance (forwards to liquid shares).
     function balanceOf(address account) external view returns (uint256);
-    /// @notice Share supply (forwards to liquid token).
+    /// @notice Share supply (forwards to liquid shares).
     function totalSupply() external view returns (uint256);
 
     /// @notice Record NAV + cumulative Uniswap fees. Callable only by AutoKeeper (after harvest).

@@ -21,6 +21,7 @@ import "./interfaces/IAutoVaultV2.sol";
 import "./interfaces/IAutoStrategy.sol";
 import "./interfaces/IAutoSwapRouter.sol";
 import "./interfaces/IAutoOperatorRegistry.sol";
+import "./interfaces/IShareStaking.sol";
 
 /// @title AutoStrategyV2
 /// @notice RH (4663) AutoStrategy with dual-bucket reserve: `reserveBps` of deposits/fees stay idle (ASSET+WETH);
@@ -32,6 +33,7 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
     error E();
 
     address public feeManager;
+    address public shareStaking;
     address public immutable factory;
     IPositionManagerV4 public immutable positionManager;
     IPoolManagerV4 private immutable poolManager;
@@ -49,8 +51,9 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
     address public keeper;
     bool public watched;
     bool public bootstrapped;
+    /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
+    bool public ownershipLocked;
 
-    Mode internal stratMode;
     int24 public lastBandBaseTick;
     bool public hasBandBase;
 
@@ -78,6 +81,7 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         address operatorRegistry_,
         address keeper_,
         address feeManager_,
+        address shareStaking_,
         address asset_,
         LiquidityLibraryV4.PoolKey calldata key,
         bytes calldata hookData_
@@ -87,8 +91,10 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0)
                 || operatorRegistry_ == address(0) || keeper_ == address(0) || feeManager_ == address(0)
-                || asset_ == address(0)
+                || shareStaking_ == address(0) || asset_ == address(0) || asset_ == address(WETH)
         ) revert E();
+        // ASSET/aeWETH only — native ETH (address(0)) pairs are unsupported.
+        if (key.currency0 == address(0) || key.currency1 == address(0)) revert E();
         if (
             !((key.currency0 == asset_ && key.currency1 == address(WETH))
                 || (key.currency1 == asset_ && key.currency0 == address(WETH)))
@@ -99,16 +105,34 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         operatorRegistry = IAutoOperatorRegistry(operatorRegistry_);
         keeper = keeper_;
         feeManager = feeManager_;
+        shareStaking = shareStaking_;
         _asset = IERC20(asset_);
         _poolKey = key;
         _hookData = hookData_;
         if (key.tickSpacing > 0) tickSpacing = key.tickSpacing;
         _initAutoDefaults();
         if (key.tickSpacing > 0) tickSpacing = key.tickSpacing;
-        stratMode = Mode.NORMAL;
         bootstrapped = true;
         _giveAllowances();
         _transferOwnership(owner_);
+    }
+
+    /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
+    function transferOwnershipFromFactory(address newOwner) external {
+        if (msg.sender != factory) revert E();
+        if (newOwner == address(0)) revert E();
+        if (ownershipLocked) revert E();
+        _transferOwnership(newOwner);
+        ownershipLocked = true;
+    }
+
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if (ownershipLocked) revert E();
+        super.transferOwnership(newOwner);
+    }
+
+    function renounceOwnership() public pure override {
+        revert E();
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -119,8 +143,27 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         return address(_asset);
     }
 
-    function mode() external view override returns (uint8) {
-        return uint8(uint256(stratMode));
+    function mode() external pure override returns (uint8) {
+        return 0;
+    }
+
+    function _stakingShareBpsEditable() internal view override returns (bool) {
+        return ownershipLocked;
+    }
+
+    /// @dev Split protocol fee: stakingShareBps → ShareStaking, rest → feeManager.
+    function _routeProtocolFee(address token, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
+        uint256 toFeeManager = amount - toStaking;
+        if (toStaking > 0 && shareStaking != address(0)) {
+            IERC20(token).safeTransfer(shareStaking, toStaking);
+            try IShareStaking(shareStaking).notifyReward(token, toStaking) {}
+            catch {}
+        } else if (toStaking > 0) {
+            toFeeManager += toStaking;
+        }
+        if (toFeeManager > 0) IERC20(token).safeTransfer(feeManager, toFeeManager);
     }
 
     function poolKey() external view override returns (LiquidityLibraryV4.PoolKey memory) {
@@ -168,7 +211,6 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
     /// @dev Remint if OOR (outer) or tick left inner comfort band.
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
-        if (stratMode == Mode.NEUTRAL) return false;
         if (liqPos.positionId == 0) {
             (uint256 a, uint256 w) = _getDeployableBalances();
             if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) {
@@ -188,7 +230,6 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         returns (uint256)
     {
         _onlyKeeper();
-        if (stratMode == Mode.NEUTRAL) return poolValue();
         if (liqPos.positionId == 0) return poolValue();
         (, , uint256 valueInWeth) = _collectAllFees(true);
         if (skipIncreaseLiquidity) return poolValue();
@@ -206,14 +247,7 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
     function deposit(uint256 amount) external override nonReentrant {
         _onlyVault();
         if (amount == 0) revert E();
-        if (stratMode == Mode.NEUTRAL) return;
         WETH.safeTransferFrom(msg.sender, address(this), amount);
-        _deposit();
-    }
-
-    function ingestAndDeploy() external override nonReentrant {
-        _onlyVault();
-        if (stratMode == Mode.NEUTRAL) return;
         _deposit();
     }
 
@@ -323,18 +357,6 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
                 if (totalUserAsset > 0) _asset.safeTransfer(receiver, totalUserAsset);
             }
         }
-    }
-
-    function enterNeutralFromVault() external override {
-        _onlyVault();
-        stratMode = Mode.NEUTRAL;
-    }
-
-    function resumeNormalFromVault() external override {
-        _onlyVault();
-        if (stratMode != Mode.NEUTRAL) revert E();
-        stratMode = Mode.NORMAL;
-        lastRebalanceTime = block.timestamp;
     }
 
     /// @dev Drain LP, fund `targetAssetBps` deficit from reserve then swap, mint deployable only. Does not refill reserve.
@@ -505,8 +527,8 @@ contract AutoStrategyV2 is AutoStrategyManagerV2, ReentrancyGuard, IERC721Receiv
         if (trackFees && protocolFeeBps > 0) {
             uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
             uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
-            if (fee0 > 0) IERC20(p0).safeTransfer(feeManager, fee0);
-            if (fee1 > 0) IERC20(p1).safeTransfer(feeManager, fee1);
+            if (fee0 > 0) _routeProtocolFee(p0, fee0);
+            if (fee1 > 0) _routeProtocolFee(p1, fee1);
             amount0 -= fee0;
             amount1 -= fee1;
         }

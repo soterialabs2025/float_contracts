@@ -1,0 +1,143 @@
+[
+  {
+    "type": "function",
+    "name": "calculateMinAmounts",
+    "inputs": [
+      {
+        "name": "amount0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "slippageBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "min0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "min1",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "getAmountsForLiquidity",
+    "inputs": [
+      {
+        "name": "sqrtRatioX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "sqrtRatioAX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "sqrtRatioBX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "amount0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "getLiquidityForAmounts",
+    "inputs": [
+      {
+        "name": "sqrtRatioX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "sqrtRatioAX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "sqrtRatioBX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "amount0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount1",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "getSqrtRatios",
+    "inputs": [
+      {
+        "name": "lowerTick",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "upperTick",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "sqrtL",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "sqrtU",
+        "type": "uint160",
+        "internalType": "uint160"
+      }
+    ],
+    "stateMutability": "pure"
+  }
+]

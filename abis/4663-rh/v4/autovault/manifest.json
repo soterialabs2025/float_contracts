@@ -1,0 +1,63 @@
+{
+  "chainId": 4663,
+  "version": "v4",
+  "product": "autovault",
+  "profile": "rh-v4",
+  "contracts": {
+    "AutoOperatorRegistry": {
+      "address": "0x7df1120a04D82eA92EA2d5AA005e3316B37b936E",
+      "artifact": "artifacts/auto-vaults-rh-v3/AutoOperatorRegistry.sol/AutoOperatorRegistry.json",
+      "abiEntries": 14
+    },
+    "AutoFactoryV2": {
+      "address": "0x43799407FB4B32625DEE5c6b5F9f7Ea5A62fc685",
+      "artifact": "artifacts/AutoFactoryV2.sol/AutoFactoryV2.json",
+      "abiEntries": 31
+    },
+    "AutoSwapRouter": {
+      "address": "0x5bD973F52Fb5c6a1f5C1D214FE9d1Cd58B8C2FbF",
+      "artifact": "artifacts/AutoSwapRouter.sol/AutoSwapRouter.json",
+      "abiEntries": 29
+    },
+    "AutoKeeper": {
+      "address": "0xC05361895FaB7826137A0b8B3C6726A431f5aAe8",
+      "artifact": "artifacts/auto-vaults-rh-v3/AutoKeeper.sol/AutoKeeper.json",
+      "abiEntries": 28
+    },
+    "AutoStrategyV2": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategyV2.sol/AutoStrategyV2.json",
+      "abiEntries": 71
+    },
+    "AutoVaultV2": {
+      "address": null,
+      "artifact": "artifacts/AutoVaultV2.sol/AutoVaultV2.json",
+      "abiEntries": 44
+    },
+    "AutoStrategyManagerV2": {
+      "address": null,
+      "artifact": "artifacts/auto-vaults-rh-v3/AutoStrategyManagerV2.sol/AutoStrategyManagerV2.json",
+      "abiEntries": 29
+    },
+    "LiquidShares": {
+      "address": null,
+      "artifact": "artifacts/auto-vaults-rh-v3/LiquidShares.sol/LiquidShares.json",
+      "abiEntries": 28
+    },
+    "ShareStaking": {
+      "address": null,
+      "artifact": "artifacts/auto-vaults-rh-v3/ShareStaking.sol/ShareStaking.json",
+      "abiEntries": 72
+    },
+    "AutoLiquidToken": {
+      "address": null,
+      "artifact": "artifacts/AutoLiquidToken.sol/AutoLiquidToken.json",
+      "abiEntries": 28
+    },
+    "LiquidityLibraryV4": {
+      "address": null,
+      "artifact": "artifacts/LiquidityLibraryV4.sol/LiquidityLibraryV4.json",
+      "abiEntries": 7
+    }
+  }
+}

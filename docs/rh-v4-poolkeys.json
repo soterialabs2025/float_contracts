@@ -1,0 +1,48 @@
+{
+  "chainId": 4663,
+  "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+  "aeWeth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+  "updatedAt": "2026-08-15T23:50:54.046Z",
+  "pools": {
+    "0x22a769cb04c0526e2f972f11c8cd1a5414a8e4a3ec678419356c46325ce8933e": {
+      "poolId": "0x22a769cb04c0526e2f972f11c8cd1a5414a8e4a3ec678419356c46325ce8933e",
+      "token": "0xe934e36A439C94017B64a3FecE66AF12099aBF50",
+      "pairFilter": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "poolKey": {
+        "currency0": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+        "currency1": "0xe934e36A439C94017B64a3FecE66AF12099aBF50",
+        "fee": 10000,
+        "tickSpacing": 200,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "hookData": "0x",
+      "sqrtPriceX96": "53755745572429061074747775584754",
+      "tick": 130404,
+      "txHash": "0xf849682c2bb44f6bd6539e2d9fb6fa56417b62c52018f48021fd52b43a0d2b8a",
+      "blockNumber": "14456666",
+      "warnings": [],
+      "firstSeenAt": "2026-08-15T23:50:43.115Z",
+      "lastSeenAt": "2026-08-15T23:50:54.046Z"
+    },
+    "0xfbece126bde32e4116fd8e8b4bb3b7d80b2c5febf1fc7cc7025ed3b6fd413016": {
+      "poolId": "0xfbece126bde32e4116fd8e8b4bb3b7d80b2c5febf1fc7cc7025ed3b6fd413016",
+      "token": "0xe934e36A439C94017B64a3FecE66AF12099aBF50",
+      "pairFilter": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "poolKey": {
+        "currency0": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+        "currency1": "0xe934e36A439C94017B64a3FecE66AF12099aBF50",
+        "fee": 8388608,
+        "tickSpacing": 160,
+        "hooks": "0xFeDa24F0d3805170E7566cE617CfBa01cE05D080"
+      },
+      "hookData": "0x",
+      "sqrtPriceX96": "37020889109174202318742177710080",
+      "tick": 122944,
+      "txHash": "0x4ef75de5e89bca9e8d07d1eea899408bb61b2d465eb4816e3d07f6477f995f33",
+      "blockNumber": "22458835",
+      "warnings": [],
+      "firstSeenAt": "2026-08-15T23:50:43.115Z",
+      "lastSeenAt": "2026-08-15T23:50:54.046Z"
+    }
+  }
+}

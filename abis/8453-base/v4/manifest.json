@@ -1,0 +1,37 @@
+{
+  "chainId": 8453,
+  "version": "v4",
+  "profile": "ustrategy",
+  "contracts": {
+    "UFloatSwapRouter": {
+      "address": "0x45cb7972Fb88127435d4791eAb034f07ED53064a",
+      "artifact": "artifacts/UFloatSwapRouter.sol/UFloatSwapRouter.json",
+      "abiEntries": 63
+    },
+    "UFloatKeeper": {
+      "address": "0x211035197D91C7a8b4D791449051D5163e5d5855",
+      "artifact": "artifacts/UFloatKeeper.sol/UFloatKeeper.json",
+      "abiEntries": 33
+    },
+    "UFloatStrategyFactoryV4": {
+      "address": "0xC6e260F7DCff98426c8652eED85315DB3965409A",
+      "artifact": "artifacts/UFloatStrategyFactoryV4.sol/UFloatStrategyFactoryV4.json",
+      "abiEntries": 19
+    },
+    "UFloatStrategyV4": {
+      "address": null,
+      "artifact": "artifacts/UFloatStrategy.sol/UFloatStrategyV4.json",
+      "abiEntries": 89
+    },
+    "UStrategyManager": {
+      "address": null,
+      "artifact": "artifacts/UStrategyManager.sol/UStrategyManager.json",
+      "abiEntries": 31
+    },
+    "LiquidityLibraryV4": {
+      "address": null,
+      "artifact": "artifacts/LiquidityLibraryV4.sol/LiquidityLibraryV4.json",
+      "abiEntries": 7
+    }
+  }
+}
