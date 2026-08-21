@@ -1,0 +1,52 @@
+{
+  "chainId": 4663,
+  "product": "rhv4",
+  "profile": "rh-v4",
+  "contracts": {
+    "AutoOperatorRegistryRhV4": {
+      "address": "0x7df1120a04D82eA92EA2d5AA005e3316B37b936E",
+      "artifact": "artifacts/AutoOperatorRegistryRhV4.sol/AutoOperatorRegistryRhV4.json",
+      "abiEntries": 14
+    },
+    "AutoFactoryRhV4": {
+      "address": "0xEDd2772fC4A3DFe73ae4dc068458f4fe36c13F93",
+      "artifact": "artifacts/AutoFactoryRhV4.sol/AutoFactoryRhV4.json",
+      "abiEntries": 31
+    },
+    "AutoSwapRouterRhV4": {
+      "address": "0x493CDA10F61fb2ad2AC7149EfBBA2114Dd460D05",
+      "artifact": "artifacts/AutoSwapRouterRhV4.sol/AutoSwapRouterRhV4.json",
+      "abiEntries": 30
+    },
+    "AutoKeeperRhV4": {
+      "address": "0x79F9ea39E7e5304791DF8cfEe835F6592c35e022",
+      "artifact": "artifacts/AutoKeeperRhV4.sol/AutoKeeperRhV4.json",
+      "abiEntries": 28
+    },
+    "AutoStrategyRhV4": {
+      "address": "0x5aDeb07fF21c80D45847f793d84C04fd309E6Cf3",
+      "artifact": "artifacts/AutoStrategyRhV4.sol/AutoStrategyRhV4.json",
+      "abiEntries": 71
+    },
+    "AutoVaultRhV4": {
+      "address": "0xE510075D1F7F3053Fa9C6D84404Af3D1ecAAD6E7",
+      "artifact": "artifacts/AutoVaultRhV4.sol/AutoVaultRhV4.json",
+      "abiEntries": 41
+    },
+    "AutoStrategyManagerRhV4": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategyManagerRhV4.sol/AutoStrategyManagerRhV4.json",
+      "abiEntries": 30
+    },
+    "LiquidSharesRhV4": {
+      "address": "0x2c0241EDe5Ac7A94Ef393D1c33635f099203912F",
+      "artifact": "artifacts/LiquidSharesRhV4.sol/LiquidSharesRhV4.json",
+      "abiEntries": 30
+    },
+    "ShareStakingRhV4": {
+      "address": "0x3C62dA3297A5beeD52A65EcB9B92d986Ea0c5ADd",
+      "artifact": "artifacts/ShareStakingRhV4.sol/ShareStakingRhV4.json",
+      "abiEntries": 77
+    }
+  }
+}

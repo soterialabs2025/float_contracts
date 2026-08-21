@@ -13,15 +13,15 @@ OUT = ROOT / "abis" / "8453" / "v3" / "autovault"
 PINNED = ROOT / ".deploys" / "pinned-contracts" / "8453"
 
 CONTRACTS = [
-    ("AutoOperatorRegistry", "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8"),
-    ("AutoFactoryV3", "0xc8f9126c289df82F5e3D1679Fba0BcB7F983fC87"),
-    ("AutoSwapRouterV3", "0x575f20F17b39220Bded0B3be4B6B42146645560a"),
-    ("AutoKeeper", "0xF60Bb8318A95dCe44bA13B1d04Ffd9498e00f57d"),
-    ("AutoStrategyV3", None),
-    ("AutoVaultV3", None),
-    ("AutoStrategyManagerV2", None),
-    ("LiquidShares", None),
-    ("ShareStaking", None),
+    ("AutoOperatorRegistryBv3", "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8"),
+    ("AutoFactoryBv3", "0xc8f9126c289df82F5e3D1679Fba0BcB7F983fC87"),
+    ("AutoSwapRouterBv3", "0x575f20F17b39220Bded0B3be4B6B42146645560a"),
+    ("AutoKeeperBv3", "0xF60Bb8318A95dCe44bA13B1d04Ffd9498e00f57d"),
+    ("AutoStrategyBv3", None),
+    ("AutoVaultBv3", None),
+    ("AutoStrategyManagerBv3", None),
+    ("LiquidSharesBv3", None),
+    ("ShareStakingBv3", None),
 ]
 
 

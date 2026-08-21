@@ -82,6 +82,17 @@ library LiquidityLibraryV4 {
     }
 
 
+    function currencyBalance(address currency, address account) internal view returns (uint256) {
+        if (currency == address(0)) return account.balance;
+        return IERC20(currency).balanceOf(account);
+    }
+
+    function nativeIn(PoolKey memory key, uint256 amount0, uint256 amount1) internal pure returns (uint256) {
+        if (key.currency0 == address(0)) return amount0;
+        if (key.currency1 == address(0)) return amount1;
+        return 0;
+    }
+
     function alignDown(int24 tick, int24 spacing) internal pure returns (int24) {
         int24 r = tick % spacing;
         return r == 0 ? tick : (tick < 0 ? tick - r - spacing : tick - r);
@@ -322,7 +333,10 @@ library LiquidityLibraryV4 {
         );
         params[1] = abi.encode(ctx.poolKey.currency0, ctx.poolKey.currency1);
 
-        ctx.posm.modifyLiquidities(
+        uint256 ethIn = nativeIn(ctx.poolKey, max0, max1);
+        uint256 have = address(this).balance;
+        if (ethIn > have) ethIn = have;
+        ctx.posm.modifyLiquidities{value: ethIn}(
             abi.encode(actions, params),
             block.timestamp + 300
         );
@@ -335,19 +349,23 @@ library LiquidityLibraryV4 {
         newTokenId     = mintedId;
         newLiquidity   = mintedLiq;
     }
+    /// @param amount0Max Cap for token0 (e.g. deployable); also capped to on-strategy balance.
+    /// @param amount1Max Cap for token1 (e.g. deployable); also capped to on-strategy balance.
     function increaseLiquidityInternal(
         PositionState storage ps,
         IncreaseContext memory ctx,
-        IERC20 token0,
-        IERC20 token1
+        uint256 amount0Max,
+        uint256 amount1Max
     ) internal returns (uint128 addedLiquidity) {
         if (ps.positionId == 0) return 0;
 
         (uint160 sqrtP, ) = getSlot0(ctx.poolManager, ctx.poolKey);
         (uint160 sqrtL, uint160 sqrtU) = getSqrtRatios(ps.tickLower, ps.tickUpper);
 
-        uint256 bal0 = token0.balanceOf(address(this));
-        uint256 bal1 = token1.balanceOf(address(this));
+        uint256 bal0 = currencyBalance(ctx.poolKey.currency0, address(this));
+        uint256 bal1 = currencyBalance(ctx.poolKey.currency1, address(this));
+        if (amount0Max < bal0) bal0 = amount0Max;
+        if (amount1Max < bal1) bal1 = amount1Max;
         if (bal0 < ctx.dust && bal1 < ctx.dust) return 0;
 
         uint128 liq = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
@@ -392,7 +410,10 @@ library LiquidityLibraryV4 {
         params[1] = abi.encode(ctx.poolKey.currency0);
         params[2] = abi.encode(ctx.poolKey.currency1);
 
-        ctx.posm.modifyLiquidities(
+        uint256 ethIn = nativeIn(ctx.poolKey, max0, max1);
+        uint256 have = address(this).balance;
+        if (ethIn > have) ethIn = have;
+        ctx.posm.modifyLiquidities{value: ethIn}(
             abi.encode(actions, params),
             block.timestamp + 1200
         );
@@ -410,8 +431,8 @@ library LiquidityLibraryV4 {
     ) internal returns (uint256 amount0, uint256 amount1) {
         if (ps.positionId == 0) return (0, 0);
 
-        uint256 bal0Before = IERC20(ctx.poolKey.currency0).balanceOf(recipient);
-        uint256 bal1Before = IERC20(ctx.poolKey.currency1).balanceOf(recipient);
+        uint256 bal0Before = currencyBalance(ctx.poolKey.currency0, recipient);
+        uint256 bal1Before = currencyBalance(ctx.poolKey.currency1, recipient);
 
         bytes memory actions = abi.encodePacked(
             ACTION_DECREASE_LIQUIDITY,
@@ -432,8 +453,8 @@ library LiquidityLibraryV4 {
             block.timestamp + 300
         );
 
-        amount0 = IERC20(ctx.poolKey.currency0).balanceOf(recipient) - bal0Before;
-        amount1 = IERC20(ctx.poolKey.currency1).balanceOf(recipient) - bal1Before;
+        amount0 = currencyBalance(ctx.poolKey.currency0, recipient) - bal0Before;
+        amount1 = currencyBalance(ctx.poolKey.currency1, recipient) - bal1Before;
     }
 
     function decreaseAllLiquidity(

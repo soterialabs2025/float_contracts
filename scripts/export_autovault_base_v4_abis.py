@@ -1,4 +1,4 @@
-"""Export Base AutoVault V4 ABIs into abis/8453-base/v4/auto-vault-v4/."""
+"""Export Base AutoVault BV4 ABIs into abis/8453-base/v4/auto-vault-v4/."""
 from __future__ import annotations
 
 import json
@@ -12,20 +12,16 @@ ARTIFACTS = ROOT / "artifacts"
 OUT = ROOT / "abis" / "8453-base" / "v4" / "auto-vault-v4"
 PINNED = ROOT / ".deploys" / "pinned-contracts" / "8453"
 
-# Live Base AutoVault V2/V4 stack from ADDRESSES_2.md
 CONTRACTS = [
-    ("AutoOperatorRegistry", "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8"),
-    ("AutoFactoryV2", "0x79166c4E766830c1ba4e7893d633901068Cd0bD9"),
-    ("AutoFactory", "0x623222FCFA9Fb59F450a9991Ff644B0b76d32195"),
-    ("AutoSwapRouter", "0x73fDB6Fc6C2F707cE93568998E94f8152909e7BC"),
-    ("AutoKeeper", "0xf99D6314cc03137732a0D749eC4E97bc64d0b0d3"),
-    ("AutoStrategyV2", None),
-    ("AutoVaultV2", None),
-    ("AutoStrategyManagerV2", None),
-    ("AutoLiquidToken", None),
-    ("AutoStrategy", None),
-    ("AutoVault", None),
-    ("AutoStrategyManager", None),
+    ("AutoOperatorRegistryBv4", "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8"),
+    ("AutoFactoryBv4", None),
+    ("AutoSwapRouterBv4", None),
+    ("AutoKeeperBv4", None),
+    ("AutoStrategyBv4", None),
+    ("AutoVaultBv4", None),
+    ("AutoStrategyManagerBv4", None),
+    ("LiquidSharesBv4", None),
+    ("ShareStakingBv4", None),
 ]
 
 
@@ -93,12 +89,6 @@ def main() -> int:
             "abiEntries": len(abi),
         }
         print(f"wrote {name} ({len(abi)})")
-        if address:
-            (PINNED / f"{address}.json").write_text(
-                json.dumps({"name": name, "address": address, "timestamp": ts, "abi": abi}, indent=2) + "\n",
-                encoding="utf-8",
-                newline="\n",
-            )
 
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
     print("done", OUT.relative_to(ROOT))

@@ -335,11 +335,15 @@ library LiquidityLibraryV4 {
         newTokenId     = mintedId;
         newLiquidity   = mintedLiq;
     }
+    /// @param amount0Max Cap for token0 (e.g. deployable); also capped to on-strategy balance.
+    /// @param amount1Max Cap for token1 (e.g. deployable); also capped to on-strategy balance.
     function increaseLiquidityInternal(
         PositionState storage ps,
         IncreaseContext memory ctx,
         IERC20 token0,
-        IERC20 token1
+        IERC20 token1,
+        uint256 amount0Max,
+        uint256 amount1Max
     ) internal returns (uint128 addedLiquidity) {
         if (ps.positionId == 0) return 0;
 
@@ -348,6 +352,8 @@ library LiquidityLibraryV4 {
 
         uint256 bal0 = token0.balanceOf(address(this));
         uint256 bal1 = token1.balanceOf(address(this));
+        if (amount0Max < bal0) bal0 = amount0Max;
+        if (amount1Max < bal1) bal1 = amount1Max;
         if (bal0 < ctx.dust && bal1 < ctx.dust) return 0;
 
         uint128 liq = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);

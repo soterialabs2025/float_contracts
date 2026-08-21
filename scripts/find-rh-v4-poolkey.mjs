@@ -9,10 +9,14 @@
  *   node scripts/find-rh-v4-poolkey.mjs <token> --json
  *   node scripts/find-rh-v4-poolkey.mjs <token> --no-md
  *   node scripts/find-rh-v4-poolkey.mjs <token> --md-out path/to/file.md
+ *   node scripts/find-rh-v4-poolkey.mjs --prune
+ *
+ * Keeps the 3 oldest Initialize events per token (by block) in console, JSON, and markdown.
  *
  * Env:
  *   ROBINHOOD_MAIN_RPC_URL  (preferred; falls back to public RH RPC)
  */
+
 import { createPublicClient, http, parseAbiItem, getAddress, isAddress } from "viem";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -30,6 +34,8 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const DEFAULT_RPC = "https://rpc.mainnet.chain.robinhood.com";
 const DEFAULT_MD = resolve(ROOT, "docs", "RH_V4_POOLKEYS.md");
 const DEFAULT_JSON = resolve(ROOT, "docs", "rh-v4-poolkeys.json");
+/** Oldest Initialize events per token (by block). */
+const MAX_POOLS_PER_TOKEN = 3;
 
 const initializeEvent = parseAbiItem(
   "event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)"
@@ -64,6 +70,7 @@ function parseArgs(argv) {
     writeMd: true,
     mdOut: DEFAULT_MD,
     jsonOut: DEFAULT_JSON,
+    pruneOnly: false,
   };
   const pos = [];
   for (let i = 0; i < argv.length; i++) {
@@ -71,6 +78,7 @@ function parseArgs(argv) {
     if (a === "--any-pair") args.anyPair = true;
     else if (a === "--json") args.json = true;
     else if (a === "--no-md") args.writeMd = false;
+    else if (a === "--prune") args.pruneOnly = true;
     else if (a === "--md-out") {
       const v = argv[++i];
       if (!v) throw new Error("--md-out needs a path");
@@ -84,6 +92,7 @@ function parseArgs(argv) {
     else if (a.startsWith("-")) throw new Error(`Unknown flag: ${a}`);
     else pos.push(a);
   }
+  if (args.pruneOnly) return args;
   if (pos.length !== 1 || !isAddress(pos[0])) {
     throw new Error(
       "Usage: node scripts/find-rh-v4-poolkey.mjs <tokenAddress> [--pair aeWETH|--any-pair] [--json] [--no-md] [--md-out path]"
@@ -172,6 +181,17 @@ function formatForContracts(key) {
   };
 }
 
+/** Default BandConfig: outer ±6 spacings, inner ±1 spacing (matches RhV4 960/160 for spacing 160). */
+function suggestedBandConfig(tickSpacing) {
+  const s = Math.abs(Number(tickSpacing)) || 160;
+  return {
+    rangeBelowTicks: 6 * s,
+    rangeAboveTicks: 6 * s,
+    innerBelowTicks: s,
+    innerAboveTicks: s,
+  };
+}
+
 function loadStore(jsonPath) {
   if (!existsSync(jsonPath)) {
     return { chainId: CHAIN_ID, poolManager: POOL_MANAGER, aeWeth: AE_WETH, updatedAt: null, pools: {} };
@@ -183,6 +203,35 @@ function loadStore(jsonPath) {
   } catch {
     return { chainId: CHAIN_ID, poolManager: POOL_MANAGER, aeWeth: AE_WETH, updatedAt: null, pools: {} };
   }
+}
+
+function sortPoolsOldestFirst(pools) {
+  return [...pools].sort((a, b) => {
+    const ba = BigInt(a.blockNumber || 0);
+    const bb = BigInt(b.blockNumber || 0);
+    if (ba !== bb) return ba < bb ? -1 : 1;
+    return String(a.poolId).localeCompare(String(b.poolId));
+  });
+}
+
+function takeOldest(pools, n = MAX_POOLS_PER_TOKEN) {
+  return sortPoolsOldestFirst(pools).slice(0, n);
+}
+
+function pruneStoreToOldestPerToken(store, n = MAX_POOLS_PER_TOKEN) {
+  const byToken = new Map();
+  for (const p of Object.values(store.pools || {})) {
+    const t = (p.token || "").toLowerCase();
+    if (!byToken.has(t)) byToken.set(t, []);
+    byToken.get(t).push(p);
+  }
+  const next = {};
+  for (const list of byToken.values()) {
+    for (const p of takeOldest(list, n)) {
+      next[p.poolId.toLowerCase()] = p;
+    }
+  }
+  store.pools = next;
 }
 
 function upsertPools(store, token, pair, pools, scannedAt) {
@@ -209,6 +258,7 @@ function upsertPools(store, token, pair, pools, scannedAt) {
     else updated++;
     store.pools[id] = entry;
   }
+  pruneStoreToOldestPerToken(store);
   store.updatedAt = scannedAt;
   store.chainId = CHAIN_ID;
   store.poolManager = POOL_MANAGER;
@@ -233,7 +283,9 @@ function renderMarkdown(store) {
   lines.push("");
   lines.push("Use with Float RH V4:");
   lines.push("- UFloat: `setV4PoolConfig(asset, poolKey, hookData)`");
-  lines.push("- AutoVault: `deployVaultPackage(asset, poolKey, hookData)`");
+  lines.push(
+    "- AutoVault: `deployVaultPackage(asset, poolKey, hookData, BandConfig)` — native ETH pairs (`currency0 = address(0)`, `currency1 = asset`). Band widths must be positive multiples of `tickSpacing`."
+  );
   lines.push("- Prefer ASSET/aeWETH keys; reject native ETH `address(0)`.");
   lines.push("");
   lines.push(`## Index (${entries.length})`);
@@ -282,6 +334,16 @@ function writeCollection(store, mdPath, jsonPath) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.pruneOnly) {
+    const store = loadStore(opts.jsonOut);
+    pruneStoreToOldestPerToken(store);
+    store.updatedAt = new Date().toISOString();
+    writeCollection(store, opts.mdOut, opts.jsonOut);
+    process.stderr.write(
+      `Pruned to ${MAX_POOLS_PER_TOKEN} oldest pools/token (${Object.keys(store.pools).length} total)\n`
+    );
+    return;
+  }
   const rpc = loadEnvRpc();
   const client = createPublicClient({
     transport: http(rpc, { timeout: 60_000 }),
@@ -311,7 +373,7 @@ async function main() {
   ]);
 
   const seen = new Set();
-  const pools = [];
+  let pools = [];
   for (const log of [...as0, ...as1]) {
     const { id, currency0, currency1, fee, tickSpacing, hooks, sqrtPriceX96, tick } = log.args;
     if (!currency0 || !currency1) continue;
@@ -333,7 +395,14 @@ async function main() {
       blockNumber: log.blockNumber?.toString?.() ?? String(log.blockNumber),
       warnings: warningsForKey(c0, c1),
       setV4PoolConfigArgs: [opts.token, poolKey, "0x"],
-      deployVaultPackageArgs: [opts.token, poolKey, "0x"],
+      // BandConfig: rangeBelow, rangeAbove, innerBelow, innerAbove (multiples of tickSpacing)
+      bandConfig: suggestedBandConfig(Number(tickSpacing)),
+      deployVaultPackageArgs: [
+        opts.token,
+        poolKey,
+        "0x",
+        suggestedBandConfig(Number(tickSpacing)),
+      ],
     });
   }
 
@@ -347,6 +416,8 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+
+  pools = takeOldest(pools);
 
   if (opts.writeMd) {
     const scannedAt = new Date().toISOString();
@@ -364,7 +435,7 @@ async function main() {
     return;
   }
 
-  console.log(`Found ${pools.length} pool(s):\n`);
+  console.log(`Found ${pools.length} pool(s) (oldest ${MAX_POOLS_PER_TOKEN} by Initialize block):\n`);
   for (const [i, p] of pools.entries()) {
     console.log(`--- #${i + 1} ---`);
     console.log(`poolId:      ${p.poolId}`);

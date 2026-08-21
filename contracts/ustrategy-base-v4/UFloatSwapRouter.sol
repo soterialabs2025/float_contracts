@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import {IERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -200,11 +200,11 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         _seed(0x00d7bc6a05a56655fb2052f742b012d1dfd66e1ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 3  EDGE
         _seed(0x0062abe92f50c518165a5c010fe59f35023197fba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
-        // 4  Litcoin (asset < WETH)
+        // 4  Litcoin
         _seed(0x00316ffb9c875f900adcf04889e415cc86b564eba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
-        // 5  LienFi (asset < WETH)
+        // 5  LienFi
         _seed(0x003722264ab15a1dfce5a5af89e6547f7949a8aba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
-        // 6  ClawBank (asset < WETH)
+        // 6  ClawBank
         _seed(0x0016332535e2c27da578bc2e82beb09ce9d3c8eb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 7  gitlawb
         _seed(0x005f980dcfc4c0fa3911554cf5ab288ed0eb13dba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
@@ -222,7 +222,7 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         _seed(0x0050d2280441372486beecdd328c1854743ebacb07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 14 Juno Agent
         _seed(0x004e6c9f48f73e54ee5f3ab7e2992b2d733d0d0b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
-        // 16 Darksol (asset < WETH)
+        // 16 Darksol
         _seed(0x0000cb1fbca324d51325a7264d54072bc073c28ba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 18 Doppel
         _seed(0x00f27b8ef47842e6445e37804896f1bc5e29381b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
@@ -242,17 +242,15 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         _seed(0x009ae5f51d81ff510bf961218f833f79d57bfbab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
         // 26 machines-cash
         _seed(0x007f6f8bb1aa8206921e80ab6abf1ac5737e39ab07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
-        // 27 Cody (asset < WETH)
+        // 27 Cody
         _seed(0x003977fc913db86b01a257232c568317798b903b07, 0x0034a45c6b61876d739400bd71228cbcbd4f53e8cc);
-       // 28 GitBank (asset < WETH)
-        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00b429d62f8f3bffb98cdb9569533ea23bf0ba28cc);
-        // 29 Supergemma4 (asset < WETH)
+        // 28 GitBank
+        _seed(0x00c21dd0ee043930711c2a3e55f39c7d3144d09b07, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
+        // 29 Supergemma4
         _seed(0x00572c4fa77623652411574c51b5ddb7e1b750aba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
-          // 30 grantr (asset < WETH)
+        // 30 grantr
         _seed(0x00753f2af0f46361c9ae6fc347797f99b0c9e82ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
-        // 31 wake (asset < WETH)
-        _seed(0x0050c2cc97c4f487aa0cd742ab4b6afe8b8511bba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
-          // 29 aeon (WETH < asset)
+        // 29 aeon (WETH < asset)
         _seed(0x00bf8e8f0e8866a7052f948c16508644347c57aba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
         // 30 Berry Finance (WETH < asset)
         _seed(0x00778d347b2ffbadf31a2a1be9cf42b4c7ba8b1ba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
@@ -264,8 +262,8 @@ contract UFloatSwapRouter is IUFloatV4StrategySwapRouter, IUnlockCallback, Ownab
         _seed(0x0061d91cff0fc9fbbdb89f505cf8a7422bf95fdba3, 0x00bdf938149ac6a781f94faa0ed45e6a0e984c6544);
         // 34 evo- (WETH < asset)
         _seed(0x00721b072dbb616f29eea73ac004e03fd4e884bba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
-          // 35 DOT (WETH < asset)
-        _seed(0x0023a2847d772803f9efc64b4277b782b06296fe51, 0x000000000000000000000000000000000000000000);
+        // 35 surplus- (WETH < asset)
+        _seed(0x00c52aedec3374422d7510e294cfaa90799595cba3, 0x00bb7784a4d481184283ed89619a3e3ed143e1adc0);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

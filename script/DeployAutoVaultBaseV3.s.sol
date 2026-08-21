@@ -4,11 +4,11 @@ pragma solidity ^0.8.20;
 import {Script, console2} from "forge-std/Script.sol";
 
 import {V3Deployments8453} from "../contracts/auto-vaults-base-v3/V3Deployments8453.sol";
-import {AutoSwapRouterV3} from "../contracts/auto-vaults-base-v3/AutoSwapRouterV3.sol";
-import {AutoKeeper} from "../contracts/auto-vaults-base-v3/AutoKeeper.sol";
-import {AutoFactoryV3} from "../contracts/auto-vaults-base-v3/AutoFactoryV3.sol";
+import {AutoSwapRouterBv3} from "../contracts/auto-vaults-base-v3/AutoSwapRouterBv3.sol";
+import {AutoKeeperBv3} from "../contracts/auto-vaults-base-v3/AutoKeeperBv3.sol";
+import {AutoFactoryBv3} from "../contracts/auto-vaults-base-v3/AutoFactoryBv3.sol";
 
-/// @notice Deploy Base Uniswap V3 AutoVault infra (8453).
+/// @notice Deploy Base Uniswap V3 AutoVault Bv3 infra (8453).
 /// @dev Reuses AutoOperatorRegistry + SoteriaFeeManager from V3Deployments8453.
 contract DeployAutoVaultBaseV3 is Script {
     function run() external {
@@ -20,20 +20,20 @@ contract DeployAutoVaultBaseV3 is Script {
 
         vm.startBroadcast(pk);
 
-        AutoSwapRouterV3 swapRouter = new AutoSwapRouterV3();
-        console2.log("AutoSwapRouterV3", address(swapRouter));
+        AutoSwapRouterBv3 swapRouter = new AutoSwapRouterBv3();
+        console2.log("AutoSwapRouterBv3", address(swapRouter));
 
-        AutoKeeper keeper = new AutoKeeper(registry);
-        console2.log("AutoKeeper", address(keeper));
+        AutoKeeperBv3 keeper = new AutoKeeperBv3(registry);
+        console2.log("AutoKeeperBv3", address(keeper));
 
-        AutoFactoryV3.InfraConfig memory infra = AutoFactoryV3.InfraConfig({
+        AutoFactoryBv3.InfraConfig memory infra = AutoFactoryBv3.InfraConfig({
             swapRouter: address(swapRouter),
             operatorRegistry: registry,
             keeper: address(keeper),
             feeManager: feeManager
         });
-        AutoFactoryV3 factory = new AutoFactoryV3(infra);
-        console2.log("AutoFactoryV3", address(factory));
+        AutoFactoryBv3 factory = new AutoFactoryBv3(infra);
+        console2.log("AutoFactoryBv3", address(factory));
 
         swapRouter.setStrategyFactory(address(factory));
         keeper.setStrategyFactory(address(factory));
