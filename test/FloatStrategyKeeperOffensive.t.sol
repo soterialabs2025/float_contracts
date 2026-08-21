@@ -6,18 +6,11 @@ import "forge-std/StdStorage.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../contracts/FloatStrategy.sol";
 
-/// @notice Documents behavior when `mode == OFFENSIVE` (enum value 2).
-/// @dev `_enterOffensive()` sets `mode = Mode.OFFENSIVE` before rebalancing/mint, then on success keeps
-///      OFFENSIVE, sets `baseTokenShareBps = offensiveTargetAssetBps`, clears floor/defensive anchors,
-///      bumps `consecutiveOffensiveCount`, and emits `StrategyEvent` type 11. On failure it calls
-///      `_enterDefensive()` (mode DEFENSIVE). OFFENSIVE shares LP rules with NORMAL via `_lpModeActive()`.
-///      Tests that force OFFENSIVE via `stdstore` cover keeper/deposit edges without full pool setup.
+/// @notice Documents OOR keeper edges when `mode == OFFENSIVE` without full v3 pool setup.
 contract FloatStrategyKeeperOffensiveTest is Test {
     using stdStorage for StdStorage;
 
-    /// @dev `LiquidityLibrary.PositionState liqPos` — first word is `positionId` (forge storage layout).
-    uint256 internal constant LIQ_POS_SLOT = 10;
-    /// @dev Base WETH — immutable on `FloatStrategy`; local anvil has no bytecode here unless forked.
+    uint256 internal constant LIQ_POS_SLOT = 14;
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
 
     FloatStrategy internal strat;
@@ -30,49 +23,30 @@ contract FloatStrategyKeeperOffensiveTest is Test {
 
     function setUp() public {
         strat = new FloatStrategy();
-        // Deliberately skip setUpContract: no pool/npm setup. positionId stays 0.
     }
 
-    function test_keeperCheck_OFFENSIVE_noPosition_entersDefensive() public {
+    function test_keeperCheck_OFFENSIVE_noPosition_noOp() public {
         stdstore.target(address(strat)).sig("mode()").checked_write(uint256(uint8(FloatStrategy.Mode.OFFENSIVE)));
 
-        assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.OFFENSIVE), "pre: OFFENSIVE");
-        assertEq(strat.getPositionId(), 0, "pre: no NFT position");
+        assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.OFFENSIVE));
+        assertEq(strat.getPositionId(), 0);
 
-        // Trailing floor: skipped (not NORMAL). _checkInRange: out of range + positionId==0 -> _enterDefensive.
         bool needUpkeep = strat.keeperCheck();
 
-        assertTrue(needUpkeep, "keeper returns true (outOfRange path + tokenShare short-circuit)");
-        assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.DEFENSIVE), "post: DEFENSIVE");
-        assertGt(strat.defensiveEnteredAt(), 0, "defensive timestamp set");
+        assertFalse(needUpkeep, "no position: keeper is no-op");
+        assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.OFFENSIVE));
     }
 
-    function test_keeperCheck_OFFENSIVE_noPosition_skipsTrailingFloor() public {
-        stdstore.target(address(strat)).sig("mode()").checked_write(uint256(uint8(FloatStrategy.Mode.OFFENSIVE)));
-        // If trailing floor ran with garbage baseline, these could drift; should stay 0 when not NORMAL.
-        assertEq(strat.baselineTick(), 0);
-        assertEq(strat.floorTick(), 0);
-
-        strat.keeperCheck();
-
-        // _checkTrailingPriceFloor early-outs; with positionId==0 it clears anchors (already 0).
-        assertEq(strat.baselineTick(), 0);
-        assertEq(strat.floorTick(), 0);
-    }
-
-    function test_keeperCheck_NORMAL_noPosition_entersDefensive_sameAsOffensiveForInRange() public {
-        // Baseline: NORMAL + no position behaves the same on the in-range branch.
+    function test_keeperCheck_NORMAL_noPosition_noOp() public {
         assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.NORMAL));
         assertEq(strat.getPositionId(), 0);
 
         bool needUpkeep = strat.keeperCheck();
 
-        assertTrue(needUpkeep);
-        assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.DEFENSIVE));
+        assertFalse(needUpkeep);
+        assertEq(uint256(strat.mode()), uint256(FloatStrategy.Mode.NORMAL));
     }
 
-    /// @notice After OFFENSIVE + no NFT, `deposit` still hits `_deposit` first (positionId check) and exits
-    ///         quietly when there are no idle tokens (no `StrategyEvent` 1).
     function test_deposit_OFFENSIVE_noPosition_idleEmpty_noop() public {
         _mockIdleBalancesZero();
         stdstore.target(address(strat)).sig("mode()").checked_write(uint256(uint8(FloatStrategy.Mode.OFFENSIVE)));
@@ -83,7 +57,6 @@ contract FloatStrategyKeeperOffensiveTest is Test {
         assertEq(strat.getPositionId(), 0);
     }
 
-    /// @notice OFFENSIVE + position routes like NORMAL into `_deposit()`; without npm/pool setup that reverts.
     function test_deposit_OFFENSIVE_withPosition_revertsWithoutFullSetup() public {
         stdstore.target(address(strat)).sig("mode()").checked_write(uint256(uint8(FloatStrategy.Mode.OFFENSIVE)));
         vm.store(address(strat), bytes32(LIQ_POS_SLOT), bytes32(uint256(1)));
@@ -94,8 +67,6 @@ contract FloatStrategyKeeperOffensiveTest is Test {
         strat.deposit(1);
     }
 
-    /// @notice OFFENSIVE + no position: `_harvest` exits early (no NFT), but `harvestBoolean` still returns
-    ///         `poolValue()` at the end — without `setUpContract` / pool, that final read reverts.
     function test_harvestBoolean_OFFENSIVE_noPosition_revertsOnPoolValueWithoutSetup() public {
         stdstore.target(address(strat)).sig("mode()").checked_write(uint256(uint8(FloatStrategy.Mode.OFFENSIVE)));
 

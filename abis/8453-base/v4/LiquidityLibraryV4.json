@@ -1,0 +1,45 @@
+{
+  "name": "LiquidityLibraryV4",
+  "address": null,
+  "chainId": 8453,
+  "version": "v4",
+  "profile": "ustrategy",
+  "timestamp": 1786826563402,
+  "abi": [
+    {
+      "type": "error",
+      "name": "BadTicks",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NoLiquidity",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "PoolNotInitialized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "SlippageTooHigh",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "SqrtOverflow",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "Uint128Overflow",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ZeroWidth",
+      "inputs": []
+    }
+  ]
+}

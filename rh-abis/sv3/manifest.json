@@ -1,0 +1,52 @@
+{
+  "chainId": 4663,
+  "product": "sv3",
+  "profile": "rh-sushi",
+  "contracts": {
+    "AutoOperatorRegistrySv3": {
+      "address": "0x7df1120a04D82eA92EA2d5AA005e3316B37b936E",
+      "artifact": "artifacts/AutoOperatorRegistrySv3.sol/AutoOperatorRegistrySv3.json",
+      "abiEntries": 14
+    },
+    "AutoFactorySv3": {
+      "address": "0xA8832320F183bac9C019048Fb7578009571E29ad",
+      "artifact": "artifacts/AutoFactorySv3.sol/AutoFactorySv3.json",
+      "abiEntries": 31
+    },
+    "AutoSwapRouterSv3": {
+      "address": "0x568dCA271e5F7edb9769f5eA6076e2DA8D4014e8",
+      "artifact": "artifacts/AutoSwapRouterSv3.sol/AutoSwapRouterSv3.json",
+      "abiEntries": 30
+    },
+    "AutoKeeperSv3": {
+      "address": "0x3Cb0A8c25356BF5764C4510A79458e73a6639372",
+      "artifact": "artifacts/AutoKeeperSv3.sol/AutoKeeperSv3.json",
+      "abiEntries": 28
+    },
+    "AutoStrategySv3": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategySv3.sol/AutoStrategySv3.json",
+      "abiEntries": 68
+    },
+    "AutoVaultSv3": {
+      "address": null,
+      "artifact": "artifacts/AutoVaultSv3.sol/AutoVaultSv3.json",
+      "abiEntries": 44
+    },
+    "AutoStrategyManagerSv3": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategyManagerSv3.sol/AutoStrategyManagerSv3.json",
+      "abiEntries": 29
+    },
+    "LiquidSharesSv3": {
+      "address": null,
+      "artifact": "artifacts/LiquidSharesSv3.sol/LiquidSharesSv3.json",
+      "abiEntries": 28
+    },
+    "ShareStakingSv3": {
+      "address": null,
+      "artifact": "artifacts/ShareStakingSv3.sol/ShareStakingSv3.json",
+      "abiEntries": 77
+    }
+  }
+}

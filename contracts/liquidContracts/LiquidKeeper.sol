@@ -84,7 +84,7 @@ contract LiquidKeeper is Ownable, ReentrancyGuard {
     // Keeper logic
     // -----------------------------
 
-    /// @notice Perform upkeep for a single strategy (by index in `watched`)
+    /// @notice Interval heartbeat + mode snapshot for a watched strategy (no on-chain `keeperCheck` call).
     /// @dev Anyone can call this
     function performUpkeep(uint256 id) external nonReentrant {
         require(id < watched.length, "bad id");
@@ -112,22 +112,9 @@ contract LiquidKeeper is Ownable, ReentrancyGuard {
 
         IOutOfRangeStrategy strat = IOutOfRangeStrategy(stratAddr);
 
-        // Check if we need to perform any action (may transition mode / set defensiveEnteredAt on the strategy)
-        bool keeperCheck = strat.keeperCheck();
-        
-        // If neither condition is met, no action needed
-        if (!keeperCheck) {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
-            return;
-        }
-
-        // Defensive recovery and idle paths run inside strategy _harvest. Strategy must authorize this keeper (keeperStratAddr).
-        try strat.harvestBoolean(true) returns (uint256) {
-        } catch {
-        }
-
+        // No `keeperCheck` on liquid `IOutOfRangeStrategy` — heartbeat: advance interval and emit current mode.
         ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
+        emit UpkeepPerformed(id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
     }
 
     /// @notice Batch version to allow keepers to touch many strategies in one tx
@@ -143,11 +130,12 @@ contract LiquidKeeper is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Harvest a strategy (by index in `watched`)
+    /// @notice Touch a strategy (by index in `watched`): interval heartbeat + mode snapshot (no strategy hook).
     /// @dev Anyone can call this
     /// @param id Strategy index in watched array
-    /// @param skipIncreaseLiquidity Whether to skip increasing liquidity after harvest
+    /// @param skipIncreaseLiquidity Unused; kept for ABI compatibility with callers
     function performHarvest(uint256 id, bool skipIncreaseLiquidity) external nonReentrant {
+        (skipIncreaseLiquidity);
         require(id < watched.length, "bad id");
 
         WatchedStrategy storage ws = watched[id];
@@ -173,13 +161,7 @@ contract LiquidKeeper is Ownable, ReentrancyGuard {
 
         IOutOfRangeStrategy strat = IOutOfRangeStrategy(stratAddr);
 
-        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {
-        } catch {
-            emit UpkeepPerformed(id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
-            return;
-        }
-
         ws.lastAction = uint32(block.timestamp);
-        emit UpkeepPerformed(id, stratAddr, msg.sender, true, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
+        emit UpkeepPerformed(id, stratAddr, msg.sender, false, strat.mode(), strat.consecutiveOffensiveCount(), strat.defensiveEnteredAt());
     }
 }

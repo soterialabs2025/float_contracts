@@ -1,0 +1,57 @@
+{
+  "chainId": 4663,
+  "product": "rhv3",
+  "profile": "rh-v3",
+  "contracts": {
+    "AutoOperatorRegistryRhV3": {
+      "address": "0x7df1120a04D82eA92EA2d5AA005e3316B37b936E",
+      "artifact": "artifacts/AutoOperatorRegistryRhV3.sol/AutoOperatorRegistryRhV3.json",
+      "abiEntries": 14
+    },
+    "AutoFactoryRhV3": {
+      "address": "0xe84eddEA07f31535201aD826235fA49Cd7b44e07",
+      "artifact": "artifacts/AutoFactoryRhV3.sol/AutoFactoryRhV3.json",
+      "abiEntries": 31
+    },
+    "AutoSwapRouterRhV3": {
+      "address": "0x8A8c18445792e04e8512D5c6CD680331F9575a3F",
+      "artifact": "artifacts/AutoSwapRouterRhV3.sol/AutoSwapRouterRhV3.json",
+      "abiEntries": 27
+    },
+    "AutoKeeperRhV3": {
+      "address": "0xD35CE6610AcB37D545bb5ec4192fC50505Dd26Ad",
+      "artifact": "artifacts/AutoKeeperRhV3.sol/AutoKeeperRhV3.json",
+      "abiEntries": 28
+    },
+    "SoteriaFeeManagerRhV3": {
+      "address": "0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE",
+      "artifact": "artifacts/SoteriaFeeManagerRhV3.sol/SoteriaFeeManagerRhV3.json",
+      "abiEntries": 52
+    },
+    "AutoStrategyRhV3": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategyRhV3.sol/AutoStrategyRhV3.json",
+      "abiEntries": 68
+    },
+    "AutoVaultRhV3": {
+      "address": null,
+      "artifact": "artifacts/AutoVaultRhV3.sol/AutoVaultRhV3.json",
+      "abiEntries": 44
+    },
+    "AutoStrategyManagerRhV3": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategyManagerRhV3.sol/AutoStrategyManagerRhV3.json",
+      "abiEntries": 29
+    },
+    "LiquidSharesRhV3": {
+      "address": null,
+      "artifact": "artifacts/LiquidSharesRhV3.sol/LiquidSharesRhV3.json",
+      "abiEntries": 28
+    },
+    "ShareStakingRhV3": {
+      "address": null,
+      "artifact": "artifacts/ShareStakingRhV3.sol/ShareStakingRhV3.json",
+      "abiEntries": 77
+    }
+  }
+}

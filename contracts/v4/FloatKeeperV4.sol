@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./interfaces/IOutOfRangeStrategyV4.sol";
+import "./interfaces/IFloatV4ContractManager.sol";
+import "./interfaces/IFloatVaultV4.sol";
+
+/// @title FloatKeeperV4
+/// @notice Same keeper/orchestration as `FloatKeeper`, wired to `FloatVaultV4` via manager key `FloatVaultV4`.
+/// @dev Batch upkeep uses an internal helper (not `try this.performUpkeep`) so the 63/64 external-call gas
+///      rule cannot OOG a real OOR remint while estimateGas / wallets treat the batch as a cheap no-op.
+contract FloatKeeperV4 is Ownable, ReentrancyGuard {
+    /// @dev Must match `FloatStrategyV4.Mode`: 3 = NEUTRAL, 4 = STABLE (WETH-only idle).
+    uint8 private constant MODE_NEUTRAL = 3;
+    uint8 private constant MODE_STABLE = 4;
+
+    struct WatchedStrategy {
+        address stratAddr;
+        uint32 minInterval;
+        uint32 lastAction;
+        bool active;
+    }
+
+    WatchedStrategy[] public watched;
+
+    address public demeterAddr;
+    address public _managerAddr;
+    IFloatV4ContractManager public manager;
+
+    error Unauthorized();
+    event StrategyAdded(address indexed stratAddr, uint32 minInterval);
+    event StrategyUpdated(address indexed stratAddr);
+    event StrategyRemoved(address indexed stratAddr, uint256 indexed id);
+    event VaultPoolValueSnapshot(address indexed vault, address indexed caller);
+
+    constructor(address _managerAddress) Ownable(msg.sender) {
+        _managerAddr = _managerAddress;
+        manager = IFloatV4ContractManager(_managerAddress);
+        demeterAddr = manager.getAddress("Demeter");
+    }
+
+    modifier onlyAuthorized() {
+        address s = _msgSender();
+        if (s != demeterAddr && s != _managerAddr && s != owner()) revert Unauthorized();
+        _;
+    }
+
+    function snapshotVaultPoolValue() external onlyAuthorized nonReentrant {
+        address vaultAddr = manager.getAddress("FloatVaultV4");
+        require(vaultAddr != address(0), "vault=0");
+        IFloatVaultV4(vaultAddr).recordPoolValueSnapshot();
+        emit VaultPoolValueSnapshot(vaultAddr, _msgSender());
+    }
+
+    function addStrategy(address strat, uint32 minInterval) external onlyAuthorized returns (uint256 id) {
+        require(strat != address(0), "zero strat");
+        watched.push(WatchedStrategy({stratAddr: strat, minInterval: minInterval, lastAction: 0, active: true}));
+        id = watched.length - 1;
+        emit StrategyAdded(strat, minInterval);
+    }
+
+    function updateStrategy(uint256 id, bool active, uint32 minInterval) external onlyAuthorized {
+        require(id < watched.length, "bad id");
+        WatchedStrategy storage ws = watched[id];
+        ws.active = active;
+        ws.minInterval = minInterval;
+        emit StrategyUpdated(ws.stratAddr);
+    }
+
+    function removeStrategy(uint256 id) external onlyAuthorized {
+        require(id < watched.length, "bad id");
+        address removed = watched[id].stratAddr;
+        uint256 last = watched.length - 1;
+        if (id != last) {
+            watched[id] = watched[last];
+        }
+        watched.pop();
+        emit StrategyRemoved(removed, id);
+    }
+
+    function strategiesLength() external view returns (uint256) {
+        return watched.length;
+    }
+
+    function performUpkeep(uint256 id) external nonReentrant {
+        require(id < watched.length, "bad id");
+        _performUpkeep(id);
+    }
+
+    /// @notice Batch upkeep. Invalid ids are skipped; strategy work runs in-process (full gas).
+    function performUpkeepBatch(uint256[] calldata ids) external nonReentrant {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _performUpkeep(ids[i]);
+        }
+    }
+
+    function _performUpkeep(uint256 id) internal {
+        WatchedStrategy storage ws = watched[id];
+        address stratAddr = ws.stratAddr;
+
+        if (!ws.active || stratAddr == address(0)) {
+            return;
+        }
+
+        uint32 lastAction = ws.lastAction;
+        uint32 minInterval = ws.minInterval;
+        if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
+            return;
+        }
+
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
+
+        uint8 strategyMode = strat.mode();
+        if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
+            return;
+        }
+
+        // OOR remint / mode transitions happen inside keeperCheck.
+        if (!strat.keeperCheck()) {
+            return;
+        }
+
+        // Fee collect is via `performHarvest` on a separate cadence — not every upkeep.
+        ws.lastAction = uint32(block.timestamp);
+    }
+
+    function performHarvest(uint256 id, bool skipIncreaseLiquidity) external nonReentrant {
+        require(id < watched.length, "bad id");
+        _performHarvest(id, skipIncreaseLiquidity);
+    }
+
+    function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity) external nonReentrant {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _performHarvest(ids[i], skipIncreaseLiquidity);
+        }
+    }
+
+    function _performHarvest(uint256 id, bool skipIncreaseLiquidity) internal {
+        WatchedStrategy storage ws = watched[id];
+        address stratAddr = ws.stratAddr;
+
+        if (!ws.active || stratAddr == address(0)) {
+            return;
+        }
+
+        uint32 lastAction = ws.lastAction;
+        uint32 minInterval = ws.minInterval;
+        if (lastAction != 0 && minInterval > 0 && uint32(block.timestamp) < lastAction + minInterval) {
+            return;
+        }
+
+        IOutOfRangeStrategyV4 strat = IOutOfRangeStrategyV4(stratAddr);
+
+        uint8 strategyMode = strat.mode();
+        if (strategyMode == MODE_NEUTRAL || strategyMode == MODE_STABLE) {
+            return;
+        }
+
+        try strat.harvestBoolean(skipIncreaseLiquidity) returns (uint256) {} catch {
+            return;
+        }
+
+        ws.lastAction = uint32(block.timestamp);
+    }
+}

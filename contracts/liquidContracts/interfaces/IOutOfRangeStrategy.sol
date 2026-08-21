@@ -9,6 +9,4 @@ interface IOutOfRangeStrategy {
     function consecutiveOffensiveCount() external view returns (uint256);
     /// @return Unix time when strategy entered DEFENSIVE (0 if not defensive or unsupported)
     function defensiveEnteredAt() external view returns (uint256);
-    function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256 newAssets);
-    function keeperCheck() external returns (bool);
 }

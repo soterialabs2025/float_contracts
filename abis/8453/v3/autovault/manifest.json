@@ -1,0 +1,53 @@
+{
+  "chainId": 8453,
+  "version": "v3",
+  "product": "autovault",
+  "profile": "base-v3",
+  "contracts": {
+    "AutoOperatorRegistry": {
+      "address": "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8",
+      "artifact": "artifacts/auto-vaults-base-v3/AutoOperatorRegistry.sol/AutoOperatorRegistry.json",
+      "abiEntries": 14
+    },
+    "AutoFactoryV3": {
+      "address": "0xc8f9126c289df82F5e3D1679Fba0BcB7F983fC87",
+      "artifact": "artifacts/AutoFactoryV3.sol/AutoFactoryV3.json",
+      "abiEntries": 31
+    },
+    "AutoSwapRouterV3": {
+      "address": "0x575f20F17b39220Bded0B3be4B6B42146645560a",
+      "artifact": "artifacts/AutoSwapRouterV3.sol/AutoSwapRouterV3.json",
+      "abiEntries": 27
+    },
+    "AutoKeeper": {
+      "address": "0xF60Bb8318A95dCe44bA13B1d04Ffd9498e00f57d",
+      "artifact": "artifacts/auto-vaults-base-v3/AutoKeeper.sol/AutoKeeper.json",
+      "abiEntries": 28
+    },
+    "AutoStrategyV3": {
+      "address": null,
+      "artifact": "artifacts/AutoStrategyV3.sol/AutoStrategyV3.json",
+      "abiEntries": 68
+    },
+    "AutoVaultV3": {
+      "address": null,
+      "artifact": "artifacts/AutoVaultV3.sol/AutoVaultV3.json",
+      "abiEntries": 44
+    },
+    "AutoStrategyManagerV2": {
+      "address": null,
+      "artifact": "artifacts/auto-vaults-base-v3/AutoStrategyManagerV2.sol/AutoStrategyManagerV2.json",
+      "abiEntries": 29
+    },
+    "LiquidShares": {
+      "address": null,
+      "artifact": "artifacts/auto-vaults-base-v3/LiquidShares.sol/LiquidShares.json",
+      "abiEntries": 28
+    },
+    "ShareStaking": {
+      "address": null,
+      "artifact": "artifacts/auto-vaults-base-v3/ShareStaking.sol/ShareStaking.json",
+      "abiEntries": 72
+    }
+  }
+}

@@ -24,7 +24,7 @@ contract LiquidVault is Ownable, ReentrancyGuard, Pausable {
   IERC20 public asset;
   IERC20 public weth;
   ILiquidStrategy public strategy;
-  LiquidLiquidToken public liquidToken;
+  LiquidToken public liquidToken;
   IContractManager public immutable _manager;
   ISwapRouter public swapRouter;
 
@@ -62,7 +62,7 @@ contract LiquidVault is Ownable, ReentrancyGuard, Pausable {
     strategy = ILiquidStrategy(strategyAddr);
     asset = IERC20(assetAddress);
     weth = IERC20(WETH_ADDR);
-    liquidToken = LiquidLiquidToken(liquidTokenAddress);
+    liquidToken = LiquidToken(liquidTokenAddress);
     if (swapRouterAddr != address(0)) {
       swapRouter = ISwapRouter(swapRouterAddr);
     }

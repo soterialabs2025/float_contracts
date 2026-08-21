@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+/// @notice Shared operator allowlist for AutoKeeperSv3 wallet sharding.
+interface IAutoOperatorRegistrySv3 {
+    function isOperator(address account) external view returns (bool);
+}
