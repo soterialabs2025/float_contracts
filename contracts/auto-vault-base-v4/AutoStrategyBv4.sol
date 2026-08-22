@@ -31,8 +31,8 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
 
     error E();
 
-    address private feeManager;
-    address private shareStaking;
+    address private _feeManager;
+    address private _shareStaking;
     address public immutable factory;
     IPositionManagerV4 public immutable positionManager;
     IPoolManagerV4 private immutable poolManager;
@@ -49,7 +49,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     address public vault;
     address public keeper;
     bool public watched;
-    bool private bootstrapped;
+    bool private _bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
 
@@ -65,6 +65,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     uint256 public reservedAsset;
     uint256 public reservedWeth;
 
+    /// @notice Sets the factory and Base (8453) Uniswap v4 immutables; package wiring happens in `bootstrap`.
     constructor(address factory_) AutoStrategyManagerBv4() {
         factory = factory_;
         WETH = IERC20(V4Deployments8453.WETH);
@@ -85,7 +86,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         LiquidityLibraryV4.PoolKey calldata key,
         bytes calldata hookData_
     ) external {
-        if (bootstrapped) revert E();
+        if (_bootstrapped) revert E();
         if (msg.sender != factory) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0)
@@ -103,15 +104,15 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         swapRouter = IAutoSwapRouterBv4(swapRouter_);
         operatorRegistry = IAutoOperatorRegistryBv4(operatorRegistry_);
         keeper = keeper_;
-        feeManager = feeManager_;
-        shareStaking = shareStaking_;
+        _feeManager = feeManager_;
+        _shareStaking = shareStaking_;
         _asset = IERC20(asset_);
         _poolKey = key;
         _hookData = hookData_;
         if (key.tickSpacing > 0) tickSpacing = key.tickSpacing;
         _initAutoDefaults();
         if (key.tickSpacing > 0) tickSpacing = key.tickSpacing;
-        bootstrapped = true;
+        _bootstrapped = true;
         _giveAllowances();
         _transferOwnership(owner_);
     }
@@ -151,14 +152,14 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         if (amount == 0) return;
         uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
         uint256 toFeeManager = amount - toStaking;
-        if (toStaking > 0 && shareStaking != address(0)) {
-            IERC20(token).safeTransfer(shareStaking, toStaking);
-            try IShareStakingBv4(shareStaking).notifyReward(token, toStaking) {}
+        if (toStaking > 0 && _shareStaking != address(0)) {
+            IERC20(token).safeTransfer(_shareStaking, toStaking);
+            try IShareStakingBv4(_shareStaking).notifyReward(token, toStaking) {}
             catch {}
         } else if (toStaking > 0) {
             toFeeManager += toStaking;
         }
-        if (toFeeManager > 0) IERC20(token).safeTransfer(feeManager, toFeeManager);
+        if (toFeeManager > 0) IERC20(token).safeTransfer(_feeManager, toFeeManager);
     }
 
     function poolKey() external view override returns (LiquidityLibraryV4.PoolKey memory) {
@@ -275,11 +276,14 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
 
         uint256 idleAssetBefore = _asset.balanceOf(address(this));
         uint256 idleWethBefore = WETH.balanceOf(address(this));
+        // Share of liquidity units — avoids spot-priced LP exit sizing (H001).
         if (liqPos.positionId != 0) {
-            uint256 poolVal = _poolValueOnly();
-            if (poolVal > 0) {
-                uint256 amountFromPool = Math.mulDiv(poolVal, userShares, totalSupply_);
-                if (amountFromPool > 0) _decreaseLiquidity(amountFromPool);
+            uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
+            if (liquidity > 0) {
+                uint256 liqToRemove = Math.mulDiv(uint256(liquidity), userShares, totalSupply_);
+                if (liqToRemove == 0 && userShares > 0) liqToRemove = 1;
+                if (liqToRemove > liquidity) liqToRemove = liquidity;
+                _decreaseLiquidityInternal(uint128(liqToRemove), false);
             }
         }
         uint256 assetAfter = _asset.balanceOf(address(this));
@@ -306,8 +310,8 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         uint256 wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
         totalUserAsset -= assetFee;
         totalUserWeth -= wethFee;
-        if (assetFee > 0) _asset.safeTransfer(feeManager, assetFee);
-        if (wethFee > 0) WETH.safeTransfer(feeManager, wethFee);
+        if (assetFee > 0) _asset.safeTransfer(_feeManager, assetFee);
+        if (wethFee > 0) WETH.safeTransfer(_feeManager, wethFee);
 
         if (outToken == WithdrawToken.WETH) {
             if (totalUserAsset > 0) {
@@ -554,12 +558,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         _decreaseLiquidityInternal(0, true);
     }
 
-    function _decreaseLiquidity(uint256 amount) internal {
-        uint256 liqToRemove = _calculateLiquidityToRemove(amount);
-        if (liqToRemove == 0) return;
-        _decreaseLiquidityInternal(uint128(liqToRemove), false);
-    }
-
     function _decreaseLiquidityInternal(uint128 liquidityToRemove, bool removeAll) internal {
         if (liqPos.positionId == 0) return;
         LiquidityLibraryV4.DecreaseContext memory ctx = LiquidityLibraryV4.DecreaseContext({
@@ -575,6 +573,8 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
             }
         } else {
             if (liquidityToRemove == 0) return;
+            // Skim protocolFeeBps / reserveBps before principal exit (parity with `_decreaseAllLiquidity`).
+            _collectAllFees(true);
             liqPos.decreaseLiquidityByAmount(ctx, liquidityToRemove);
         }
         _collectAllFees(false);
@@ -595,37 +595,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         liqAdded = liqPos.increaseLiquidityInternal(
             ctx, IERC20(_poolKey.currency0), IERC20(_poolKey.currency1), amount0, amount1
         );
-    }
-
-    function _calculateLiquidityToRemove(uint256 amountWeth) internal view returns (uint256) {
-        if (liqPos.positionId == 0) return 0;
-        uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
-        if (liquidity == 0 || amountWeth == 0) return 0;
-
-        (uint160 sqrtP,) = _readSlot0();
-        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) =
-            LiquidityLibraryV4.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
-        (uint256 amount0, uint256 amount1) =
-            LiquidityLibraryV4.getAmountsForLiquidity(sqrtP, sqrtLowerX96, sqrtUpperX96, liquidity);
-
-        address p0 = _poolKey.currency0;
-        (uint256 assetAmt, uint256 wethAmt) =
-            p0 == address(WETH) ? (amount1, amount0) : (amount0, amount1);
-        uint256 p = _spotPrice1e18();
-        uint256 assetAsWeth = p != 0 ? Math.mulDiv(assetAmt, 1e18, p) : 0;
-        uint256 totalValue = wethAmt + assetAsWeth;
-        if (totalValue == 0) return 0;
-
-        uint256 proportion = Math.mulDiv(amountWeth, 1e18, totalValue);
-        if (proportion > 1e18) proportion = 1e18;
-        uint256 targetTokenAmt = Math.mulDiv(assetAmt, proportion, 1e18);
-        uint256 targetWethAmt = Math.mulDiv(wethAmt, proportion, 1e18);
-        (uint256 bal0, uint256 bal1) =
-            p0 == address(WETH) ? (targetWethAmt, targetTokenAmt) : (targetTokenAmt, targetWethAmt);
-        uint128 liqNeeded =
-            LiquidityLibraryV4.getLiquidityForAmounts(sqrtP, sqrtLowerX96, sqrtUpperX96, bal0, bal1);
-        if (liqNeeded > liquidity) return liquidity;
-        return liqNeeded;
     }
 
     function _getTokenBalances() internal view returns (uint256 assetBal, uint256 wethBal) {
@@ -703,7 +672,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
             LiquidityLibraryV4.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
         (uint256 amount0, uint256 amount1) =
             LiquidityLibraryV4.getAmountsForLiquidity(sqrtPriceX96, sqrtLowerX96, sqrtUpperX96, liquidity);
-        return _poolKey.currency0 == address(WETH) ? (amount1, amount0) : (amount0, amount1);
+        (assetAmt, wethAmt) = _poolKey.currency0 == address(WETH) ? (amount1, amount0) : (amount0, amount1);
     }
 
     function _giveAllowances() internal {

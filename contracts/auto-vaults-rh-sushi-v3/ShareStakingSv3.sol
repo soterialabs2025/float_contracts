@@ -367,17 +367,6 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
         emit Claimed(msg.sender, type(uint256).max, amount);
     }
 
-    /// @notice Rescue tokens not owed to stakers/owner-cut (failed ASSET swaps, dust, airdrops).
-    function rescueToken(address token, address to, uint256 amount) external onlyOwner {
-        if (to == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (token == address(weth)) {
-            uint256 bal = weth.balanceOf(address(this));
-            if (bal < accountedWeth || amount > bal - accountedWeth) revert InsufficientRescuable();
-        }
-        IERC20(token).safeTransfer(to, amount);
-    }
-
     /// @notice Retry converting stranded ASSET rewards into WETH for the active epoch.
     function retryAssetRewardSwap(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert ZeroAmount();

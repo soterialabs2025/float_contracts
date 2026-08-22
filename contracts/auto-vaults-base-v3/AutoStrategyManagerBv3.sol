@@ -14,20 +14,20 @@ contract AutoStrategyManagerBv3 is Ownable {
     uint256 public targetAssetBps = 5000;
 
     int24 public tickSpacing = 200;
-    uint256 public rangeBelowTicks = 1000;
-    uint256 public rangeAboveTicks = 1000;
-    uint256 public innerBelowTicks = 800;
-    uint256 public innerAboveTicks = 800;
+    uint256 public rangeBelowTicks = 800;
+    uint256 public rangeAboveTicks = 800;
+    uint256 public innerBelowTicks = 600;
+    uint256 public innerAboveTicks = 600;
 
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
-    uint256 public withdrawalFeeBps = 50;
+    uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to `feeManager` (default 500 = 5%).
-    uint256 public protocolFeeBps = 500;
+    uint256 public protocolFeeBps = 600;
     /// @notice Share of post-protocol deposit/fee capital kept idle as reserve (default 5000 = 50%).
     uint256 public reserveBps = 5000;
-    /// @notice Share of protocolFeeBps proceeds sent to ShareStakingBv3 (rest to feeManager). Default 75%.
-    uint256 public stakingShareBps = 7500;
+    /// @notice Share of protocolFeeBps proceeds sent to ShareStaking (rest to feeManager). Default 50%.
+    uint256 public stakingShareBps = 5000;
     /// @notice True after TBA/post-transfer owner calls `setStakingShareBps` once; cannot change again.
     bool public stakingShareBpsLocked;
 
@@ -63,17 +63,17 @@ contract AutoStrategyManagerBv3 is Ownable {
 
     function _initAutoDefaults() internal {
         tickSpacing = 200;
-        rangeBelowTicks = 1000;
-        rangeAboveTicks = 1000;
-        innerBelowTicks = 200;
-        innerAboveTicks = 200;
+        rangeBelowTicks = 800;
+        rangeAboveTicks = 800;
+        innerBelowTicks = 600;
+        innerAboveTicks = 600;
         slippageBps = 100;
         minHarvestDelay = 2 hours;
-        withdrawalFeeBps = 50;
-        protocolFeeBps = 500;
+        withdrawalFeeBps = 100;
+        protocolFeeBps = 600;
         reserveBps = 5000;
         targetAssetBps = 5000;
-        stakingShareBps = 7500;
+        stakingShareBps = 5000;
         stakingShareBpsLocked = false;
     }
 

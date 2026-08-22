@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -19,7 +18,7 @@ interface IWETH is IERC20 {
 
 /// @title AutoVaultBv4
 /// @notice Base (8453) AutoVault: ETH-only deposits, LiquidSharesBv4 + ShareStakingBv4 package, ownership lock.
-contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
+contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
     using SafeERC20 for IERC20;
 
     IWETH public immutable weth;
@@ -27,15 +26,15 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
     ILiquidSharesBv4 public liquidShares;
     address public shareStaking;
     IERC20 public asset;
-    address public factory;
+    address public immutable factory;
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
     PoolValueSnapshot[] private _poolValueSnapshots;
 
     event Deposit(address indexed user, uint256 wethNotional, uint256 shares);
-    event Withdraw(address indexed user, uint256 shares, bool asAsset, uint256 outAmount);
-    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp);
+    event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount);
+    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
     event OwnershipLocked(address indexed owner);
 
     error Unauthorized();
@@ -45,7 +44,10 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
     error NotBootstrapped();
     error OwnershipIsLocked();
 
-    constructor() Ownable(msg.sender) {
+    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
         weth = IWETH(V4Deployments8453.WETH);
     }
 
@@ -62,13 +64,13 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
         address asset_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || strategy_ == address(0) || liquidShares_ == address(0)
                 || shareStaking_ == address(0) || asset_ == address(0)
         ) {
             revert ZeroAddress();
         }
-        factory = msg.sender;
         strategy = IAutoStrategyBv4(strategy_);
         liquidShares = ILiquidSharesBv4(liquidShares_);
         shareStaking = shareStaking_;
@@ -133,7 +135,7 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
         return liquidShares.totalSupply();
     }
 
-    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
+    function depositETH() external payable override nonReentrant returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         weth.deposit{value: msg.value}();
         return _mintSharesAndDeploy(msg.value);
@@ -146,6 +148,8 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
         strategy.deposit(amount);
         uint256 navAfter = balance();
         uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
+        // Cap to deposited WETH so spot/NAV jumps between reads cannot overmint shares (V-NAV-MINT).
+        if (credited > amount) credited = amount;
         shares = _sharesForDeposit(credited, navBefore);
         if (shares == 0) revert ZeroValue();
         liquidShares.mint(msg.sender, shares);
@@ -157,7 +161,7 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultBv4 {
         return supply == 0 || navBefore == 0 ? amount : Math.mulDiv(amount, supply, navBefore);
     }
 
-    function withdraw(uint256 shares, bool asAsset) external override nonReentrant whenNotPaused returns (uint256) {
+    function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
         if (shares == 0 || totalSupply() == 0 || shares > balanceOf(msg.sender)) revert ZeroValue();
         IAutoStrategyBv4.WithdrawToken out =
             asAsset ? IAutoStrategyBv4.WithdrawToken.ASSET : IAutoStrategyBv4.WithdrawToken.WETH;

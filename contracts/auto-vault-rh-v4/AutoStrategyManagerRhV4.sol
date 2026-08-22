@@ -30,13 +30,13 @@ contract AutoStrategyManagerRhV4 is Ownable {
 
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
-    uint256 public withdrawalFeeBps = 50;
+    uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to protocol peel (default 500 = 5%).
-    uint256 public protocolFeeBps = 500;
+    uint256 public protocolFeeBps = 600;
     /// @notice Share of post-protocol deposit/fee capital kept idle as reserve (default 5000 = 50%).
     uint256 public reserveBps = 5000;
-    /// @notice Share of protocolFeeBps proceeds sent to ShareStakingRhV4 (rest to feeManager). Default 75%.
-    uint256 public stakingShareBps = 7500;
+    /// @notice Share of protocolFeeBps proceeds sent to ShareStaking (rest to feeManager). Default 50%.
+    uint256 public stakingShareBps = 5000;
     /// @notice True after TBA/post-transfer owner calls `setStakingShareBps` once; cannot change again.
     bool public stakingShareBpsLocked;
 
@@ -73,15 +73,15 @@ contract AutoStrategyManagerRhV4 is Ownable {
         tickSpacing = 160;
         rangeBelowTicks = 960;
         rangeAboveTicks = 960;
-        innerBelowTicks = 160;
-        innerAboveTicks = 160;
+        innerBelowTicks = 780;
+        innerAboveTicks = 780;
         slippageBps = 100;
         minHarvestDelay = 2 hours;
-        withdrawalFeeBps = 50;
-        protocolFeeBps = 500;
+        withdrawalFeeBps = 100;
+        protocolFeeBps = 600;
         reserveBps = 5000;
         targetAssetBps = 5000;
-        stakingShareBps = 7500;
+        stakingShareBps = 5000;
         stakingShareBpsLocked = false;
     }
 

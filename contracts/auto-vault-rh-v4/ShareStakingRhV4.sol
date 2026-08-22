@@ -371,22 +371,7 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         if (!ok) revert ZeroAmount();
         emit Claimed(msg.sender, type(uint256).max, amount);
     }
-
-    /// @notice Rescue tokens not owed to stakers/owner-cut (failed ASSET swaps, dust, airdrops).
-    /// @dev Native ETH (`token == address(0)`) may only skim surplus above `accountedWeth`.
-    function rescueToken(address token, address to, uint256 amount) external onlyOwner {
-        if (to == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (token == address(0)) {
-            uint256 bal = address(this).balance;
-            if (bal < accountedWeth || amount > bal - accountedWeth) revert InsufficientRescuable();
-            (bool ok,) = to.call{value: amount}("");
-            if (!ok) revert ZeroAmount();
-            return;
-        }
-        IERC20(token).safeTransfer(to, amount);
-    }
-
+    
     function retryAssetRewardSwap(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();

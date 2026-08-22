@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libraries/LiquidityLibraryV4.sol";
 import "../v4/V4Deployments8453.sol";
 import "./AutoStrategyBv4.sol";
@@ -15,7 +16,7 @@ import "./interfaces/IAutoOperatorRegistryBv4.sol";
 
 /// @title AutoFactoryBv4
 /// @notice Base (8453) deploys AutoStrategyBv4 + AutoVaultBv4 + LiquidSharesBv4 + ShareStakingBv4 packages.
-contract AutoFactoryBv4 is Ownable {
+contract AutoFactoryBv4 is Ownable, ReentrancyGuard {
     using Clones for address;
 
     struct InfraConfig {
@@ -68,19 +69,23 @@ contract AutoFactoryBv4 is Ownable {
     );
     event VaultRegistryUpdated(address indexed asset, address strategy, address vault, bool active);
     event PackageOwnershipTransferred(address indexed asset, address indexed previousOwner, address indexed newOwner);
+    event InfraUpdated(
+        address indexed swapRouter, address indexed operatorRegistry, address indexed keeper, address feeManager
+    );
 
     constructor(InfraConfig memory config) Ownable(msg.sender) {
         _validateInfra(config);
         infra = config;
         strategyImplementation = address(new AutoStrategyBv4(address(this)));
-        vaultImplementation = address(new AutoVaultBv4());
-        liquidSharesImplementation = address(new LiquidSharesBv4());
-        shareStakingImplementation = address(new ShareStakingBv4());
+        vaultImplementation = address(new AutoVaultBv4(address(this)));
+        liquidSharesImplementation = address(new LiquidSharesBv4(address(this)));
+        shareStakingImplementation = address(new ShareStakingBv4(address(this)));
     }
 
     function updateInfra(InfraConfig calldata config) external onlyOwner {
         _validateInfra(config);
         infra = config;
+        emit InfraUpdated(config.swapRouter, config.operatorRegistry, config.keeper, config.feeManager);
     }
 
     function assetsLength() external view returns (uint256) {
@@ -100,6 +105,7 @@ contract AutoFactoryBv4 is Ownable {
     function deployVaultPackage(address asset, LiquidityLibraryV4.PoolKey calldata key, bytes calldata hookData)
         external
         onlyOperator
+        nonReentrant
         returns (address strategy, address vault, address liquidShares, address shareStaking, uint256 keeperId)
     {
         if (asset == address(0)) revert ZeroAddress();
@@ -147,7 +153,7 @@ contract AutoFactoryBv4 is Ownable {
     }
 
     /// @notice One-shot transfer of package admin ownership (vault + strategy + ShareStakingBv4) to `newOwner`.
-    function transferPackageOwnership(address asset, address newOwner) external {
+    function transferPackageOwnership(address asset, address newOwner) external nonReentrant {
         if (asset == address(0) || newOwner == address(0)) revert ZeroAddress();
         VaultRegistry memory pkg = registry[asset];
         if (pkg.strategy == address(0) || pkg.vault == address(0) || pkg.shareStaking == address(0)) {

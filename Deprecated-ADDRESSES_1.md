@@ -1,3 +1,21 @@
+## Base (8453) — AutoVault Bv4
+
+| Contract | Address |
+|---|---|
+| AutoSwapRouterBv4 | `0xC64843B634839efc3C1AD3D32FCCb02F4eFC9f5e` |
+| AutoKeeperBv4 | `0x68f9fD0c4Ad3B8079d27396510d9f183125ba5f3` |
+| AutoFactoryBv4 | `0xEcf43a77D781d33cbA0599bce730e66A0Be4dFc3` |
+| AutoVaultBv4 | `0x00E7c89fC2667F485a998b6735E5898f4DA349F1` |
+| AutoStrategyBv4 | `0x28C07793e2c5eEaA5eFDcc09cE89dACa9C9b827C` |
+| LiquidSharesBv4 | `0xBE99d9618C3b4F04A8469EA9a30a1eE756464f6e` |
+| ShareStakingBv4 | `0xCE4A766eDF14108D21A5F0833519892e90BE65Be` |
+| AutoOperatorRegistry (shared) | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
+| feeManager (shared) | `0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe` |
+| Deployer | `0xC9EA49257ab99B4B8648DF0641F15aec038c57E8` |
+
+**InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
+**Asset Tuple**:`0xc52aedec3374422d7510e294cfaa90799595cba3 = ["0x4200000000000000000000000000000000000006","0xc52aedec3374422d7510e294cfaa90799595cba3",8388608,200,"0xbb7784a4d481184283ed89619a3e3ed143e1adc0"]`
+
 
 ############################################################################################################################
  
