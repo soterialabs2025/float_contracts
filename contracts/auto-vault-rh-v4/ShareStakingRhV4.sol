@@ -23,8 +23,8 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
 
     uint256 public constant DIVISOR = 10_000;
     uint256 public constant EPOCH_DURATION = 2 days;
-    /// @notice Hard cap on owner cut of epoch WETH rewards (10%).
-    uint256 public constant MAX_OWNER_REWARD_BPS = 1_000;
+    /// @notice Hard cap on owner cut of epoch WETH rewards (30%).
+    uint256 public constant MAX_OWNER_REWARD_BPS = 3_000;
 
     ILiquidSharesRhV4 public liquidShares;
     IAutoSwapRouterRhV4 public swapRouter;
@@ -32,7 +32,7 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
     address public asset;
     LiquidityLibraryV4.PoolKey public poolKey;
     bytes public hookData;
-    address public factory;
+    address public immutable factory;
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
@@ -85,7 +85,6 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
     error NotActive();
     error SettingsLockedToDeployer();
     error EpochExitLocked();
-    error InsufficientRescuable();
 
     event Staked(address indexed user, uint256 amount);
     event Activated(address indexed by, uint64 timestamp);
@@ -103,7 +102,10 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         _;
     }
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
+    }
 
     function bootstrap(
         address owner_,
@@ -115,12 +117,12 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         bytes calldata hookData_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || liquidShares_ == address(0) || strategy_ == address(0) || asset_ == address(0)
                 || swapRouter_ == address(0)
         ) revert ZeroAddress();
 
-        factory = msg.sender;
         liquidShares = ILiquidSharesRhV4(liquidShares_);
         strategy = strategy_;
         asset = asset_;
@@ -372,7 +374,7 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         emit Claimed(msg.sender, type(uint256).max, amount);
     }
     
-    function retryAssetRewardSwap(uint256 amount) external onlyOwner nonReentrant {
+    function retryAssetRewardSwap(uint256 amount) external nonReentrant onlyOwner {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);

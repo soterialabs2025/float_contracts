@@ -18,11 +18,11 @@ Technical reference for SolidityScan findings on AutoVault Bv4 package contracts
 
 | Package | Strategy | Vault | W1 withdraw | Notes |
 |---------|----------|-------|-------------|-------|
-| `auto-vault-base-v4` | `AutoStrategyBv4` | `AutoVaultBv4` | **Done** | WETH wrap |
-| `auto-vault-rh-v4` | `AutoStrategyRhV4` | (RH vault) | Pending | Native ETH |
-| `auto-vaults-base-v3` | `AutoStrategyBv3` | | Pending | |
-| `auto-vaults-rh-v3` | `AutoStrategyRhV3` | | Pending | |
-| `auto-vaults-rh-sushi-v3` | `AutoStrategySv3` | | Pending | |
+| `auto-vault-base-v4` | `AutoStrategyBv4` | `AutoVaultBv4` | **Done** | WETH wrap; vault option A + event snapshots; factory/LS/SS bootstrap |
+| `auto-vault-rh-v4` | `AutoStrategyRhV4` | `AutoVaultRhV4` | **Done** | Native ETH; same audit ports as base-v4 (no TWAP) |
+| `auto-vaults-base-v3` | `AutoStrategyBv3` | `AutoVaultBv3` | **Done** | W1 + H-PARTIAL-FEE + W2 TWAP gate + style; vault V-PAUSE/BOOTSTRAP/NAV-MINT (cap + owner-first high-water)/EVENT-INDEX; factory F-REENTRANCY/EVENTS; LS/SS bootstrap + nonReentrant order |
+| `auto-vaults-rh-v3` | `AutoStrategyRhV3` | `AutoVaultRhV3` | **Done** | Same audit ports as base-v3 (aeWETH wrap; 4663) |
+| `auto-vaults-rh-sushi-v3` | `AutoStrategySv3` | `AutoVaultSv3` | **Done** | Same audit ports as base-v3 (Sushi 4663; aeWETH wrap) |
 
 ---
 
@@ -31,8 +31,8 @@ Technical reference for SolidityScan findings on AutoVault Bv4 package contracts
 | ID | Severity | Title | Disposition | Status |
 |----|----------|-------|-------------|--------|
 | **F-AC-TPO** | Info | Incorrect AC on `transferPackageOwnership` | **False positive** — requires package owner or factory owner; lock/mismatch checks | Won’t Fix — reported |
-| **F-REENTRANCY** | Low / Info | Reentrancy on `deployVaultPackage` | **Agree CEI** — added `nonReentrant` | **Fixed** |
-| **F-EVENTS** | Info | Missing event on `updateInfra` | **Agree** — emit `InfraUpdated` | **Fixed** |
+| **F-REENTRANCY** | Low / Info | Reentrancy on `deployVaultPackage` | **Agree CEI** — added `nonReentrant` | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
+| **F-EVENTS** | Info | Missing event on `updateInfra` | **Agree** — emit `InfraUpdated` | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **F-EVENT-REENTRANCY** | Info | Events after external calls on deploy / transfer ownership | **False positive / mitigated** — both fns `nonReentrant`; emit only after successful setup (do not emit on revert) | Won’t Fix — reported |
 
 ---
@@ -41,14 +41,14 @@ Technical reference for SolidityScan findings on AutoVault Bv4 package contracts
 
 | ID | Severity | Title | Disposition | Status |
 |----|----------|-------|-------------|--------|
-| **S-BOOTSTRAP** | Medium (code) / Low (ops) | `bootstrap` callable by anyone once | **Agree** — gated to immutable `factory` | **Fixed** |
+| **S-BOOTSTRAP** | Medium (code) / Low (ops) | `bootstrap` callable by anyone once | **Agree** — gated to immutable `factory` | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **S-RESCUE** | High / Medium | `rescueToken` can drain liquidShares / asset | **Agree** — removed `rescueToken` (no owner path to user funds); stranded asset via `retryAssetRewardSwap` only | **Fixed** |
 | **S-PRECISION** | Info | Precision loss on division | **False positive / accepted** — `Math.mulDiv` floors; dust stays in pots; epoch index floor intentional | Won’t Fix — reported |
 | **S-TRYCATCH** | Info / Low | try/catch limitations on ASSET→WETH swap | **Agree as Low** — intentional soft-fail; trusted router; retry via `retryAssetRewardSwap` | Won’t Fix — reported |
 | **S-EVENTS-TOF** | Info | Missing event on `transferOwnershipFromFactory` | **False positive** — OZ `OwnershipTransferred` via `_transferOwnership`; factory also emits `PackageOwnershipTransferred` | Won’t Fix — reported |
 | **S-EVENTS-ADMIN** | Info | Missing events on reward settings / rescue | **Product choice** — no admin events; state readable on-chain | Won’t Fix — removed |
 | **S-EVENTS-INTERNAL** | Info | Missing events on `_lockToCurrentEpochEnd` / `_takeOwnerEpochCut` / `_swapAssetToWeth` | **False positive** — covered by `Staked` / `EpochFinalized` / `RewardNotified` | Won’t Fix — reported |
-| **S-NONREENTRANT-ORDER** | Info | `nonReentrant` after `onlyOwner` on `retryAssetRewardSwap` | **Agree style** — reorder to `nonReentrant onlyOwner` | **Fixed** |
+| **S-NONREENTRANT-ORDER** | Info | `nonReentrant` after `onlyOwner` on `retryAssetRewardSwap` | **Agree style** — reorder to `nonReentrant onlyOwner` | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **S-AC-STAKE** | Info | Missing `onlyOwner` on `stake` | **False positive** — public user stake is intentional; Ownable is for admin, not staking | Won’t Fix — reported |
 
 ---
@@ -57,7 +57,7 @@ Technical reference for SolidityScan findings on AutoVault Bv4 package contracts
 
 | ID | Severity | Title | Disposition | Status |
 |----|----------|-------|-------------|--------|
-| **L-BOOTSTRAP** | Medium (code) / Low (ops) | `initialize`/`bootstrap` callable by anyone once | **Agree** — gated to immutable `factory` (parity vault/strategy/staking) | **Fixed** (pre-audit) |
+| **L-BOOTSTRAP** | Medium (code) / Low (ops) | `initialize`/`bootstrap` callable by anyone once | **Agree** — gated to immutable `factory` (parity vault/strategy/staking) | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **L-APPROVE-RACE** | Info / Low | ERC20 approve allowance race | **Accepted ERC20 behavior** — same as OZ ERC20; use `approve(0)` then set, or max allowance | Won’t Fix — reported |
 | **L-AC-BURN** | Info | Public `burn(from)` missing onlyOwner / burns non-msg.sender | **False positive** — `msg.sender == vault` only; vault burns depositor shares on redeem | Won’t Fix — reported |
 
@@ -67,15 +67,15 @@ Technical reference for SolidityScan findings on AutoVault Bv4 package contracts
 
 | ID | Severity | Title | Disposition | Status |
 |----|----------|-------|-------------|--------|
-| **V-PAUSE** | Medium / Design | Improper Pausable — no owner `pause`/`unpause` | **Product choice** — removed `Pausable` entirely (no emergency pause) | **Fixed** — removed |
-| **V-BOOTSTRAP** | Medium (code) / Low (ops) | `bootstrap` callable by anyone once | **Agree** — gated to immutable `factory` | **Fixed** |
+| **V-PAUSE** | Medium / Design | Improper Pausable — no owner `pause`/`unpause` | **Product choice** — removed `Pausable` entirely (no emergency pause) | **Fixed** — removed (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
+| **V-BOOTSTRAP** | Medium (code) / Low (ops) | `bootstrap` callable by anyone once | **Agree** — gated to immutable `factory` | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **V-AC-DEPOSIT** | Info | Incorrect AC on `depositETH` | **False positive** — public deposit is intentional; `nonReentrant` + `msg.value` | Won’t Fix — reported |
 | **V-AC-RECEIVE** | Info | Incorrect AC on `receive()` | **False positive / N/A** — always reverts; forces ETH via `depositETH` only | Won’t Fix — reported |
 | **V-AC-WITHDRAW** | Info | Incorrect AC on `withdraw` | **False positive** — burns `msg.sender` shares only; intentional public redeem | Won’t Fix — reported |
 | **V-AC-TOF** | Info | Incorrect AC on `transferOwnershipFromFactory` | **False positive** — factory-only + zero + lock checks | Won’t Fix — reported |
-| **V-NAV-MINT** | Medium | Share minting from `strategy.balance()` delta (manipulable NAV) | **Agree** — cap `credited` to `amount` | **Fixed** (partial; full TWAP NAV still H001-W3) |
+| **V-NAV-MINT** | Medium | Share minting from `strategy.balance()` delta (manipulable NAV) | **Agree** — `credited` cap; Bv3/RhV3/Sv3 TWAP/hybrid; Bv4/RhV4 owner-first + high-water `min(spot, last)` | **Fixed** (Bv4 A; RhV4 A; Bv3/RhV3/Sv3 hybrid) |
 | **V-OWNABLE2STEP** | Info | Prefer Ownable2Step over Ownable | Style/safety tip; conflicts with one-shot factory/`ownershipLocked` flow | Won’t Fix — reported |
-| **V-EVENT-INDEX** | Info | Missing `indexed` on some event params | Indexing hygiene | **Fixed** — `asAsset`, snapshot `timestamp` indexed |
+| **V-EVENT-INDEX** | Info | Missing `indexed` on some event params | Indexing hygiene | **Fixed** — `asAsset`, snapshot `timestamp` indexed (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **V-BLOCK-TIME** | Info | `block.timestamp` as time proxy (snapshots) | Telemetry only; not settlement-critical | Won’t Fix — reported |
 
 ### V-PAUSE detail
@@ -90,7 +90,7 @@ Originally: OZ `Pausable` + `whenNotPaused` on deposit/withdraw without owner `p
 
 **Fixed:** `factory` is `immutable`, set in `AutoVaultBv4(factory_)` when the factory deploys the implementation (`new AutoVaultBv4(address(this))`). EIP-1167 clones copy that immutable. `bootstrap` requires `msg.sender == factory` (parity with strategy).
 
-**Port:** apply same pattern to other package vaults if they still use unrestricted once-only bootstrap.
+**Port:** Bv3 + RhV4 done. Apply same pattern to RhV3 / Sv3 if still unrestricted.
 
 ### V-NAV-MINT detail
 
@@ -109,7 +109,14 @@ shares = credited * supply / navBefore   // (or amount if first deposit)
 
 **Fix applied:** `if (credited > amount) credited = amount;` in `_mintSharesAndDeploy` — blocks overmint from NAV jumps between the two `balance()` reads. Depositor can still receive fewer shares if internal strategy swaps lose value (`credited < amount`).
 
-**Remaining:** longer-term manipulation-resistant NAV (H001-W3 / TWAP) if needed beyond the cap.
+**Bv4 / RhV4 additional (option A):** owner-first mint + high-water `min(spot, lastSharePriceX18)` only (no Uni v4 TWAP yet). Port Bv3 TWAP-prefer policy when strategy exposes `poolValueTwap`.
+
+**Bv3 additional (depressed `navBefore`):**
+- First mint (`supply == 0`) is `owner` only (`FirstMintOwnerOnly`) — seeds share price.
+- Mint policy: if `poolValueTwap() > 0` → `min(spot, twap)`; else → `min(spot, lastSharePriceX18)` (high-water fallback only).
+- Snapshots / `balance()` views remain spot (telemetry / display).
+
+**Remaining (optional):** Bv4 TWAP/oracle NAV; fail-closed TWAP-only; Rh/Sv ports.
 
 ---
 
@@ -118,19 +125,19 @@ shares = credited * supply / navBefore   // (or amount if first deposit)
 
 | ID | Severity | Title | Disposition | Status |
 |----|----------|-------|-------------|--------|
-| **H001** | High | Spot-driven rebalance / withdraw math | **Agree**. Split W1/W2/W3 | **W1 Fixed** on Bv4; W2/W3 pending |
-| **H-PARTIAL-FEE** | Medium | Partial withdraw collects Uni fees with `trackFees=false` | **Agree** — `_collectAllFees(true)` before partial decrease | **Fixed** |
+| **H001** | High | Spot-driven rebalance / withdraw math | **Agree**. Split W1/W2/W3 | **W1 Fixed** on Bv4 + Bv3 + RhV4 + RhV3 + Sv3; **W2 Partial** on Bv3 + RhV3 + Sv3 (TWAP gate); **W3 Partial** vault high-water/hybrid mint |
+| **H-PARTIAL-FEE** | Medium | Partial withdraw collects Uni fees with `trackFees=false` | **Agree** — `_collectAllFees(true)` before partial decrease | **Fixed** (Bv4 + Bv3 + RhV4 + RhV3 + Sv3) |
 | **H002** | High | Claim reward NFT ownership | **False positive** (`harvestBoolean`) | Won’t Fix — reported |
 | **M001** | Medium | try/catch limitations | **Agree as Low**; intentional soft-fail | Won’t Fix — reported |
 | **M002** | Medium | Missing approve return validation | **False positive** (`forceApprove` + Permit2 void `approve`) | Won’t Fix — reported |
 | **M003** | Medium | Non-standard ERC20 | **Agree if FoT/rebase**; allowlist constraint | Won’t Fix — reported |
 | **L001** | Low | Approving maximum value | Uni POSM/Permit2 trust | Won’t Fix — reported |
 | **L002** | Low | Empty try/catch | Same as M001 | Won’t Fix — reported |
-| **L003** | Low | Floating pragma `^0.8.20` | Foundry pins Solc **0.8.25** | Won’t Fix — reported |
+| **L003** | Low | Floating pragma `^0.8.20` | Foundry pins Solc **0.8.26** (base-v3/base-v4) | Won’t Fix — reported |
 | **L004** | Low | Legacy `.selector` side-effects bug | No side effects; build uses `via_ir` | Won’t Fix — reported (FP) |
 | **L005** | Low | Missing events | Info / indexing only | Won’t Fix — reported |
 | **L006** | Low | Missing zero-address validation | See instance table below | Won’t Fix — reported |
-| **L007** | Low | Outdated compiler version | Builds with 0.8.25 | Won’t Fix — reported |
+| **L007** | Low | Outdated compiler version | Builds with **0.8.26** | Won’t Fix — reported |
 | **I-natspec-ctor** | Info | Missing `@notice` on constructor | Style | **Fixed** |
 | **I-natspec-scope** | Info | Missing NatSpec on unnamed scope blocks (43) | Style noise | Won’t Fix — reported |
 | **I001** | Info | Redundant `return` with named returns (`balanceOfPool`) | Style | **Fixed** — assign named returns |
@@ -232,18 +239,26 @@ OOR burn returns mostly one token; `_payWithdraw` may swap to requested `Withdra
 2. Replace with `L * shares / supply` + dust `→ 1` + cap.
 3. Remove dead helpers; keep `poolValue`.
 4. Compile; smoke in-range, OOR, full exit.
-5. Port RhV4 / Bv3 / RhV3 / Sv3.
+5. Port RhV4 / RhV3 / Sv3 (Bv3 **Done**).
 
 ---
 
-### W2 — Remint / `_balanceTokens` spot targeting (**PENDING**)
+### W2 — Remint / `_balanceTokens` spot targeting
 
-Options: (A) skip pre-balance swap, (B) deadband, (C) TWAP via oracle hook + router helper.  
-**V4 has no core TWAP** — only oracle hooks. Router minOut ≠ trusted allocation price.
+**Also filed as:** SPOT-PRICE-BASED REBALANCING / `_balanceTokens` (scanner) — same root cause as H001-W2.
 
-### W3 — Optional NAV / deposit oracle (**PENDING**)
+`_spotPrice1e18()` → `slot0` drives `_balanceTokens`, `_fundDeficitFromReserve`, `_poolValueOnly` / idle NAV, and fee WETH valuation. Keeper `keeperCheck` / `harvestBoolean` can swap against a flash-manipulated pool.
 
-Vault still mints shares from `strategy.poolValue()` (slot0). After W1+W2 if needed.
+| Package | Status |
+|---------|--------|
+| **Bv3** | **Partial Fixed** — `_balanceTokens` / `_fundDeficitFromReserve` use `_rebalancePrice1e18()` (pool `observe` TWAP + spot deviation gate). NAV/fee marks still spot (W3). |
+| **Bv4 / others** | Pending (V4 needs oracle hook; no core TWAP) |
+
+Defaults: `twapSeconds = 30 minutes`, `maxTwapDeviationBps = 300`. If `observe` fails or spot diverges, rebalance swaps/pulls **skip** (no swap at bad price). Ops must ensure pool observation cardinality covers the window.
+
+### W3 — NAV / deposit oracle (**PARTIAL** on Bv3)
+
+Vault mints from spot `strategy.balance()` delta + `credited` cap. **Bv3:** owner-first seed; if TWAP NAV ok → `min(spot, twap)`, else `min(spot, lastSharePriceX18)`. High-water is fallback only when TWAP unavailable.
 
 ---
 
@@ -336,6 +351,21 @@ Vault still mints shares from `strategy.poolValue()` (slot0). After W1+W2 if nee
 | 2026-08-21 | **L-BOOTSTRAP Fixed (pre-audit):** immutable `factory` + `msg.sender == factory` on `initialize`; factory ctor `new LiquidSharesBv4(address(this))` | `LiquidSharesBv4`, `AutoFactoryBv4` |
 | 2026-08-21 | **L-APPROVE-RACE Won’t Fix:** standard ERC20 approve race; no custom change | report only |
 | 2026-08-21 | **L-AC-BURN Won’t Fix (FP):** `burn` is vault-only; burns `from` on redeem by design | report only |
-| | **Pending code:** H001-W2, H001-W3, F2, F1 (optional), W1 ports, V-NAV-MINT ports | TBD |
+| 2026-08-22 | **H001-W1 + H-PARTIAL-FEE + style ported to Bv3:** share LP burn, pre-collect fees on partial exit, underscore/ctor/balanceOfPool | `AutoStrategyBv3` |
+| 2026-08-22 | **H001-W2 Partial (Bv3):** `_rebalancePrice1e18` = `observe` TWAP + spot deviation gate for `_balanceTokens` / `_fundDeficitFromReserve` | `AutoStrategyBv3`, `AutoStrategyManagerBv3`, `IUniswapV3PoolMinimal` |
+| 2026-08-22 | **Vault audit port to Bv3:** remove Pausable; immutable factory bootstrap; NAV mint cap; indexed withdraw/snapshot events; factory `new AutoVaultBv3(address(this))` | `AutoVaultBv3`, `AutoFactoryBv3` |
+| 2026-08-22 | **Factory/LS/SS audit port to Bv3:** `ReentrancyGuard` + `nonReentrant` on deploy/TPO; `InfraUpdated`; immutable factory on LiquidShares/ShareStaking + gated init/bootstrap; `retryAssetRewardSwap` modifier order; drop dead `InsufficientRescuable` | `AutoFactoryBv3`, `LiquidSharesBv3`, `ShareStakingBv3` |
+| 2026-08-22 | **V-NAV-MINT / H001-W3 Partial (Bv3):** owner-first mint + high-water `lastSharePriceX18` with `min(spot, last)` share mint | `AutoVaultBv3` |
+| 2026-08-22 | **V-NAV-MINT hybrid:** `min(spot, last, twap?)` + strategy `poolValueTwap()` | `AutoVaultBv3`, `AutoStrategyBv3`, `IAutoStrategyBv3` |
+| 2026-08-22 | **V-NAV-MINT policy:** TWAP preferred `min(spot, twap)`; else `min(spot, last)` fallback | `AutoVaultBv3` |
+| 2026-08-22 | **V-NAV-MINT Bv4 option A:** owner-first + high-water `min(spot, lastSharePriceX18)` | `AutoVaultBv4` |
+| 2026-08-22 | **Vault snapshots:** drop on-chain `_poolValueSnapshots` storage; keep `PoolValueSnapshotRecorded` event only | `AutoVaultBv4`, `IAutoVaultBv4` |
+| 2026-08-22 | **Vault snapshots (Bv3):** same event-only snapshot path | `AutoVaultBv3`, `IAutoVaultBv3` |
+| 2026-08-23 | **RhV4 audit port from base-v4:** H001-W1 + H-PARTIAL-FEE; strategy `_feeManager`/`_shareStaking`/`_bootstrapped`; vault remove Pausable + immutable factory + option A NAV mint + event-only snapshots + indexed events; factory ReentrancyGuard/InfraUpdated + L/S/vault ctors; LS/SS immutable factory + SS modifier order | `auto-vault-rh-v4/*` |
+| 2026-08-23 | **RhV3 audit port from base-v3:** W1 + H-PARTIAL-FEE + W2 TWAP + `poolValueTwap`; vault hybrid NAV mint + event snapshots; factory/LS/SS bootstrap gates; `profile.rh-v3` solc **0.8.26** | `auto-vaults-rh-v3/*`, `foundry.toml` |
+| 2026-08-23 | **Sv3 (Sushi) audit port from base-v3:** same as RhV3; keep Sushi router/deployments; `profile.rh-sushi` solc **0.8.26** | `auto-vaults-rh-sushi-v3/*`, `foundry.toml` |
+| 2026-08-22 | **H001-W2 Ack (scanner):** spot `_balanceTokens` / rebalance manipulable — same as pending W2; V3 can use `observe()` TWAP when implemented | report only; code TBD |
+| 2026-08-22 | **Compiler:** `profile.base-v3` and `profile.base-v4` pin Solc **0.8.26** (was 0.8.25) | `foundry.toml` |
+| | **Pending code:** H001-W2 (Bv4+), H001-W3 TWAP NAV (optional; Bv3 high-water done), F2, F1 (optional), W1 ports (RhV4/RhV3/Sv3), V-NAV-MINT high-water ports (Bv4/Rh/Sv) | TBD |
 
 Update this table on every audit-related code change or final report disposition.

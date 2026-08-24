@@ -1,11 +1,11 @@
 {
-  "name": "AutoOperatorRegistryBV4",
+  "name": "AutoOperatorRegistryBv4",
   "address": "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8",
   "chainId": 8453,
   "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "timestamp": 1786896290431,
+  "timestamp": 1787457976362,
   "abi": [
     {
       "type": "constructor",

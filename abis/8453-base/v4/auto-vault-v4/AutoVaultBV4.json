@@ -1,11 +1,11 @@
 {
   "name": "AutoVaultBv4",
+  "address": null,
   "chainId": 8453,
-  "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "solc": "0.8.26+commit.8a97fa7a",
-  "artifact": "artifacts/AutoVaultBV4.sol/AutoVaultBV4.json",
+  "package": "contracts/auto-vault-base-v4",
+  "timestamp": 1787528635466,
   "abi": [
     {
       "type": "constructor",
@@ -141,7 +141,7 @@
     },
     {
       "type": "function",
-      "name": "getPoolValueSnapshotCount",
+      "name": "lastSharePriceX18",
       "inputs": [],
       "outputs": [
         {
@@ -187,35 +187,6 @@
           "name": "",
           "type": "bool",
           "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "poolValueSnapshots",
-      "inputs": [
-        {
-          "name": "index",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "valueWeth",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "uniswapFeesCollected",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "timestamp",
-          "type": "uint64",
-          "internalType": "uint64"
         }
       ],
       "stateMutability": "view"
@@ -414,6 +385,19 @@
           "type": "uint64",
           "indexed": true,
           "internalType": "uint64"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "SharePriceHighWater",
+      "inputs": [
+        {
+          "name": "priceX18",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
         }
       ],
       "anonymous": false

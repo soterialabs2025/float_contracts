@@ -15,5 +15,10 @@ interface IUniswapV3PoolMinimal {
         uint8 feeProtocol,
         bool unlocked
     );
+
+    function observe(uint32[] calldata secondsAgos)
+        external
+        view
+        returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s);
 }
 

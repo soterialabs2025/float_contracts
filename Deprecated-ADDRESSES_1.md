@@ -1,3 +1,78 @@
+## RH (4663) — AutoVault Sv3 (Sushi)
+
+| Contract | Address |
+|---|---|
+| AutoSwapRouterSv3 | `0x568dCA271e5F7edb9769f5eA6076e2DA8D4014e8` |
+| AutoKeeperSv3 | `0x3Cb0A8c25356BF5764C4510A79458e73a6639372` |
+| AutoFactorySv3 | `0x8cB0DaECd13658cD099419a885c6D3571cBF5441` |
+| AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
+| feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
+| Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
+| AutoVaultSv3 | `0xd4D9BDba32455A0d6B961633924E015fd946D133` |
+| AutoStrategySv3 | `0x8420E7963EbE08a48B45515C260AAEfbc61ee7E8` |
+| LiquidSharesSv3 | `0x82D2Da284cCEd18559CCAd56a6A73e7BC3e57F0a` |
+| ShareStakingSv3 | `0x1d488b97aDa5a11E08B172BE7fb3413ed0cBab04` |
+**InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
+
+
+## RH (4663) — AutoVault RhV3
+
+| Contract | Address |
+|---|---|
+| AutoSwapRouterRhV3 | `0x8A8c18445792e04e8512D5c6CD680331F9575a3F` |
+| AutoKeeperRhV3 | `0xD35CE6610AcB37D545bb5ec4192fC50505Dd26Ad` |
+| AutoFactoryRhV3 | `0xB3E65742e90af23f30527A9745B63F90DAA48B78` |
+| AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
+| feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
+| Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
+| AutoVaultRhv3 | `0x724377bfde1c63a2A06E2F45E3b47d5D5640995c` |
+| AutoStrategyRhv3 | `0x98DA7a66cf08Ec07C260C86d45068aC4f650c5E7` |
+| LiquidSharesRhv3 | `0x8CcDE996822A1E78E0Eb9444984171F82c263096` |
+| ShareStakingRhv3 | `0x82a783aA857aFEa73977F4FB9E3F6F986fD3B28B` |
+
+**InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
+**Asset**:`0x020bfc650a365f8bb26819deaabf3e21291018b4` - `10000`
+
+
+## RH (4663) — AutoVault RhV4
+
+| Contract | Address |
+|---|---|
+ AutoSwapRouterRhV4 | `0x493CDA10F61fb2ad2AC7149EfBBA2114Dd460D05` |
+| AutoKeeperRhV4 | `0x79F9ea39E7e5304791DF8cfEe835F6592c35e022` |
+| AutoFactoryRhV4 | `0xEDd2772fC4A3DFe73ae4dc068458f4fe36c13F93` |
+| AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
+| feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
+| Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
+| AutoVaultRhv4 | `0xE510075D1F7F3053Fa9C6D84404Af3D1ecAAD6E7` |
+| AutoStrategyRhv4 | `0x5aDeb07fF21c80D45847f793d84C04fd309E6Cf3` |
+| LiquidSharesRhv4 | `0x2c0241EDe5Ac7A94Ef393D1c33635f099203912F` |
+| ShareStakingRhv4 | `0x3C62dA3297A5beeD52A65EcB9B92d986Ea0c5ADd` |
+
+
+## Base (8453) — AutoVault Bv3
+
+| Contract | Address |
+|---|---|
+| AutoSwapRouterBv3 | `0x07758574b154dF860748748365C35B15d869Cb2d` |
+| AutoKeeperBv3 | `0xdd66727dB1D19345d3f5468e4A7a9073F28b591B` |
+| AutoFactoryBv3 | `0xcAD63769D3951d20739C8A1d080eaC14A86bac67` |
+| AutoOperatorRegistry (shared) | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
+| feeManager (shared) | `0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe` |
+| Deployer | `0xC9EA49257ab99B4B8648DF0641F15aec038c57E8` |
+| AutoVaultBv3 | `0x4D7DFCb42EBb6c6D0D301D203D144D53fd2a9476` |
+| AutoStrategyBv3 | `0xb16aDB047DaC32c837Cb7e4a8A1Db06faa1F6f90` |
+| LiquidSharesBv3 | `0xb297FDa7c370cF3783268f25b703b21CC427cC7F` |
+| ShareStakingBv3 | `0x00d4f6dF49D04577580b48EC3A20F52f46ed545b` |
+
+**InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
+**Asset**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b` - `10000`
+```text
+["0x07758574b154dF860748748365C35B15d869Cb2d","0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8","0xdd66727dB1D19345d3f5468e4A7a9073F28b591B","0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe"]
+
+```
+
+
 ## Base (8453) — AutoVault Bv4
 
 | Contract | Address |

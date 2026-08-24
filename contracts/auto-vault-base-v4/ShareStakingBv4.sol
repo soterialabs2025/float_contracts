@@ -24,8 +24,8 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
 
     uint256 public constant DIVISOR = 10_000;
     uint256 public constant EPOCH_DURATION = 2 days;
-    /// @notice Hard cap on owner cut of epoch WETH rewards (10%).
-    uint256 public constant MAX_OWNER_REWARD_BPS = 1_000;
+    /// @notice Hard cap on owner cut of epoch WETH rewards (30%).
+    uint256 public constant MAX_OWNER_REWARD_BPS = 3_000;
 
     IERC20 public immutable weth;
     ILiquidSharesBv4 public liquidShares;

@@ -17,7 +17,7 @@ contract LiquidSharesBv3 is Ownable, ILiquidSharesBv3 {
     uint256 private _totalSupply;
 
     address public vault;
-    address public factory;
+    address public immutable factory;
     bool public initialized;
 
     error Unauthorized();
@@ -27,13 +27,16 @@ contract LiquidSharesBv3 is Ownable, ILiquidSharesBv3 {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    /// @dev Implementation-only; clones skip constructors — `initialize` records the factory.
-    constructor() Ownable(msg.sender) {}
+    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
+    }
 
     function initialize(address vault_, string memory name_, string memory symbol_) public override {
         if (initialized) revert AlreadyInitialized();
+        if (msg.sender != factory) revert Unauthorized();
         if (vault_ == address(0)) revert ZeroAddress();
-        factory = msg.sender;
         vault = vault_;
         _name = name_;
         _symbol = symbol_;

@@ -1,11 +1,11 @@
 {
   "name": "AutoFactoryBv4",
+  "address": null,
   "chainId": 8453,
-  "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "solc": "0.8.26+commit.8a97fa7a",
-  "artifact": "artifacts/AutoFactoryBV4.sol/AutoFactoryBV4.json",
+  "package": "contracts/auto-vault-base-v4",
+  "timestamp": 1787528572163,
   "abi": [
     {
       "type": "constructor",

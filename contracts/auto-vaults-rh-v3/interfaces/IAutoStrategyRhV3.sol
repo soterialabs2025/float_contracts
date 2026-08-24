@@ -8,6 +8,7 @@ interface IAutoStrategyRhV3 {
     }
 
     function poolValue() external view returns (uint256);
+    function poolValueTwap() external view returns (uint256);
     function balance() external view returns (uint256);
     function UniswapFeesCollected() external view returns (uint256);
     function vault() external view returns (address);

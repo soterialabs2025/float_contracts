@@ -24,15 +24,15 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 | Contract | Address |
 |---|---|
 | AutoSwapRouterBv3 | `0x07758574b154dF860748748365C35B15d869Cb2d` |
-| AutoKeeperBv3 | `0xdd66727dB1D19345d3f5468e4A7a9073F28b591B` |
-| AutoFactoryBv3 | `0xcAD63769D3951d20739C8A1d080eaC14A86bac67` |
+| AutoKeeperBv3 | `0xdd66727dB1D19345d3f5468e4A7a9073F28b591B` | 
+| AutoFactoryBv3 | `0x8E2D741F0EB545a6c3A51Adee243f89Afc2F040E` | block:`50353974` |
 | AutoOperatorRegistry (shared) | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
 | feeManager (shared) | `0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe` |
 | Deployer | `0xC9EA49257ab99B4B8648DF0641F15aec038c57E8` |
-| AutoVaultBv3 | `0x4D7DFCb42EBb6c6D0D301D203D144D53fd2a9476` |
-| AutoStrategyBv3 | `0xb16aDB047DaC32c837Cb7e4a8A1Db06faa1F6f90` |
-| LiquidSharesBv3 | `0xb297FDa7c370cF3783268f25b703b21CC427cC7F` |
-| ShareStakingBv3 | `0x00d4f6dF49D04577580b48EC3A20F52f46ed545b` |
+| AutoVaultBv3 | `0x2c2757C613aF5C084ae0EE0Af8a90736b5672d7f` |
+| AutoStrategyBv3 | `0x0dD61Aa77Ec7AF521241B97Ae88EcAD61C9F56d4` |
+| LiquidSharesBv3 | `0xA666AdEf7534adD874Cb95169ed0B64eb1Ee3290` |
+| ShareStakingBv3 | `0xfF009D8d9C1a9a1D617AAF4cDdfBc3C1b73244E3` |
 
 **InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
 **Asset**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b` - `10000`
@@ -46,11 +46,11 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 |---|---|
 | AutoSwapRouterBv4 | `0xC64843B634839efc3C1AD3D32FCCb02F4eFC9f5e` |
 | AutoKeeperBv4 | `0x68f9fD0c4Ad3B8079d27396510d9f183125ba5f3` |
-| AutoFactoryBv4 | `0xe199594b570a415b0336C530C588246574667800` |
-| AutoVaultBv4 | `0x8ef0ECEcc9374772D2e59930dA23e3ebe1da1014` |
+| AutoFactoryBv4 | `0x2B1cf5F87651Ee8cAB851b4586023BA90133A812` | block:`50332556` |
+| AutoVaultBv4 | `0x4D815043E5515a729cde256685EB2dFCF76A6D2D` |
 | AutoStrategyBv4 | `0x9531673cf88341fC03f31a5c9a60D56d5c01A718` |
-| LiquidSharesBv4 | `0xCBdF6B371FF1A3666a69109C3476149BA2CAf986` |
-| ShareStakingBv4 | `0xFc281706E7cE33E3F4B78AbC647B275C4fb2dC26` |
+| LiquidSharesBv4 | `0x6EbF67F761152e79287e84743E5035223c92c3dF` |
+| ShareStakingBv4 | `0xBE28754E8Eb7383d1B58B11EA13B4fA98da3056F` |
 | AutoOperatorRegistry (shared) | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
 | feeManager (shared) | `0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe` |
 | Deployer | `0xC9EA49257ab99B4B8648DF0641F15aec038c57E8` |
@@ -69,14 +69,14 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 |---|---|
 | AutoSwapRouterRhV3 | `0x8A8c18445792e04e8512D5c6CD680331F9575a3F` |
 | AutoKeeperRhV3 | `0xD35CE6610AcB37D545bb5ec4192fC50505Dd26Ad` |
-| AutoFactoryRhV3 | `0xB3E65742e90af23f30527A9745B63F90DAA48B78` |
+| AutoFactoryRhV3 | `0x14b5cC10196f0dd84C76E60FEDed2101f294b095` |
 | AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
 | feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
 | Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
-| AutoVaultRhv3 | `0x724377bfde1c63a2A06E2F45E3b47d5D5640995c` |
-| AutoStrategyRhv3 | `0x98DA7a66cf08Ec07C260C86d45068aC4f650c5E7` |
-| LiquidSharesRhv3 | `0x8CcDE996822A1E78E0Eb9444984171F82c263096` |
-| ShareStakingRhv3 | `0x82a783aA857aFEa73977F4FB9E3F6F986fD3B28B` |
+| AutoVaultRhv3 | `` |
+| AutoStrategyRhv3 | `` |
+| LiquidSharesRhv3 | `` |
+| ShareStakingRhv3 | `` |
 
 **InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
 **Asset**:`0x020bfc650a365f8bb26819deaabf3e21291018b4` - `10000`
@@ -93,18 +93,17 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 |---|---|
  AutoSwapRouterRhV4 | `0x493CDA10F61fb2ad2AC7149EfBBA2114Dd460D05` |
 | AutoKeeperRhV4 | `0x79F9ea39E7e5304791DF8cfEe835F6592c35e022` |
-| AutoFactoryRhV4 | `0xEDd2772fC4A3DFe73ae4dc068458f4fe36c13F93` |
+| AutoFactoryRhV4 | `0x3D19ecDb90B06626f8EC860F7aec9A378E760E8D` |
 | AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
 | feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
 | Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
-| AutoVaultRhv4 | `0xE510075D1F7F3053Fa9C6D84404Af3D1ecAAD6E7` |
-| AutoStrategyRhv4 | `0x5aDeb07fF21c80D45847f793d84C04fd309E6Cf3` |
-| LiquidSharesRhv4 | `0x2c0241EDe5Ac7A94Ef393D1c33635f099203912F` |
-| ShareStakingRhv4 | `0x3C62dA3297A5beeD52A65EcB9B92d986Ea0c5ADd` |
+| AutoVaultRhv4 | `` |
+| AutoStrategyRhv4 | `` |
+| LiquidSharesRhv4 | `` |
+| ShareStakingRhv4 | `` |
 
 
-**InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
-**Asset**:`0xe934e36A439C94017B64a3FecE66AF12099aBF50`:["0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73","0xe934e36A439C94017B64a3FecE66AF12099aBF50",8388608,160,"0xFeDa24F0d3805170E7566cE617CfBa01cE05D080"] - 
+ 
 
 **Asset**:`0x6245e67affA44a23077f0Ea7f981a8DC743a0c47`:["0x0000000000000000000000000000000000000000","0x6245e67affA44a23077f0Ea7f981a8DC743a0c47",2500,60,"0x0000000000000000000000000000000000000000"] -
 
@@ -121,14 +120,14 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 |---|---|
 | AutoSwapRouterSv3 | `0x568dCA271e5F7edb9769f5eA6076e2DA8D4014e8` |
 | AutoKeeperSv3 | `0x3Cb0A8c25356BF5764C4510A79458e73a6639372` |
-| AutoFactorySv3 | `0x8cB0DaECd13658cD099419a885c6D3571cBF5441` |
+| AutoFactorySv3 | `0x0bb7e7A4a57ad938a253d2302604D1256067785A` |
 | AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
 | feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
 | Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
-| AutoVaultSv3 | `0xd4D9BDba32455A0d6B961633924E015fd946D133` |
-| AutoStrategySv3 | `0x8420E7963EbE08a48B45515C260AAEfbc61ee7E8` |
-| LiquidSharesSv3 | `0x82D2Da284cCEd18559CCAd56a6A73e7BC3e57F0a` |
-| ShareStakingSv3 | `0x1d488b97aDa5a11E08B172BE7fb3413ed0cBab04` |
+| AutoVaultSv3 | `` |
+| AutoStrategySv3 | `` |
+| LiquidSharesSv3 | `` |
+| ShareStakingSv3 | `` |
 **InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
 
 **Asset**:`0x0ab8d01664d4bb625705f9f3c595a8a19b3dcfb0` - `10000`

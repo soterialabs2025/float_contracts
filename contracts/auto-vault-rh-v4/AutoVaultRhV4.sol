@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -13,21 +12,23 @@ import "./interfaces/ILiquidSharesRhV4.sol";
 
 /// @title AutoVaultRhV4
 /// @notice RH (4663) AutoVault: ETH-only deposits into token/native-ETH v4 packages.
-contract AutoVaultRhV4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV4 {
+contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
     IAutoStrategyRhV4 public strategy;
     ILiquidSharesRhV4 public liquidShares;
     address public shareStaking;
     IERC20 public asset;
-    address public factory;
+    address public immutable factory;
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
-    PoolValueSnapshot[] private _poolValueSnapshots;
+    /// @notice High-water ETH-per-share (scaled 1e18). Later mints use min(spot, this).
+    uint256 public lastSharePriceX18;
 
     event Deposit(address indexed user, uint256 ethNotional, uint256 shares);
-    event Withdraw(address indexed user, uint256 shares, bool asAsset, uint256 outAmount);
-    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp);
+    event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount);
+    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
     event OwnershipLocked(address indexed owner);
+    event SharePriceHighWater(uint256 priceX18);
 
     error Unauthorized();
     error ZeroAddress();
@@ -36,7 +37,11 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV4 {
     error NotBootstrapped();
     error OwnershipIsLocked();
 
-    constructor() Ownable(msg.sender) {}
+    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
+    }
 
     modifier onlyAutoKeeper() {
         if (msg.sender != strategy.keeper()) revert Unauthorized();
@@ -51,13 +56,13 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV4 {
         address asset_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || strategy_ == address(0) || liquidShares_ == address(0)
                 || shareStaking_ == address(0) || asset_ == address(0)
         ) {
             revert ZeroAddress();
         }
-        factory = msg.sender;
         strategy = IAutoStrategyRhV4(strategy_);
         liquidShares = ILiquidSharesRhV4(liquidShares_);
         shareStaking = shareStaking_;
@@ -86,28 +91,12 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV4 {
         super.renounceOwnership();
     }
 
+    /// @notice Emit NAV + cumulative Uniswap fees for off-chain indexing. Keeper-only.
     function recordPoolValueSnapshot() external override onlyAutoKeeper {
         if (!bootstrapped) revert NotBootstrapped();
-        uint256 pv = strategy.poolValue();
-        uint256 fees = strategy.UniswapFeesCollected();
-        _poolValueSnapshots.push(
-            PoolValueSnapshot({valueWeth: pv, uniswapFeesCollected: fees, timestamp: uint64(block.timestamp)})
+        emit PoolValueSnapshotRecorded(
+            strategy.poolValue(), strategy.UniswapFeesCollected(), uint64(block.timestamp)
         );
-        emit PoolValueSnapshotRecorded(pv, fees, uint64(block.timestamp));
-    }
-
-    function getPoolValueSnapshotCount() external view override returns (uint256) {
-        return _poolValueSnapshots.length;
-    }
-
-    function poolValueSnapshots(uint256 index)
-        external
-        view
-        override
-        returns (uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp)
-    {
-        PoolValueSnapshot storage s = _poolValueSnapshots[index];
-        return (s.valueWeth, s.uniswapFeesCollected, s.timestamp);
     }
 
     function balance() public view override returns (uint256) {
@@ -122,25 +111,47 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV4 {
         return liquidShares.totalSupply();
     }
 
-    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
+    function depositETH() external payable override nonReentrant returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         if (!bootstrapped) revert NotBootstrapped();
+        uint256 supply = totalSupply();
+        if (supply == 0 && msg.sender != owner()) revert Unauthorized();
+
         uint256 navBefore = balance();
         strategy.deposit{value: msg.value}();
         uint256 navAfter = balance();
         uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
-        shares = _sharesForDeposit(credited, navBefore);
+        // Cap to deposited ETH so spot/NAV jumps between reads cannot overmint shares (V-NAV-MINT).
+        if (credited > msg.value) credited = msg.value;
+        shares = _sharesForDeposit(credited, navBefore, supply);
         if (shares == 0) revert ZeroValue();
         liquidShares.mint(msg.sender, shares);
+        _bumpSharePriceHighWater(balance(), totalSupply());
         emit Deposit(msg.sender, credited, shares);
     }
 
-    function _sharesForDeposit(uint256 amount, uint256 navBefore) internal view returns (uint256) {
-        uint256 supply = totalSupply();
-        return supply == 0 || navBefore == 0 ? amount : Math.mulDiv(amount, supply, navBefore);
+    /// @dev Owner seeds 1:1. Later: min(spot NAV shares, high-water share-price shares).
+    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply)
+        internal
+        view
+        returns (uint256)
+    {
+        if (supply == 0) return credited;
+        uint256 sharesSpot =
+            navBefore == 0 ? type(uint256).max : Math.mulDiv(credited, supply, navBefore);
+        return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
     }
 
-    function withdraw(uint256 shares, bool asAsset) external override nonReentrant whenNotPaused returns (uint256) {
+    function _bumpSharePriceHighWater(uint256 nav, uint256 supply) internal {
+        if (supply == 0 || nav == 0) return;
+        uint256 priceX18 = Math.mulDiv(nav, 1e18, supply);
+        if (priceX18 > lastSharePriceX18) {
+            lastSharePriceX18 = priceX18;
+            emit SharePriceHighWater(priceX18);
+        }
+    }
+
+    function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
         if (shares == 0 || totalSupply() == 0 || shares > balanceOf(msg.sender)) revert ZeroValue();
         IAutoStrategyRhV4.WithdrawToken out =
             asAsset ? IAutoStrategyRhV4.WithdrawToken.ASSET : IAutoStrategyRhV4.WithdrawToken.WETH;

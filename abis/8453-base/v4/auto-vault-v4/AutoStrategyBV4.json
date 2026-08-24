@@ -1,11 +1,11 @@
 {
   "name": "AutoStrategyBv4",
+  "address": null,
   "chainId": 8453,
-  "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "solc": "0.8.26+commit.8a97fa7a",
-  "artifact": "artifacts/AutoStrategyBV4.sol/AutoStrategyBV4.json",
+  "package": "contracts/auto-vault-base-v4",
+  "timestamp": 1787528621856,
   "abi": [
     {
       "type": "constructor",

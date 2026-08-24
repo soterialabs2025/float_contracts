@@ -151,7 +151,7 @@
       {
         "name": "libKey",
         "type": "tuple",
-        "internalType": "struct IAutoSwapRouterBV4.AutoPoolKey",
+        "internalType": "struct IAutoSwapRouterBv4.AutoPoolKey",
         "components": [
           {
             "name": "currency0",
