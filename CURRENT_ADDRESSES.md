@@ -36,6 +36,7 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 
 **InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
 **Asset**:`0x22af33fe49fd1fa80c7149773dde5890d3c76f3b` - `10000`
+**Asset**:`0x1bc0c42215582d5a085795f4badbac3ff36d1bcb` - `10000`
 ```text
 ["0x07758574b154dF860748748365C35B15d869Cb2d","0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8","0xdd66727dB1D19345d3f5468e4A7a9073F28b591B","0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe"]
 ```
@@ -73,10 +74,10 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 | AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
 | feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
 | Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
-| AutoVaultRhv3 | `` |
-| AutoStrategyRhv3 | `` |
-| LiquidSharesRhv3 | `` |
-| ShareStakingRhv3 | `` |
+| AutoVaultRhv3 | `0x98877EFE1397673824CD9cC3b24190174380c4C4` |
+| AutoStrategyRhv3 | `0x20Fb1380b78bc7F92eD37d40f2e891F9FA035C61` |
+| LiquidSharesRhv3 | `0xdC89087e00e1c7876B144c912E611a54A131F631` |
+| ShareStakingRhv3 | `0x387FFE006265e09ED68De71D009A0e6b3Cb051D7` |
 
 **InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
 **Asset**:`0x020bfc650a365f8bb26819deaabf3e21291018b4` - `10000`
@@ -97,20 +98,20 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 | AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
 | feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
 | Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
-| AutoVaultRhv4 | `` |
-| AutoStrategyRhv4 | `` |
-| LiquidSharesRhv4 | `` |
-| ShareStakingRhv4 | `` |
+| AutoVaultRhv4 | `0x7863240F1d4988A57D9Af16f3A59B8CE8EbDaaA6` |
+| AutoStrategyRhv4 | `0x29802aA31A787dc1E643fBD90ED69445130f8327` |
+| LiquidSharesRhv4 | `0x76089956402aa54915866D89be06deBC6f6c2b6B` |
+| ShareStakingRhv4 | `0xFa1Cd5e5f79e634354C2c902254f7a943D6D74e0` |
 
 
  
 
 **Asset**:`0x6245e67affA44a23077f0Ea7f981a8DC743a0c47`:["0x0000000000000000000000000000000000000000","0x6245e67affA44a23077f0Ea7f981a8DC743a0c47",2500,60,"0x0000000000000000000000000000000000000000"] -
 
-["360","360","60","60"]
+["960","960","780","780"]
 
 ```text
-["0x724265D83E2Ea8296Bd61177d7B86a92Ba7e2520","0x7df1120a04D82eA92EA2d5AA005e3316B37b936E","0xD3d863409CCb2201037a82E2B5bd5fbB3EAe9203","0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE"]
+["0x493CDA10F61fb2ad2AC7149EfBBA2114Dd460D05","0x7df1120a04D82eA92EA2d5AA005e3316B37b936E","0x79F9ea39E7e5304791DF8cfEe835F6592c35e022","0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE"]
 
 ```
 
@@ -124,10 +125,10 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 | AutoOperatorRegistry (shared) | `0x7df1120a04D82eA92EA2d5AA005e3316B37b936E` |
 | feeManager (shared) | `0xEc57538d5C129e1e985d81b7Ef05BBb63375D8BE` |
 | Deployer | `0xf99faA74aF8cb06479bFCb62495F0404089EDc83` |
-| AutoVaultSv3 | `` |
-| AutoStrategySv3 | `` |
-| LiquidSharesSv3 | `` |
-| ShareStakingSv3 | `` |
+| AutoVaultRhv3 | `0x8D576Fe6Ac6fdD09a3ECaC61Fc35b9525B2a9dcE` |
+| AutoStrategyRhv3 | `0x8015020D5bCAdA745F369D6D1C9541031Cc14677` |
+| LiquidSharesRhv3 | `0xDEC2ead55FBBF234694F44b60A1CA65f8971F080` |
+| ShareStakingRhv3 | `0x80732ef784ab656d413A64B2065eB3B2529622d1` |
 **InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
 
 **Asset**:`0x0ab8d01664d4bb625705f9f3c595a8a19b3dcfb0` - `10000`

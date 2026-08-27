@@ -23,9 +23,11 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
     bool public ownershipLocked;
     /// @notice High-water ETH-per-share (scaled 1e18). Later mints use min(spot, this).
     uint256 public lastSharePriceX18;
+    uint256 public accUniswapFeesPerShare;
+    uint256 public uniswapFeesCollectedSynced;
 
-    event Deposit(address indexed user, uint256 ethNotional, uint256 shares);
-    event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount);
+    event Deposit(address indexed user, uint256 ethNotional, uint256 shares, uint256 acc);
+    event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
     event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
     event OwnershipLocked(address indexed owner);
     event SharePriceHighWater(uint256 priceX18);
@@ -68,6 +70,7 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
         shareStaking = shareStaking_;
         asset = IERC20(asset_);
         bootstrapped = true;
+        uniswapFeesCollectedSynced = strategy.UniswapFeesCollected();
         _transferOwnership(owner_);
     }
 
@@ -125,9 +128,10 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
         if (credited > msg.value) credited = msg.value;
         shares = _sharesForDeposit(credited, navBefore, supply);
         if (shares == 0) revert ZeroValue();
+        _syncAcc();
         liquidShares.mint(msg.sender, shares);
         _bumpSharePriceHighWater(balance(), totalSupply());
-        emit Deposit(msg.sender, credited, shares);
+        emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
     /// @dev Owner seeds 1:1. Later: min(spot NAV shares, high-water share-price shares).
@@ -155,13 +159,23 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
         if (shares == 0 || totalSupply() == 0 || shares > balanceOf(msg.sender)) revert ZeroValue();
         IAutoStrategyRhV4.WithdrawToken out =
             asAsset ? IAutoStrategyRhV4.WithdrawToken.ASSET : IAutoStrategyRhV4.WithdrawToken.WETH;
+        _syncAcc();
         uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : msg.sender.balance;
         strategy.withdraw(shares, msg.sender, out);
         liquidShares.burn(msg.sender, shares);
         uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : msg.sender.balance;
         uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
-        emit Withdraw(msg.sender, shares, asAsset, received);
+        emit Withdraw(msg.sender, shares, asAsset, received, accUniswapFeesPerShare);
         return received;
+    }
+
+    function _syncAcc() internal {
+        uint256 feesNow = strategy.UniswapFeesCollected();
+        uint256 supply = liquidShares.totalSupply();
+        if (supply > 0 && feesNow > uniswapFeesCollectedSynced) {
+            accUniswapFeesPerShare += (feesNow - uniswapFeesCollectedSynced) * 1e18 / supply;
+        }
+        uniswapFeesCollectedSynced = feesNow;
     }
 
     receive() external payable {

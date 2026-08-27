@@ -1,13 +1,14 @@
 ---
 name: auto-vault
 description: >-
-  Query and transact Float Auto vaults on Base by token/vault name (e.g. surplus,
-  nook, molten) or ASSET address — check if a named vault exists via factory
-  registry, deposit ETH, withdraw liquid-token shares, read pool value / shares.
-  Use when the user asks “is there an X vault?”, named deposits, available
-  pools, or liquid tokens/shares.
-tags: [defi, vault, float, auto-vault, base, uniswap-v4]
-version: 1
+  Query and transact Float Auto vaults by token/vault name alone (e.g. surplus,
+  frong, cashcat, bnkr, suchicat) — name resolves chain + Uni/Sushi package +
+  factory. Deposit ETH, claim/withdraw liquid shares, read NAV / fees / APR /
+  liquid shares / staked balances, and link the Soteria vault page. Use when the
+  user asks about named vaults, deposits, claims, APR, fees, or liquid shares
+  without specifying chain or Uniswap version.
+tags: [defi, vault, float, auto-vault, base, robinhood, uniswap-v3, uniswap-v4, sushiswap]
+version: 2
 visibility: private
 metadata:
   clawdbot:
@@ -15,99 +16,137 @@ metadata:
     homepage: "https://docs.bankr.bot/skills/in-bankr/skill-format"
 ---
 
-# Auto Vault (Base)
+# Auto Vault (name → chain / package)
 
-Chain: **Base** (`8453`).
+**Do not ask the user for chain or Uniswap/Sushi version.** A token/vault **name** (or ASSET address) is enough.
 
-## Addresses (update if redeployed)
+Named catalog + factories: `references/vault-names.md`.  
+ABI / calls / APR HTTP: `references/abi-and-calls.md`.
 
-| Contract | Address |
-|----------|---------|
-| AutoFactory | `0x0Fbca262D7CeBe0F5Df9fE6Eda4b8Ac9e84E7949` |
-| AutoOperatorRegistry | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
-| AutoSwapRouter | `0x73fDB6Fc6C2F707cE93568998E94f8152909e7BC` |
-| AutoKeeper | `0xf99D6314cc03137732a0D749eC4E97bc64d0b0d3` |
-| WETH | `0x4200000000000000000000000000000000000006` |
+Site host: **`https://www.soterialabs.io`**.
 
-Named vaults (fast path): `references/vault-names.md`.  
-ABI details: `references/abi-and-calls.md`.
+---
 
 ## Core resolution (name first)
 
-Users often say a **vault/token name** (“surplus vault”, “molten”), not `0x…`.
+1. Normalize the name: lowercase; strip trailing `vault` / `pool` / `token`.
+2. If name is in **Deployed packages** in `vault-names.md` → use that row’s `asset`, `chainId`, `package`, `factory` (and cached clones if present).
+3. Else if user gave `0xASSET` → scan factories (step 4).
+4. Factory scan (when package not pinned): call `registry(asset)` on factories in order **Bv4 → Bv3 → RhV4 → RhV3 → Sv3**. First `vault != 0` wins; set package from that factory.
+5. Decode registry: `(strategy, vault, liquidShares, shareStaking, … active)` — V3/Sushi also return `poolFee`.
+6. Deposit / claim only when `vault != 0` and `active == true`.
+7. Unknown name (not in Deployed packages) → say it isn’t in the catalog; do not guess.
 
-1. Normalize the name (lowercase; strip trailing “vault” / “pool” / “token”).
-2. If name is in **Deployed packages** in `vault-names.md` → use that `vault` / `asset` / `strategy`.
-3. Else if name is in **Known tokens** → take `asset`, then `factory.registry(asset)`.
-4. Else if user gave `0xASSET` → `factory.registry(asset)`.
-5. If still unknown, say the name isn’t in the catalog; optionally scan factory `assets`.
-6. Deposit/withdraw only when `vault != 0` and preferably `active == true`.
-
-Never invent names or addresses — only the reference tables or on-chain registry.
+Never invent names or addresses — only the catalog, on-chain registry, or user-supplied `0x`.
 
 ---
 
-## AutoFactory / listing prompts
+## Vault page link
 
-### "Is there a molten vault?" / "Does SAIRI have an auto vault?"
+After resolving `vault` + package:
 
-1. Look up name → **ASSET** in Known tokens (`vault-names.md`).
-2. If not in catalog → say unknown token name (don’t guess an address).
-3. `(strategy, vault, active) = factory.registry(asset)`.
-4. Reply yes/no with `asset`, and if deployed: `vault`, `strategy`, `active`.
+| Package | Path |
+|---------|------|
+| Bv3 / Bv4 | `/dapp/auto-vaults-base/{vault}` |
+| RhV3 / RhV4 | `/dapp/auto-vaults-rh/{vault}` |
+| Sv3 | `/dapp/pool-dot-auto/{vault}` |
+
+Full URL: `https://www.soterialabs.io` + path. For claim UX, append `?tab=claim`.
+
+Always include this link in replies that resolve a vault.
+
+---
+
+## Listing / existence prompts
+
+### "Is there a frong vault?" / "Does surplus have an auto vault?"
+
+1. Resolve name → asset + package/factory (catalog or scan).
+2. `(strategy, vault, liquidShares, shareStaking, active) = factory.registry(asset)`.
+3. Reply yes/no with **name**, **package**, **chain**, **asset**, and if deployed: **vault**, **strategy**, **active**, **link**.
 
 ### "What vaults / tokens are available?"
 
-1. List **Deployed packages** (name + vault) from `vault-names.md`.
-2. Optionally note Known tokens can be checked via registry; or scan factory `assetsLength`.
+List **Deployed packages** from `vault-names.md` (name + package + chain + link).
 
 ---
 
-## AutoVault prompts
+## Read prompts
 
-Resolve vault via **name** or `registry(asset)` first.
+Resolve vault via name / registry first. Prefer **LiquidShares** from registry (not vault ERC-20).
 
-| User prompt | Call on `vault` |
-|-------------|-----------------|
-| "What is the pool value of surplus?" | `balance()` → WETH-notional (18 decimals) |
-| "What is the total liquid tokens / shares of nook?" | `totalSupply()` |
-| "What is my shares of surplus?" | `balanceOf(user)` |
+| User prompt | Call |
+|-------------|------|
+| "What is the pool value / NAV of surplus?" | `vault.balance()` → ETH-notional (18 decimals) |
+| "What fees has frong earned?" | `strategy.UniswapFeesCollected()` (cumulative) |
+| "What is the total liquid shares of bnkr?" | `liquidShares.totalSupply()` |
+| "What are my liquid shares of cashcat?" | `liquidShares.balanceOf(user)` |
+| "How much do I have staked?" | `shareStaking.stakedBalance(user)` if `shareStaking != 0` |
+| "What is the APR of suchicat?" | See APR below |
 
 `user` = connected / Bankr wallet.
 
-### Deposit
+### APR
 
-**"Deposit 0.01 ETH into surplus vault"** / **"Deposit into nook"**
+1. Prefer the **site API** (same host as the dapp; no separate backend):  
+   `GET https://www.soterialabs.io/api/vault-snapshots?vault={vault}&chain={base|robinhood}`  
+   (`base` for Bv3/Bv4; `robinhood` for RhV3/RhV4/Sv3).  
+   Body: `{ vault, chain, snapshots: [{ valueWeth, fees, ts }] }` — ETH floats + unix `ts`.  
+   Compute ~7d realized fee APR from snapshots (see `abi-and-calls.md`).
+2. If the API is unreachable or &lt; 2 points: report `UniswapFeesCollected` + `vault.balance()` and the **vault page link** (UI shows APR).
 
-1. Resolve `vault` (name table or registry); require active when checked on-chain.
+Do not invent an APR number without snapshots or an explicit fallback disclaimer.
+
+---
+
+## Deposit
+
+**"Deposit 0.01 ETH into surplus"** / **"Deposit into frong"**
+
+1. Resolve `vault` + package; require `active`.
 2. Amount must be **ETH** for `depositETH`. If the user only says `$10` (USD), ask for an ETH amount (or convert if the agent already has a price — do not guess).
-3. `vault.depositETH()` with `value = wei`.
-4. Reply with tx hash; echo **name**, **vault**, **asset**.
+3. Use the correct **chain RPC** for the package (`8453` Base / `4663` Robinhood).
+4. `vault.depositETH()` with `value = wei`.
+5. Reply with tx hash; echo **name**, **package**, **chain**, **vault**, **asset**, **link**.
 
-Do **not** use `depositWeth` / `depositAsset` unless the user explicitly says WETH or the ERC-20 asset.
+Do **not** use non-ETH deposit paths unless the user explicitly asks.
 
-### Withdraw
+---
 
-`vault.withdraw(shares, asAsset)` — default `asAsset = false` → **WETH** out.
+## Claim / withdraw
+
+UI “claim” = withdraw liquid shares via the vault (not ShareStaking epoch claim).
+
+`vault.withdraw(shares, asAsset)` — default `asAsset = false`.
+
+| Package | Default out (`asAsset = false`) |
+|---------|----------------------------------|
+| Bv3 / Bv4 | WETH ERC-20 |
+| RhV3 / Sv3 | aeWETH ERC-20 |
+| RhV4 | **native ETH** |
 
 | User prompt | Shares |
 |-------------|--------|
-| "Withdraw x liquid tokens from surplus" | `x` (× 1e18 if human 18-decimal) |
-| "Withdraw x% from nook" | `balanceOf(user) * x / 100` |
-| "Withdraw all from surplus" | `balanceOf(user)` |
+| "Claim / withdraw x liquid shares from surplus" | `x` (× 1e18 if human 18-decimal) |
+| "Withdraw x% from frong" | `liquidShares.balanceOf(user) * x / 100` |
+| "Claim all / withdraw all from bnkr" | `liquidShares.balanceOf(user)` |
 
-If `shares == 0`, do not send a tx.
+If `shares == 0`, do not send a tx. Cap at `balanceOf(user)`.
+
+### ShareStaking epoch rewards
+
+Only when the user asks for **staking / epoch rewards**: `shareStaking.claim(epoch)` (see `abi-and-calls.md`). Do not confuse with vault claim.
 
 ---
 
 ## Response rules
 
-- Always show **name** (if any), **ASSET**, and **vault**.
+- Always show **name** (if any), **package**, **chain**, **ASSET**, **vault**, and **vault page link**.
 - Format uint256 as raw + human (÷ 1e18) when 18 decimals.
 - Confirm large/ambiguous amounts before sending.
-- Keep `vault-names.md` updated when new packages deploy.
+- Keep `vault-names.md` updated when new packages deploy (especially vault/strategy/LS/SS clones).
 
 ## References
 
-- Name map: `references/vault-names.md`
-- Call/ABI: `references/abi-and-calls.md`
+- Name / factory map: `references/vault-names.md`
+- Call / ABI / APR: `references/abi-and-calls.md`

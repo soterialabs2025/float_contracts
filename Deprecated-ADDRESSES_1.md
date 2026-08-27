@@ -30,6 +30,8 @@
 | LiquidSharesRhv3 | `0x8CcDE996822A1E78E0Eb9444984171F82c263096` |
 | ShareStakingRhv3 | `0x82a783aA857aFEa73977F4FB9E3F6F986fD3B28B` |
 
+Current Epock: 3
+Staked until- 1787598386 -  Monday, August 24, 2026 at 12:06:26 PM
 **InfraConfig**: `[swapRouter, operatorRegistry, keeper, feeManager]`
 **Asset**:`0x020bfc650a365f8bb26819deaabf3e21291018b4` - `10000`
 
