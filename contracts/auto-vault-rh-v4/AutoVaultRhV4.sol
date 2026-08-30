@@ -25,6 +25,8 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
     uint256 public lastSharePriceX18;
     uint256 public accUniswapFeesPerShare;
     uint256 public uniswapFeesCollectedSynced;
+    /// @dev Near-full withdraw sweeps leftover shares below this (avoids wei dust blocking empty+HW reset).
+    uint256 internal constant MIN_SHARE_DUST = 1e10;
 
     event Deposit(address indexed user, uint256 ethNotional, uint256 shares, uint256 acc);
     event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
@@ -143,6 +145,7 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
         if (supply == 0) return credited;
         uint256 sharesSpot =
             navBefore == 0 ? type(uint256).max : Math.mulDiv(credited, supply, navBefore);
+        if (lastSharePriceX18 == 0) return sharesSpot;
         return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
     }
 
@@ -156,13 +159,18 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
     }
 
     function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
-        if (shares == 0 || totalSupply() == 0 || shares > balanceOf(msg.sender)) revert ZeroValue();
+        uint256 supply = totalSupply();
+        uint256 bal = balanceOf(msg.sender);
+        if (shares == 0 || supply == 0 || shares > bal) revert ZeroValue();
+        // Treat near-full personal exits as full exits so wei dust is not left behind.
+        if (bal - shares < MIN_SHARE_DUST) shares = bal;
         IAutoStrategyRhV4.WithdrawToken out =
             asAsset ? IAutoStrategyRhV4.WithdrawToken.ASSET : IAutoStrategyRhV4.WithdrawToken.WETH;
         _syncAcc();
         uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : msg.sender.balance;
         strategy.withdraw(shares, msg.sender, out);
         liquidShares.burn(msg.sender, shares);
+        if (totalSupply() == 0) lastSharePriceX18 = 0;
         uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : msg.sender.balance;
         uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
         emit Withdraw(msg.sender, shares, asAsset, received, accUniswapFeesPerShare);

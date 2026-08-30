@@ -34,6 +34,8 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
     uint256 public lastSharePriceX18;
     uint256 public accUniswapFeesPerShare;
     uint256 public uniswapFeesCollectedSynced;
+    /// @dev Near-full withdraw sweeps leftover shares below this (avoids wei dust blocking empty+HW reset).
+    uint256 internal constant MIN_SHARE_DUST = 1e10;
 
     event Deposit(address indexed user, uint256 wethNotional, uint256 shares, uint256 acc);
     event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
@@ -137,13 +139,15 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
         if (supply == 0 && msg.sender != owner()) revert FirstMintOwnerOnly();
 
         uint256 navBefore = balance();
+        // TWAP must be sampled pre-deposit; post-deposit TWAP includes `amount` and under-mints.
+        uint256 navTwap = strategy.poolValueTwap();
         IERC20(address(weth)).forceApprove(address(strategy), amount);
         strategy.deposit(amount);
         uint256 navAfter = balance();
         uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
         // Cap to deposited WETH so spot/NAV jumps between reads cannot overmint shares (V-NAV-MINT).
         if (credited > amount) credited = amount;
-        shares = _sharesForDeposit(credited, navBefore, supply);
+        shares = _sharesForDeposit(credited, navBefore, supply, navTwap);
         if (shares == 0) revert ZeroValue();
         _syncAcc();
         liquidShares.mint(msg.sender, shares);
@@ -152,7 +156,8 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
     }
 
     /// @dev Owner seeds 1:1. Later: min(spot, twap) if TWAP ok; else min(spot, high-water).
-    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply)
+    /// `navTwap` must be the pre-deposit TWAP NAV (0 if unavailable).
+    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navTwap)
         internal
         view
         returns (uint256)
@@ -160,10 +165,10 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
         if (supply == 0) return credited;
         uint256 sharesSpot =
             navBefore == 0 ? type(uint256).max : Math.mulDiv(credited, supply, navBefore);
-        uint256 navTwap = strategy.poolValueTwap();
         if (navTwap > 0) {
             return Math.min(sharesSpot, Math.mulDiv(credited, supply, navTwap));
         }
+        if (lastSharePriceX18 == 0) return sharesSpot;
         return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
     }
 
@@ -177,13 +182,18 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
     }
 
     function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
-        if (shares == 0 || totalSupply() == 0 || shares > balanceOf(msg.sender)) revert ZeroValue();
+        uint256 supply = totalSupply();
+        uint256 bal = balanceOf(msg.sender);
+        if (shares == 0 || supply == 0 || shares > bal) revert ZeroValue();
+        // Treat near-full personal exits as full exits so wei dust is not left behind.
+        if (bal - shares < MIN_SHARE_DUST) shares = bal;
         IAutoStrategyRhV3.WithdrawToken out =
             asAsset ? IAutoStrategyRhV3.WithdrawToken.ASSET : IAutoStrategyRhV3.WithdrawToken.WETH;
         _syncAcc();
         uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
         strategy.withdraw(shares, msg.sender, out);
         liquidShares.burn(msg.sender, shares);
+        if (totalSupply() == 0) lastSharePriceX18 = 0;
         uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
         uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
         emit Withdraw(msg.sender, shares, asAsset, received, accUniswapFeesPerShare);
