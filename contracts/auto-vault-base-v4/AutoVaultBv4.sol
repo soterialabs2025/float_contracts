@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -16,9 +17,15 @@ interface IWETH is IERC20 {
     function deposit() external payable;
 }
 
+/// @dev Minimal view used only to resolve pause authority: the strategy holds the operator registry.
+interface IOperatorGate {
+    function operatorRegistry() external view returns (address);
+    function isOperator(address account) external view returns (bool);
+}
+
 /// @title AutoVaultBv4
 /// @notice Base (8453) AutoVault: ETH-only deposits, LiquidSharesBv4 + ShareStakingBv4 package, ownership lock.
-contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
+contract AutoVaultBv4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultBv4 {
     using SafeERC20 for IERC20;
 
     IWETH public immutable weth;
@@ -126,7 +133,24 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
         return liquidShares.totalSupply();
     }
 
-    function depositETH() external payable override nonReentrant returns (uint256 shares) {
+    /// @notice Halt new deposits. Operators may trip this for fast incident response; only the owner clears it.
+    /// @dev `withdraw` is deliberately never gated, so a pause cannot trap depositor funds.
+    function pause() external {
+        if (msg.sender != owner() && !_isOperator(msg.sender)) revert Unauthorized();
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function _isOperator(address account) internal view returns (bool) {
+        if (!bootstrapped) return false;
+        address registry = IOperatorGate(address(strategy)).operatorRegistry();
+        return registry != address(0) && IOperatorGate(registry).isOperator(account);
+    }
+
+    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         weth.deposit{value: msg.value}();
         return _mintSharesAndDeploy(msg.value);

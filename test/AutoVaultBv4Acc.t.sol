@@ -5,6 +5,9 @@ import "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+
 import {AutoVaultBv4} from "../contracts/auto-vault-base-v4/AutoVaultBv4.sol";
 import {LiquidSharesBv4} from "../contracts/auto-vault-base-v4/LiquidSharesBv4.sol";
 import {IAutoStrategyBv4} from "../contracts/auto-vault-base-v4/interfaces/IAutoStrategyBv4.sol";
@@ -18,12 +21,25 @@ contract MockWETH is ERC20 {
     }
 }
 
+contract MockOperatorRegistry {
+    mapping(address => bool) public isOperator;
+
+    function setOperator(address account, bool allowed) external {
+        isOperator[account] = allowed;
+    }
+}
+
 contract MockStrategyBv4 {
     uint256 public nav;
     uint256 public feesCollected;
     address public keeperAddr;
+    address public operatorRegistry;
     IERC20 public weth;
     IERC20 public assetToken;
+
+    function setOperatorRegistry(address registry) external {
+        operatorRegistry = registry;
+    }
 
     constructor(address weth_, address asset_) {
         weth = IERC20(weth_);
@@ -84,6 +100,7 @@ contract AutoVaultBv4AccTest is Test {
     AutoVaultBv4 internal vault;
     LiquidSharesBv4 internal ls;
     MockStrategyBv4 internal strategy;
+    MockOperatorRegistry internal registry;
     MockAsset internal asset;
 
     address internal factory = address(0xFA70);
@@ -102,6 +119,8 @@ contract AutoVaultBv4AccTest is Test {
         vault = new AutoVaultBv4(factory);
         ls = new LiquidSharesBv4(factory);
         strategy = new MockStrategyBv4(WETH_ADDR, address(asset));
+        registry = new MockOperatorRegistry();
+        strategy.setOperatorRegistry(address(registry));
 
         vm.startPrank(factory);
         ls.bootstrap(address(vault));
@@ -239,5 +258,73 @@ contract AutoVaultBv4AccTest is Test {
             }
         }
         assertEq(emittedAcc, vault.accUniswapFeesPerShare());
+    }
+
+    // --- pause ---
+
+    function test_pauseBlocksDeposits() public {
+        _deposit(owner, 100 ether);
+
+        vm.prank(owner);
+        vault.pause();
+        assertTrue(vault.paused());
+
+        vm.prank(alice);
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vault.depositETH{value: 1 ether}();
+    }
+
+    /// @dev The pause deliberately does not cover exits, so it cannot be used to trap depositor funds.
+    function test_withdrawStaysOpenWhilePaused() public {
+        uint256 shares = _deposit(owner, 100 ether);
+
+        vm.prank(owner);
+        vault.pause();
+
+        vm.prank(owner);
+        uint256 received = vault.withdraw(shares, false);
+        assertGt(received, 0);
+        assertEq(vault.balanceOf(owner), 0);
+    }
+
+    function test_depositResumesAfterUnpause() public {
+        _deposit(owner, 100 ether);
+
+        vm.prank(owner);
+        vault.pause();
+        vm.prank(owner);
+        vault.unpause();
+
+        assertFalse(vault.paused());
+        assertGt(_deposit(alice, 1 ether), 0);
+    }
+
+    /// @dev Operators trip the pause for fast incident response but cannot clear it; recovery stays with the owner.
+    function test_operatorCanPauseButNotUnpause() public {
+        registry.setOperator(alice, true);
+
+        vm.prank(alice);
+        vault.pause();
+        assertTrue(vault.paused());
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vault.unpause();
+        assertTrue(vault.paused());
+    }
+
+    function test_nonOperatorCannotPause() public {
+        vm.prank(bob);
+        vm.expectRevert(AutoVaultBv4.Unauthorized.selector);
+        vault.pause();
+    }
+
+    function test_revokedOperatorCannotPause() public {
+        registry.setOperator(alice, true);
+        registry.setOperator(alice, false);
+
+        vm.prank(alice);
+        vm.expectRevert(AutoVaultBv4.Unauthorized.selector);
+        vault.pause();
     }
 }

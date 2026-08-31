@@ -45,7 +45,8 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     bytes private _hookData;
     IERC20 private _asset;
     IAutoSwapRouterBv4 private swapRouter;
-    IAutoOperatorRegistryBv4 private operatorRegistry;
+    /// @dev Public so the vault can resolve operators for its pause authority without storing a second copy.
+    IAutoOperatorRegistryBv4 public operatorRegistry;
 
     address public vault;
     address public keeper;

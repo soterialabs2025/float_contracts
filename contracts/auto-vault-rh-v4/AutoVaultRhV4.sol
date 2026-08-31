@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -12,7 +13,13 @@ import "./interfaces/ILiquidSharesRhV4.sol";
 
 /// @title AutoVaultRhV4
 /// @notice RH (4663) AutoVault: ETH-only deposits into token/native-ETH v4 packages.
-contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
+/// @dev Minimal view used only to resolve pause authority: the strategy holds the operator registry.
+interface IOperatorGate {
+    function operatorRegistry() external view returns (address);
+    function isOperator(address account) external view returns (bool);
+}
+
+contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
     IAutoStrategyRhV4 public strategy;
     ILiquidSharesRhV4 public liquidShares;
     address public shareStaking;
@@ -116,7 +123,24 @@ contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
         return liquidShares.totalSupply();
     }
 
-    function depositETH() external payable override nonReentrant returns (uint256 shares) {
+    /// @notice Halt new deposits. Operators may trip this for fast incident response; only the owner clears it.
+    /// @dev `withdraw` is deliberately never gated, so a pause cannot trap depositor funds.
+    function pause() external {
+        if (msg.sender != owner() && !_isOperator(msg.sender)) revert Unauthorized();
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function _isOperator(address account) internal view returns (bool) {
+        if (!bootstrapped) return false;
+        address registry = IOperatorGate(address(strategy)).operatorRegistry();
+        return registry != address(0) && IOperatorGate(registry).isOperator(account);
+    }
+
+    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         if (!bootstrapped) revert NotBootstrapped();
         uint256 supply = totalSupply();
