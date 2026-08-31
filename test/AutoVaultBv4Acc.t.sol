@@ -39,10 +39,6 @@ contract MockStrategyBv4 {
         feesCollected += delta_;
     }
 
-    function balance() external view returns (uint256) {
-        return nav;
-    }
-
     function poolValue() external view returns (uint256) {
         return nav;
     }

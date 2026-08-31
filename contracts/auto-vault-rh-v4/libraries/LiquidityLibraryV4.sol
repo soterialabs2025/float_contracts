@@ -289,7 +289,7 @@ library LiquidityLibraryV4 {
         uint256 bal1,
         int24 lower,
         int24 upper
-    ) internal returns (uint256 newTokenId, uint128 newLiquidity) {
+    ) public returns (uint256 newTokenId, uint128 newLiquidity) {
         if (bal0 == 0 && bal1 == 0) return (0, 0);
 
         (uint160 sqrtP, ) = getSlot0(ctx.poolManager, ctx.poolKey);
@@ -356,7 +356,7 @@ library LiquidityLibraryV4 {
         IncreaseContext memory ctx,
         uint256 amount0Max,
         uint256 amount1Max
-    ) internal returns (uint128 addedLiquidity) {
+    ) public returns (uint128 addedLiquidity) {
         if (ps.positionId == 0) return 0;
 
         (uint160 sqrtP, ) = getSlot0(ctx.poolManager, ctx.poolKey);
@@ -428,7 +428,7 @@ library LiquidityLibraryV4 {
         PositionState storage ps,
         DecreaseContext memory ctx,
         address recipient
-    ) internal returns (uint256 amount0, uint256 amount1) {
+    ) public returns (uint256 amount0, uint256 amount1) {
         if (ps.positionId == 0) return (0, 0);
 
         uint256 bal0Before = currencyBalance(ctx.poolKey.currency0, recipient);
@@ -460,7 +460,7 @@ library LiquidityLibraryV4 {
     function decreaseAllLiquidity(
         PositionState storage ps,
         DecreaseContext memory ctx
-    ) internal returns (uint128 totalRemoved) {
+    ) public returns (uint128 totalRemoved) {
         if (ps.positionId == 0) return 0;
         uint128 liq = getPositionLiquidity(ps, ctx.posm);
         if (liq == 0) return 0;
@@ -491,7 +491,7 @@ library LiquidityLibraryV4 {
         PositionState storage ps,
         DecreaseContext memory ctx,
         uint128 liqToRemove
-    ) internal returns (uint128 removed) {
+    ) public returns (uint128 removed) {
         if (ps.positionId == 0) return 0;
         if (liqToRemove == 0) return 0;
 

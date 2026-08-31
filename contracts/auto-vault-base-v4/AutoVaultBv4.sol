@@ -115,7 +115,7 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
     }
 
     function balance() public view override returns (uint256) {
-        return strategy.balance();
+        return strategy.poolValue();
     }
 
     function balanceOf(address account) public view override returns (uint256) {

@@ -101,6 +101,29 @@ contract AutoKeeperRhV4 is IAutoKeeperRhV4, Ownable, ReentrancyGuard {
         }
     }
 
+    /// @notice Refresh the swap-gate price anchor on `id`. Cheap, swap-free, and rate-limited in the strategy.
+    /// @dev Run this on its own cadence: `performUpkeep` only lands when the position is out of range, so without
+    ///      it the anchor is only rewritten by a successful remint and drifts stale in a quiet market.
+    function refreshAnchor(uint256 id) external nonReentrant onlyOperator {
+        _refreshAnchor(id);
+    }
+
+    function refreshAnchorBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _refreshAnchor(ids[i]);
+        }
+    }
+
+    function _refreshAnchor(uint256 id) internal {
+        if (id >= watched.length) revert BadId();
+        WatchedStrategy storage ws = watched[id];
+        if (!ws.active || ws.stratAddr == address(0)) return;
+        IAutoStrategyRhV4(ws.stratAddr).refreshTickAnchor();
+    }
+
     function performHarvest(uint256 id, bool skipIncreaseLiquidity) external override nonReentrant onlyOperator {
         _performHarvest(id, skipIncreaseLiquidity);
     }

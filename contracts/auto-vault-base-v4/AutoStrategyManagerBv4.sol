@@ -30,6 +30,13 @@ contract AutoStrategyManagerBv4 is Ownable {
     uint256 public stakingShareBps = 5000;
     /// @notice True after TBA/post-transfer owner calls `setStakingShareBps` once; cannot change again.
     bool public stakingShareBpsLocked;
+    /// @notice Ticks the pool may sit from `lastBandBaseTick` before swaps are skipped, at zero anchor age.
+    /// @dev Must exceed the outer band width: reminting triggers precisely on band exit, so a tighter bound would
+    ///      stall rebalancing. Catches gross manipulation only, not ordinary sandwich-scale movement.
+    uint256 public maxSwapTickDeviation = 2000;
+    /// @notice Minimum spacing between keeper-driven `refreshTickAnchor` writes.
+    /// @dev Rate-limiting stops the anchor being walked onto a manipulated price by repeated refreshes.
+    uint256 public minAnchorRefreshInterval = 1 hours;
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -39,6 +46,14 @@ contract AutoStrategyManagerBv4 is Ownable {
     /// @notice Set ASSET inventory target bps. No cap — `0` = all WETH, `> DIVISOR` = all ASSET.
     function setTargetAssetBps(uint256 bps) external onlyOwner {
         targetAssetBps = bps;
+    }
+
+    function setMaxSwapTickDeviation(uint256 ticks) external onlyOwner {
+        maxSwapTickDeviation = ticks;
+    }
+
+    function setMinAnchorRefreshInterval(uint256 interval) external onlyOwner {
+        minAnchorRefreshInterval = interval;
     }
 
     /// @notice One-time set of staking/feeManager split. Only after package → TBA ownership lock.
@@ -74,6 +89,8 @@ contract AutoStrategyManagerBv4 is Ownable {
         targetAssetBps = 5000;
         stakingShareBps = 5000;
         stakingShareBpsLocked = false;
+        maxSwapTickDeviation = 2000;
+        minAnchorRefreshInterval = 1 hours;
     }
 
     function setRangeParams(uint256 _rangeBelowTicks, uint256 _rangeAboveTicks) external onlyOwner {

@@ -16,6 +16,7 @@ import "./interfaces/IAllowanceTransfer.sol";
 
 import "./AutoStrategyManagerRhV4.sol";
 import "./libraries/AutoBandLib.sol";
+import "./libraries/SwapGateLib.sol";
 import "./interfaces/IAutoVaultRhV4.sol";
 import "./interfaces/IAutoStrategyRhV4.sol";
 import "./interfaces/IAutoSwapRouterRhV4.sol";
@@ -54,6 +55,10 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     int24 public lastBandBaseTick;
     bool public hasBandBase;
+    /// @notice When `lastBandBaseTick` was anchored. Packs with the two above; the swap gate widens with its age.
+    uint64 public lastBandBaseTime;
+    /// @notice Block the anchor was written in. An anchor set this block says nothing about any prior state.
+    uint64 public lastBandBaseBlock;
 
     uint256 public lastHarvest;
     uint256 public lastRebalanceTime;
@@ -462,10 +467,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             hookData: _hookData
         });
         (uint256 newId, uint128 liq) = liqPos.mintNewPositionWithRange(ctx, bal0, bal1, lower, upper);
-        if (newId != 0 && liq > 0) {
-            lastBandBaseTick = TrailingFloorLib.alignDown(currentTick, _spacing());
-            hasBandBase = true;
-        }
+        if (newId != 0 && liq > 0) _setBandBase(currentTick);
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256 bal0, uint256 bal1) {
@@ -494,12 +496,15 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     }
 
     /// @dev Caps to deployable (`balance - reserved`). After withdraw consume, released reserve is spendable.
+    ///      Skips rather than reverts when unpriceable, so withdrawals degrade to paying the unswapped token.
     function _swap(bool sellEth, uint256 amount) internal {
         if (amount == 0) return;
         uint256 bal = sellEth ? _spendableEth() : _spendable(_asset);
         if (amount > bal) amount = bal;
         if (amount <= LIQUIDITY_DUST) return;
         if (amount > type(uint128).max) revert E();
+        uint256 minOut = _minOutForSwap(sellEth, amount);
+        if (minOut == 0) return;
         IAutoSwapRouterRhV4.AutoPoolKey memory key = IAutoSwapRouterRhV4.AutoPoolKey({
             currency0: _poolKey.currency0,
             currency1: _poolKey.currency1,
@@ -508,12 +513,60 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             hooks: _poolKey.hooks
         });
         if (sellEth) {
-            swapRouter.swapExactInputSingleStrict{value: amount}(true, uint128(amount), key, _hookData);
+            swapRouter.swapExactInputSingleStrict{value: amount}(
+                true, uint128(amount), uint128(minOut), block.timestamp, key, _hookData
+            );
         } else {
             _asset.forceApprove(address(swapRouter), amount);
-            swapRouter.swapExactInputSingleStrict(false, uint128(amount), key, _hookData);
+            swapRouter.swapExactInputSingleStrict(
+                false, uint128(amount), uint128(minOut), block.timestamp, key, _hookData
+            );
             _asset.forceApprove(address(swapRouter), 0);
         }
+    }
+
+    /// @dev Single writer for the four anchor fields so they can never disagree.
+    function _setBandBase(int24 tick) internal {
+        lastBandBaseTick = TrailingFloorLib.alignDown(tick, _spacing());
+        hasBandBase = true;
+        lastBandBaseTime = uint64(block.timestamp);
+        lastBandBaseBlock = uint64(block.number);
+    }
+
+    /// @notice Keeper-cadence refresh of the swap gate's price anchor. Returns false when rate-limited.
+    /// @dev Performs no swap, so recording the live tick cannot be self-referential the way an in-transaction
+    ///      quote is. `nonReentrant` matters here: it stops a hook re-anchoring mid-swap through the shared guard.
+    function refreshTickAnchor() external override nonReentrant returns (bool) {
+        _onlyKeeper();
+        if (lastBandBaseTime != 0 && block.timestamp < lastBandBaseTime + minAnchorRefreshInterval) return false;
+        (uint160 sqrtP, int24 tick) = _readSlot0();
+        if (sqrtP == 0) return false;
+        _setBandBase(tick);
+        return true;
+    }
+
+    /// @notice Output floor the strategy would enforce for `amount`, or 0 if it would skip the swap.
+    /// @dev Lets ShareStakingRhV4 reuse this pricing instead of duplicating it into another cloned contract.
+    function minOutForSwap(bool sellEth, uint256 amount) external view override returns (uint256) {
+        return _minOutForSwap(sellEth, amount);
+    }
+
+    /// @dev Output floor for a swap, or 0 when the swap must be skipped.
+    function _minOutForSwap(bool sellEth, uint256 amount) internal view returns (uint256) {
+        (uint160 sqrtP, int24 tick) = _readSlot0();
+        uint256 floor_ = SwapGateLib.minOut(
+            sqrtP,
+            tick,
+            SwapGateLib.Anchor(lastBandBaseTick, hasBandBase, lastBandBaseTime, lastBandBaseBlock),
+            maxSwapTickDeviation,
+            _poolKey.currency0 == address(0),
+            sellEth,
+            amount,
+            slippageBps,
+            DIVISOR
+        );
+        if (floor_ > type(uint128).max) revert E();
+        return floor_;
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
@@ -643,10 +696,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     function _spotPrice1e18() internal view returns (uint256) {
         (uint160 sqrtP,) = _readSlot0();
-        uint256 price = Math.mulDiv(uint256(sqrtP), uint256(sqrtP), (uint256(1) << 192) / 1e18);
-        if (_poolKey.currency0 == address(0)) return price;
-        if (price == 0) return 0;
-        return Math.mulDiv(1e18, 1e18, price);
+        return SwapGateLib.spotPrice1e18(sqrtP, _poolKey.currency0 == address(0));
     }
 
     function _poolValueOnly() internal view returns (uint256) {
@@ -670,7 +720,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 p = _spotPrice1e18();
         uint256 assetAsWeth = p != 0 ? Math.mulDiv(assetBal, 1e18, p) : 0;
         return wethBal + assetAsWeth;
-    }
+    } 
 
     function balanceOfPool() public view returns (uint256 assetAmt, uint256 wethAmt) {
         if (liqPos.positionId == 0) return (0, 0);

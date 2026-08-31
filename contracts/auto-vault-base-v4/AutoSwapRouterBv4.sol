@@ -5,7 +5,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
@@ -17,34 +16,43 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
 
 import "../v4/V4Deployments8453.sol";
 import "./interfaces/IAutoSwapRouterBv4.sol";
 
 /// @title AutoSwapRouterBv4
 /// @notice Base (8453) v4 swap router for Auto strategies. Pool keys are owned by strategies and passed per call.
+/// @dev Slippage is caller-supplied (`minAmountOut`). The router deliberately does not derive a bound from an
+///      in-transaction quote: a quote read from the pool being swapped against reflects any manipulation already
+///      applied in the same transaction, so it cannot constrain the execution price.
 contract AutoSwapRouterBv4 is IAutoSwapRouterBv4, IUnlockCallback, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IPoolManager public immutable poolManager = IPoolManager(V4Deployments8453.POOL_MANAGER);
-    IV4Quoter public immutable v4Quoter = IV4Quoter(V4Deployments8453.QUOTER);
 
-    uint16 public strictStrategySlippageBps = 100;
+    /// @notice Cap on this swap's own price movement, measured in sqrtPriceX96 space.
+    /// @dev Because price is the square of sqrtPrice, a bound of `n` bps here permits roughly `2n` bps of price
+    ///      movement. The default 200 therefore allows about 4% of price impact.
     uint16 public maxPriceImpactBps = 200;
 
     address public strategyFactory;
     mapping(address => bool) public isAuthorizedStrategy;
 
     error Unauthorized();
+    error NotAuthorized();
     error ZeroAddress();
     error ZeroAmount();
+    error ZeroMinOut();
+    error Expired();
+    error InsufficientOutput();
     error AlreadyAuthorized();
     error BadSlippage();
 
     event StrategyFactoryUpdated(address indexed factory);
     event StrategyAuthorized(address indexed strategy);
-    event StrictStrategySlippageUpdated(uint16 bps);
+    event StrategyDeauthorized(address indexed strategy);
+    event MaxPriceImpactUpdated(uint16 bps);
+    event Rescued(address indexed token, address indexed to, uint256 amount);
     event SwapExecuted(
         address indexed caller, address indexed recipient, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
     );
@@ -73,31 +81,54 @@ contract AutoSwapRouterBv4 is IAutoSwapRouterBv4, IUnlockCallback, Ownable, Reen
         emit StrategyAuthorized(strategy);
     }
 
-    function setStrictStrategySlippageBps(uint16 bps) external onlyOwner {
-        if (bps > 5_000) revert BadSlippage();
-        strictStrategySlippageBps = bps;
-        emit StrictStrategySlippageUpdated(bps);
+    function removeAuthorizedStrategy(address strategy) external onlyOwner {
+        if (!isAuthorizedStrategy[strategy]) revert NotAuthorized();
+        delete isAuthorizedStrategy[strategy];
+        emit StrategyDeauthorized(strategy);
+    }
+
+    /// @param bps Bound in sqrtPrice space; see `maxPriceImpactBps` for the factor-of-two relationship to price.
+    function setMaxPriceImpactBps(uint16 bps) external onlyOwner {
+        if (bps == 0 || bps > 5_000) revert BadSlippage();
+        maxPriceImpactBps = bps;
+        emit MaxPriceImpactUpdated(bps);
+    }
+
+    /// @notice Recover tokens or ETH stranded outside a swap. The router holds no balance between transactions.
+    function rescue(address token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (token == address(0)) {
+            (bool ok,) = to.call{value: amount}("");
+            if (!ok) revert ZeroAmount();
+        } else {
+            IERC20(token).safeTransfer(to, amount);
+        }
+        emit Rescued(token, to, amount);
     }
 
     function swapExactInputSingleStrict(
         bool zeroForOne,
         uint128 amountIn,
+        uint128 minAmountOut,
+        uint256 deadline,
         AutoPoolKey calldata libKey,
         bytes calldata hookData
     ) external override onlyAuthorized nonReentrant returns (uint256 amountOut) {
         if (amountIn == 0) revert ZeroAmount();
+        // A zero floor would leave the swap wholly unprotected; callers that cannot price must not swap.
+        if (minAmountOut == 0) revert ZeroMinOut();
+        if (deadline != 0 && block.timestamp > deadline) revert Expired();
         PoolKey memory key = _toCoreKey(libKey);
 
         PoolId poolId = PoolIdLibrary.toId(key);
         (uint160 sqrtBefore,,,) = StateLibrary.getSlot0(poolManager, poolId);
         require(sqrtBefore != 0, "pool !init");
 
-        uint128 minOut = _minOutFromV4Quoter(key, zeroForOne, amountIn, hookData, strictStrategySlippageBps);
         amountOut = _swapV4Direct(
             key,
             zeroForOne,
             amountIn,
-            minOut,
+            minAmountOut,
             zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1,
             hookData,
             msg.sender
@@ -135,33 +166,9 @@ contract AutoSwapRouterBv4 is IAutoSwapRouterBv4, IUnlockCallback, Ownable, Reen
             recipient, key, zeroForOne, int256(uint256(amountIn)), sqrtPriceLimitX96, hookData
         );
 
-        uint256 balBefore = IERC20(tokenOut).balanceOf(recipient);
-        poolManager.unlock(data);
-        amountOut = IERC20(tokenOut).balanceOf(recipient) - balBefore;
-        require(amountOut >= minAmountOut, "Insufficient output amount");
+        amountOut = abi.decode(poolManager.unlock(data), (uint256));
+        if (amountOut < minAmountOut) revert InsufficientOutput();
         emit SwapExecuted(msg.sender, recipient, tokenIn, tokenOut, amountIn, amountOut);
-    }
-
-    function _minOutFromV4Quoter(
-        PoolKey memory key,
-        bool zeroForOne,
-        uint128 amountIn,
-        bytes memory hookData,
-        uint16 slippageBps
-    ) internal returns (uint128 minOut) {
-        try v4Quoter.quoteExactInputSingle(
-            IV4Quoter.QuoteExactSingleParams({
-                poolKey: key,
-                zeroForOne: zeroForOne,
-                exactAmount: amountIn,
-                hookData: hookData
-            })
-        ) returns (uint256 quoted, uint256) {
-            require(quoted > 0, "quoter=0");
-            minOut = uint128(Math.mulDiv(quoted, 10_000 - uint256(slippageBps), 10_000));
-        } catch {
-            revert("quoter failed");
-        }
     }
 
     function _requirePriceImpactBound(uint160 sqrtBefore, uint160 sqrtAfter, bool zeroForOne) internal view {
@@ -203,6 +210,11 @@ contract AutoSwapRouterBv4 is IAutoSwapRouterBv4, IUnlockCallback, Ownable, Reen
         IERC20(Currency.unwrap(inC)).safeTransfer(address(poolManager), owed);
         poolManager.settle();
         poolManager.take(outC, recipient, received);
-        return "";
+
+        // Partial fills leave input behind. Refund this swap's own residue only, never the whole balance.
+        uint256 residue = uint256(amountIn) - owed;
+        if (residue > 0) IERC20(Currency.unwrap(inC)).safeTransfer(recipient, residue);
+
+        return abi.encode(received);
     }
 }

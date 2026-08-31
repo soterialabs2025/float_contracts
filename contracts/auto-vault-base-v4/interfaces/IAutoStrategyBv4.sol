@@ -10,7 +10,7 @@ interface IAutoStrategyBv4 {
     }
 
     function poolValue() external view returns (uint256);
-    function balance() external view returns (uint256);
+    function minOutForSwap(address tokenIn, uint256 amount) external view returns (uint256);
     function UniswapFeesCollected() external view returns (uint256);
     function vault() external view returns (address);
     function keeper() external view returns (address);
@@ -19,6 +19,7 @@ interface IAutoStrategyBv4 {
     function hookData() external view returns (bytes memory);
 
     function keeperCheck() external returns (bool);
+    function refreshTickAnchor() external returns (bool);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
 
     function deposit(uint256 amount) external;

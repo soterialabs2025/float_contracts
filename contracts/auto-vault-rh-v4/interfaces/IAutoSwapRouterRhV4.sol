@@ -12,9 +12,13 @@ interface IAutoSwapRouterRhV4 {
         address hooks;
     }
 
+    /// @param minAmountOut Caller-supplied output floor. Must be non-zero; the router does not derive one.
+    /// @param deadline Unix timestamp after which the swap reverts. `0` disables the check.
     function swapExactInputSingleStrict(
         bool zeroForOne,
         uint128 amountIn,
+        uint128 minAmountOut,
+        uint256 deadline,
         AutoPoolKey calldata key,
         bytes calldata hookData
     ) external payable returns (uint256 amountOut);

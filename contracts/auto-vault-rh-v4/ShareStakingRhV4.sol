@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./libraries/LiquidityLibraryV4.sol";
 import "./interfaces/IShareStakingRhV4.sol";
+import "./interfaces/IAutoStrategyRhV4.sol";
 import "./interfaces/IAutoSwapRouterRhV4.sol";
 import "./interfaces/ILiquidSharesRhV4.sol";
 
@@ -318,10 +319,15 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
     }
 
     function _swapAssetToWeth(uint128 amount) internal returns (uint256 wethAdded) {
+        // Strategy owns the pricing and the stale-tick gate; a zero floor means it would refuse to swap too.
+        uint256 minOut = IAutoStrategyRhV4(strategy).minOutForSwap(false, amount);
+        if (minOut == 0) return 0;
         IERC20(asset).forceApprove(address(swapRouter), amount);
         try swapRouter.swapExactInputSingleStrict(
             false,
             amount,
+            uint128(minOut),
+            block.timestamp,
             IAutoSwapRouterRhV4.AutoPoolKey({
                 currency0: poolKey.currency0,
                 currency1: poolKey.currency1,
