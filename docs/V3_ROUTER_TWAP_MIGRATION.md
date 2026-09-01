@@ -306,29 +306,51 @@ Sizes before → after:
 
 | Contract | Before | After | Delta | Margin left |
 |----------|--------|-------|-------|-------------|
-| `AutoStrategyBv3` runtime | 23,574 | 23,998 | +424 | **578** to EIP-170 |
-| `AutoFactoryBv3` initcode | 48,150 | 48,941 | +791 | **211** to EIP-3860 |
+| `AutoStrategyBv3` runtime | 23,574 | 21,751 | −1,823 | **2,825** to EIP-170 |
+| `AutoFactoryBv3` initcode | 48,150 | 46,692 | −1,458 | **2,460** to EIP-3860 |
 | `AutoSwapRouterBv3` runtime | 2,738 | 2,509 | −229 | 22,067 |
 | `ShareStakingBv3` runtime | 7,385 | 7,731 | +346 | 16,845 |
 
-The last +98 on each of the strategy and the factory is the widened withdraw band (§9.1). Folding
-`_spotAlignedWithTwap` into a band-parameterised `_priceWithinBand` paid for most of it.
-
 The factory is the binding constraint, not the strategy: it deploys all four implementations in its
-own constructor, so their creation code is embedded in its initcode and **211 bytes is the shared
-budget across the strategy, vault, LiquidShares, and ShareStaking.** A user-supplied `minOut` on
-`withdraw` was costed at roughly 400–800 bytes and does not fit without extracting a library first.
+own constructor, so their creation code is embedded in its initcode and the headroom is a **shared
+budget across the strategy, vault, LiquidShares, and ShareStaking.** Growth in any of them
+propagates, so size-check additions against `AutoFactoryBv3` first.
 
-**No linked libraries were needed** — escape hatch (1) in §3 was sufficient, so the stack still deploys
-with no linking step.
+Both limits were breached before the extraction below: the strategy by 234 bytes and the factory by
+599. The fee-aware floor and the canonical quote port together cost 754 bytes of strategy runtime,
+which is what pushed them over.
 
-The binding constraint moved from the strategy to the **factory**, which now has 291 bytes of
-initcode headroom. The factory carries the creation code of both the strategy (+365) and
-ShareStaking (+346), so growth in either propagates into it. Any further additions to those two
-contracts should be size-checked against `AutoFactoryBv3` first, not the strategy.
+### 13.1 Linked library — `LiquidityLibraryV2`
 
-Tests: 86 pass (63 pre-existing plus 23 new across `test/AutoSwapRouterBv3.t.sol` and
-`test/SwapFloorBv3.t.sol`).
+Escape hatch (3) from §3 was finally needed, so **base-v3 now has a linking step it did not have
+before.** Four functions moved from `internal` to `public`, which is what makes a library deploy once
+and link by address rather than inline into every consumer: `mintNewPositionWithRange`,
+`increaseLiquidityInternal`, `decreaseAllLiquidity`, `decreaseLiquidityByAmount`. This mirrors the
+`LiquidityLibraryV4` change in `auto-vault-base-v4`. `mintNewPosition` stayed `internal`: base-v3
+never calls it, so it is stripped rather than deployed.
+
+That freed 3,059 bytes from both the strategy and the factory, clearing both limits at once. The
+swap floor and quote math stayed inline, since step (2) of the plan — a `SwapGateLibV3` — proved
+unnecessary. That keeps `DELEGATECALL` off the withdraw path.
+
+**Deployment order changed. Two contracts now need linking**, confirmed by
+`python scripts/check_link_refs.py`, which reports unresolved `__$` placeholders:
+
+| Contract | Needs | Placeholders |
+|----------|-------|--------------|
+| `AutoStrategyBv3` | `LiquidityLibraryV2` | 4 |
+| `AutoFactoryBv3` | `LiquidityLibraryV2` | 4 |
+
+The factory carries them because it embeds the strategy's creation code. Everything else in the
+stack — router, keeper, vault, ShareStaking, LiquidShares — needs no linking.
+
+Deploy `LiquidityLibraryV2` (7,856 bytes runtime) first, then link its address into both the
+strategy and the factory before deploying the factory. In Remix that is the library-address panel,
+not a constructor argument. Note that `forge test` deploys and links libraries automatically, so
+**the test suite cannot catch a missing production link** — `check_link_refs.py` is the guard.
+
+Tests: 91 pass across `test/AutoSwapRouterBv3.t.sol` and `test/SwapFloorBv3.t.sol` plus the
+pre-existing suites.
 
 ---
 
@@ -341,3 +363,5 @@ Tests: 86 pass (63 pre-existing plus 23 new across `test/AutoSwapRouterBv3.t.sol
 | 2026-08-31 | Implemented on `base-v3`. All five findings closed; 84 tests pass. No linked libraries needed — see §13. |
 | 2026-08-31 | `setTwapSeconds(0)` rejected — it would have zeroed every swap floor and bricked withdrawals (§9.1). 86 tests. |
 | 2026-08-31 | Exits price against 3x the rebalance band as an automatic release valve (§9.1). 90 tests. |
+| 2026-08-31 | Floor concedes the pool fee and quotes via canonical `getQuoteAtTick`; every swap on a 1% pool had reverted. |
+| 2026-08-31 | `LiquidityLibraryV2` linked externally to clear both size limits (§13.1). 91 tests. |

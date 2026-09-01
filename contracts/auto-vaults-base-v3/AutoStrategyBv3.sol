@@ -414,13 +414,19 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
     }
 
     /// @dev `0` when the oracle is unusable or spot has left `maxDevBps`, meaning the swap must not proceed.
+    ///      Two deductions, kept separate because they are different things. `poolFee` is the pool's own charge:
+    ///      an exact, known amount that Uniswap removes from the output before testing it against this floor, so
+    ///      a floor that ignores it can never be met and every swap reverts with "Too little received".
+    ///      `swapSlippageBps` is the operator's tolerance for what cannot be known here, namely liquidity-based
+    ///      price impact and drift between reading the pool and executing against it.
     function _minOutAtBand(address tokenIn, uint256 amount, uint256 maxDevBps) internal view returns (uint256) {
-        uint256 p = _priceWithinBand(maxDevBps);
-        if (p == 0) return 0;
-        // `p` is ASSET per WETH, scaled 1e18.
-        uint256 expected =
-            tokenIn == address(WETH) ? Math.mulDiv(amount, p, 1e18) : Math.mulDiv(amount, 1e18, p);
-        return Math.mulDiv(expected, DIVISOR - swapSlippageBps, DIVISOR);
+        (, uint160 spotSqrt) = _bandPrices(maxDevBps);
+        if (spotSqrt == 0) return 0;
+        uint256 quote = _quoteAtSqrt(spotSqrt, amount, tokenIn == _pool.token0());
+        if (quote == 0) return 0;
+        // Fee tiers are hundredths of a bip, so /100 puts `poolFee` in bps alongside the tolerance.
+        uint256 afterPoolFee = Math.mulDiv(quote, DIVISOR - uint256(poolFee) / 100, DIVISOR);
+        return Math.mulDiv(afterPoolFee, DIVISOR - swapSlippageBps, DIVISOR);
     }
 
     /// @dev Exits tolerate more drift than rebalances: a skipped rebalance retries, a blocked exit strands a user.
@@ -534,12 +540,30 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         return _price1e18FromSqrt(sqrtP);
     }
 
+    /// @dev Amount of the opposite token for `amount` of the base side at `sqrtRatioX96`, following Uniswap's
+    ///      `OracleLibrary.getQuoteAtTick`: both precision branches and token ordering honoured, with
+    ///      `Math.mulDiv` supplying the 512-bit intermediate that `FullMath.mulDiv` does upstream.
+    /// @dev This is a price quote only. It excludes the pool fee and any liquidity-based impact, which is why
+    ///      callers deriving a swap floor must subtract both.
+    function _quoteAtSqrt(uint160 sqrtRatioX96, uint256 amount, bool baseIsToken0)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (sqrtRatioX96 == 0) return 0;
+        if (sqrtRatioX96 <= type(uint128).max) {
+            uint256 ratioX192 = uint256(sqrtRatioX96) * sqrtRatioX96;
+            return baseIsToken0
+                ? Math.mulDiv(ratioX192, amount, 1 << 192)
+                : Math.mulDiv(1 << 192, amount, ratioX192);
+        }
+        uint256 ratioX128 = Math.mulDiv(sqrtRatioX96, sqrtRatioX96, 1 << 64);
+        return baseIsToken0 ? Math.mulDiv(ratioX128, amount, 1 << 128) : Math.mulDiv(1 << 128, amount, ratioX128);
+    }
+
     /// @dev ASSET per WETH in 1e18 from a Uniswap V3 sqrtPriceX96.
     function _price1e18FromSqrt(uint160 sqrtP) internal view returns (uint256) {
-        if (sqrtP == 0) return 0;
-        uint256 price = Math.mulDiv(uint256(sqrtP), uint256(sqrtP), (uint256(1) << 192) / 1e18);
-        if (_pool.token0() == address(WETH)) return price;
-        return price == 0 ? 0 : Math.mulDiv(1e18, 1e18, price);
+        return _quoteAtSqrt(sqrtP, 1e18, _pool.token0() == address(WETH));
     }
 
     /// @dev Arithmetic mean tick TWAP via pool `observe`. Returns 0 if disabled or cardinality insufficient.
@@ -560,23 +584,25 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    /// @dev TWAP price when spot sits within `maxDevBps` of it, else `0`. The band is a parameter because a
-    ///      blocked rebalance merely retries later while a blocked withdrawal traps the user, so exits are
-    ///      priced against a wider tolerance than rebalances.
-    function _priceWithinBand(uint256 maxDevBps) internal view returns (uint256) {
-        uint256 twap = _twapPrice1e18();
-        if (twap == 0) return 0;
-        uint256 spot = _spotPrice1e18();
-        if (spot == 0) return 0;
+    /// @dev Both prices, or `(0, 0)` when the oracle is unusable or spot has left `maxDevBps` of the TWAP.
+    ///      The TWAP gates and values; the validated spot prices swap floors, because only spot can bound what
+    ///      this transaction actually executes at. Manipulation is bounded by the band the TWAP enforces.
+    ///      The band is a parameter because a blocked rebalance merely retries later while a blocked withdrawal
+    ///      traps the user, so exits are gated against a wider tolerance than rebalances.
+    function _bandPrices(uint256 maxDevBps) internal view returns (uint256 twap, uint160 spotSqrt) {
+        twap = _twapPrice1e18();
+        if (twap == 0) return (0, 0);
+        (spotSqrt,) = _readSlot0();
+        uint256 spot = _quoteAtSqrt(spotSqrt, 1e18, _pool.token0() == address(WETH));
+        if (spot == 0) return (0, 0);
         uint256 hi = spot > twap ? spot : twap;
         uint256 lo = spot > twap ? twap : spot;
-        if (Math.mulDiv(hi - lo, DIVISOR, twap) > maxDevBps) return 0;
-        return twap;
+        if (Math.mulDiv(hi - lo, DIVISOR, twap) > maxDevBps) return (0, 0);
     }
 
     /// @notice TWAP price for rebalance if spot is within `maxTwapDeviationBps`; else 0 (caller skips).
-    function _rebalancePrice1e18() internal view returns (uint256) {
-        return _priceWithinBand(maxTwapDeviationBps);
+    function _rebalancePrice1e18() internal view returns (uint256 twap) {
+        (twap,) = _bandPrices(maxTwapDeviationBps);
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256, uint256) {

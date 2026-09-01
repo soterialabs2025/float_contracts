@@ -120,28 +120,58 @@ contract SwapFloorBv3Test is Test {
         return uint160((uint256(SQRT_1) * num) / den);
     }
 
+    /// @dev A second strategy on the same mock pool but a different fee tier.
+    function _bootstrapWithFee(uint24 fee) internal returns (AutoStrategyBv3 s) {
+        s = new AutoStrategyBv3(address(this));
+        s.bootstrap(
+            address(this),
+            address(0x1101),
+            address(0x1102),
+            address(0x1103),
+            address(0x1104),
+            address(0x1105),
+            address(0x1106),
+            address(asset),
+            fee
+        );
+    }
+
     function test_DefaultSwapSlippageIsOnePercent() public view {
         assertEq(strategy.swapSlippageBps(), 100);
     }
 
-    function test_FloorIsTwapMinusHaircut() public view {
-        // 1:1 TWAP, 1% haircut.
-        assertEq(strategy.minOutForSwap(WETH_ADDR, AMOUNT), 990 ether);
-        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 990 ether);
+    /// @dev 1:1 spot, then the pool's own 0.3% fee, then 1% operator tolerance. Both directions quote the same
+    ///      at parity, which also pins the token-ordering branch in `_quoteAtSqrt`.
+    function test_FloorIsQuoteMinusPoolFeeAndSlippage() public view {
+        assertEq(strategy.minOutForSwap(WETH_ADDR, AMOUNT), 987.03 ether);
+        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 987.03 ether);
     }
 
-    /// @dev The heart of R3-QUOTE: moving spot inside the deviation band must not move the floor. A quote-derived
-    ///      floor would track spot here, which is exactly what made the old router's bound worthless.
-    function test_FloorDoesNotFollowManipulatedSpot() public {
+    /// @dev The regression behind "Too little received" on the live 1% pools. Uniswap deducts the fee before
+    ///      checking the floor, so a floor that ignores the fee sits at or above the best possible output and
+    ///      every swap reverts. The floor must leave room beneath the fee-adjusted output.
+    function test_FloorLeavesRoomForOnePercentPoolFee() public {
+        AutoStrategyBv3 s = _bootstrapWithFee(10_000);
+        uint256 floor = s.minOutForSwap(address(asset), AMOUNT);
+
+        // 1% pool fee, then 1% tolerance.
+        assertEq(floor, 980.1 ether);
+        // What the pool pays at spot before price impact. The old floor was 990, i.e. no room at all.
+        assertLt(floor, 990 ether);
+    }
+
+    /// @dev The floor now tracks spot, because only spot bounds what this transaction executes at. That is safe
+    ///      because the TWAP gate caps how far spot may stray, so manipulation is bounded by the band.
+    function test_FloorTracksSpotWithinBand() public {
         uint256 atRest = strategy.minOutForSwap(address(asset), AMOUNT);
 
-        // ~2.01% price move (sqrt scaled by 1.01), inside the 300 bps band.
+        // Spot is ASSET per WETH, so raising it means selling ASSET buys less WETH. ~2.01% move (sqrt scaled
+        // by 1.01), inside the 300 bps band.
         pool.setSpotSqrt(_scaledSqrt(101, 100));
-        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), atRest);
-
-        // Push spot the other way; the floor is still anchored to the unchanged TWAP.
-        pool.setSpotSqrt(_scaledSqrt(99, 100));
-        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), atRest);
+        uint256 lower = strategy.minOutForSwap(address(asset), AMOUNT);
+        assertLt(lower, atRest);
+        // Bounded by the band: the floor cannot fall more than ~3% below the at-rest value.
+        assertGt(lower, (atRest * 9_700) / 10_000);
     }
 
     function test_FloorIsZeroWhenSpotLeavesTwapBand() public {
@@ -201,17 +231,11 @@ contract SwapFloorBv3Test is Test {
         assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 0);
     }
 
-    /// @dev Widening the band must not weaken pricing: the exit floor stays pinned to the TWAP even when spot
-    ///      sits 6% away, so a sandwich cannot widen its own take by moving spot.
-    function test_WithdrawFloorDoesNotFollowManipulatedSpot() public {
-        uint256 atRest = strategy.minOutForWithdraw(address(asset), AMOUNT);
-        assertEq(atRest, 990 ether);
-
-        pool.setSpotSqrt(_scaledSqrt(103, 100));
-        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), atRest);
-
-        pool.setSpotSqrt(_scaledSqrt(97, 100));
-        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), atRest);
+    /// @dev The wider exit band widens what the gate tolerates, not what the floor concedes: at rest the exit
+    ///      floor is identical to the rebalance floor, so a sandwich gains nothing from the looser band.
+    function test_WithdrawFloorIsNoLooserThanRebalanceAtRest() public view {
+        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 987.03 ether);
+        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), strategy.minOutForSwap(address(asset), AMOUNT));
     }
 
     /// @dev The 15% run that the 1,000 bps cap alone could not clear. Widening to the cap lifts the exit band to
@@ -235,9 +259,10 @@ contract SwapFloorBv3Test is Test {
         assertGt(moved, 0);
     }
 
-    function test_WiderHaircutLowersFloor() public {
+    function test_WiderToleranceLowersFloor() public {
         strategy.setSwapSlippageBps(500);
-        assertEq(strategy.minOutForSwap(WETH_ADDR, AMOUNT), 950 ether);
+        // 0.3% pool fee, then 5% tolerance.
+        assertEq(strategy.minOutForSwap(WETH_ADDR, AMOUNT), 947.15 ether);
     }
 
     // --- R3-CONFIG caps ---
