@@ -1,35 +1,40 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./V3Deployments8453.sol";
 import "./interfaces/IAutoSwapRouterBv3.sol";
-import "./interfaces/IQuoterV2.sol";
 import "./interfaces/IUniswapRouter.sol";
 
+/// @title AutoSwapRouterBv3
+/// @notice Base (8453) Uniswap v3 swap router for Auto strategies and ShareStaking.
+/// @dev Slippage is caller-supplied (`minAmountOut`). The router deliberately does not derive a bound from an
+///      in-transaction quote: a quote read from the pool being swapped against reflects any manipulation already
+///      applied in the same transaction, so it cannot constrain the execution price. Callers price the swap from
+///      the pool TWAP (see `AutoStrategyBv3.minOutForSwap`).
 contract AutoSwapRouterBv3 is IAutoSwapRouterBv3, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IUniswapRouter public immutable router = IUniswapRouter(V3Deployments8453.SWAP_ROUTER02);
-    IQuoterV2 public immutable quoter = IQuoterV2(V3Deployments8453.QUOTER_V2);
-    uint16 public strictStrategySlippageBps = 100;
     address public strategyFactory;
     mapping(address => bool) public isAuthorizedStrategy;
 
     error Unauthorized();
+    error NotAuthorized();
     error ZeroAddress();
     error ZeroAmount();
+    error ZeroMinOut();
+    error Expired();
     error AlreadyAuthorized();
-    error InvalidSlippage();
 
     event StrategyFactoryUpdated(address indexed factory);
     event StrategyAuthorized(address indexed strategy);
-    event StrictStrategySlippageUpdated(uint16 bps);
+    event StrategyDeauthorized(address indexed strategy);
+    event Rescued(address indexed token, address indexed to, uint256 amount);
     event SwapExecuted(
         address indexed strategy, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut
     );
@@ -47,12 +52,6 @@ contract AutoSwapRouterBv3 is IAutoSwapRouterBv3, Ownable, ReentrancyGuard {
         emit StrategyFactoryUpdated(factory_);
     }
 
-    function setStrictStrategySlippageBps(uint16 bps) external onlyOwner {
-        if (bps > 10_000) revert InvalidSlippage();
-        strictStrategySlippageBps = bps;
-        emit StrictStrategySlippageUpdated(bps);
-    }
-
     function addAuthorizedStrategy(address strategy) external override onlyOwnerOrFactory {
         if (strategy == address(0)) revert ZeroAddress();
         if (isAuthorizedStrategy[strategy]) revert AlreadyAuthorized();
@@ -60,31 +59,39 @@ contract AutoSwapRouterBv3 is IAutoSwapRouterBv3, Ownable, ReentrancyGuard {
         emit StrategyAuthorized(strategy);
     }
 
-    function swapExactInputSingleStrict(address tokenIn, address tokenOut, uint24 fee, uint128 amountIn)
-        external
-        override
-        nonReentrant
-        returns (uint256 amountOut)
-    {
+    function removeAuthorizedStrategy(address strategy) external override onlyOwner {
+        if (!isAuthorizedStrategy[strategy]) revert NotAuthorized();
+        delete isAuthorizedStrategy[strategy];
+        emit StrategyDeauthorized(strategy);
+    }
+
+    /// @notice Recover tokens or ETH stranded outside a swap. The router holds no balance between transactions.
+    function rescue(address token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (token == address(0)) {
+            (bool ok,) = to.call{value: amount}("");
+            if (!ok) revert ZeroAmount();
+        } else {
+            IERC20(token).safeTransfer(to, amount);
+        }
+        emit Rescued(token, to, amount);
+    }
+
+    function swapExactInputSingleStrict(
+        address tokenIn,
+        address tokenOut,
+        uint24 fee,
+        uint128 amountIn,
+        uint256 minAmountOut,
+        uint256 deadline
+    ) external override nonReentrant returns (uint256 amountOut) {
         if (!isAuthorizedStrategy[msg.sender]) revert Unauthorized();
         if (amountIn == 0) revert ZeroAmount();
+        // A zero floor would leave the swap wholly unprotected; callers that cannot price must not swap.
+        if (minAmountOut == 0) revert ZeroMinOut();
+        if (deadline != 0 && block.timestamp > deadline) revert Expired();
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        uint256 quoted;
-        try quoter.quoteExactInputSingle(
-            IQuoterV2.QuoteExactInputSingleParams({
-                tokenIn: tokenIn, tokenOut: tokenOut, amountIn: amountIn, fee: fee, sqrtPriceLimitX96: 0
-            })
-        ) returns (
-            uint256 amountOut_, uint160, uint32, uint256
-        ) {
-            quoted = amountOut_;
-        } catch {
-            revert("quoter failed");
-        }
-        if (quoted == 0) revert ZeroAmount();
-        uint256 minOut = Math.mulDiv(quoted, 10_000 - strictStrategySlippageBps, 10_000);
-
         IERC20(tokenIn).forceApprove(address(router), amountIn);
         amountOut = router.exactInputSingle(
             IUniswapRouter.ExactInputSingleParams({
@@ -93,7 +100,7 @@ contract AutoSwapRouterBv3 is IAutoSwapRouterBv3, Ownable, ReentrancyGuard {
                 fee: fee,
                 recipient: msg.sender,
                 amountIn: amountIn,
-                amountOutMinimum: minOut,
+                amountOutMinimum: minAmountOut,
                 sqrtPriceLimitX96: 0
             })
         );

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 interface IAutoStrategyBv3 {
     enum WithdrawToken {
@@ -9,6 +9,11 @@ interface IAutoStrategyBv3 {
 
     function poolValue() external view returns (uint256);
     function poolValueTwap() external view returns (uint256);
+    /// @notice TWAP-derived output floor for swapping `amount` of `tokenIn`, at the rebalance band.
+    /// @return `0` when the oracle is unusable or spot has left the TWAP band, meaning the caller must not swap.
+    function minOutForSwap(address tokenIn, uint256 amount) external view returns (uint256);
+    /// @notice Same floor at the wider band withdrawals use. Lets a caller see whether an exit would price.
+    function minOutForWithdraw(address tokenIn, uint256 amount) external view returns (uint256);
     function balance() external view returns (uint256);
     function UniswapFeesCollected() external view returns (uint256);
     function vault() external view returns (address);

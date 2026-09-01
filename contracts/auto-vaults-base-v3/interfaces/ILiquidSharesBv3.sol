@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 interface ILiquidSharesBv3 {
     function mint(address to, uint256 amount) external;

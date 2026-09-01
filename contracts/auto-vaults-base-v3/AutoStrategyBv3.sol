@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -55,7 +55,6 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
     uint256 public UniswapFeesCollected;
     uint256 public reservedAsset;
     uint256 public reservedWeth;
-    uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
     /// @notice Sets the factory and Base (8453) Uniswap v3 immutables; package wiring happens in `bootstrap`.
     constructor(address factory_) AutoStrategyManagerBv3() {
@@ -287,7 +286,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         if (outToken == WithdrawToken.WETH) {
             if (userAsset > 0) {
                 uint256 beforeOut = WETH.balanceOf(address(this));
-                _swap(_asset, _min(userAsset, _asset.balanceOf(address(this))));
+                _swap(_asset, _min(userAsset, _asset.balanceOf(address(this))), _withdrawBandBps());
                 userWeth += WETH.balanceOf(address(this)) - beforeOut;
             }
             userWeth = _min(userWeth, WETH.balanceOf(address(this)));
@@ -295,7 +294,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         } else {
             if (userWeth > 0) {
                 uint256 beforeOut = _asset.balanceOf(address(this));
-                _swap(WETH, _min(userWeth, WETH.balanceOf(address(this))));
+                _swap(WETH, _min(userWeth, WETH.balanceOf(address(this))), _withdrawBandBps());
                 userAsset += _asset.balanceOf(address(this)) - beforeOut;
             }
             userAsset = _min(userAsset, _asset.balanceOf(address(this)));
@@ -392,17 +391,51 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         if (p == 0) return;
         uint256 total = assetBal + Math.mulDiv(wethBal, p, 1e18);
         uint256 target = Math.mulDiv(total, targetAssetBps, DIVISOR);
-        if (assetBal > target) _swap(_asset, assetBal - target);
-        else if (assetBal < target) _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal));
+        if (assetBal > target) _swap(_asset, assetBal - target, maxTwapDeviationBps);
+        else if (assetBal < target) {
+            _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal), maxTwapDeviationBps);
+        }
     }
 
-    function _swap(IERC20 tokenIn, uint256 amount) internal {
+    /// @dev Sole swap chokepoint for this contract, reached from both `_balanceTokens` and `_payWithdraw`.
+    ///      The floor is priced off the TWAP, never off an in-transaction quote of the pool being traded.
+    ///      Reverts when the oracle cannot price the swap: callers that can skip must gate before calling here.
+    function _swap(IERC20 tokenIn, uint256 amount, uint256 maxDevBps) internal {
         amount = _min(amount, _spendable(tokenIn));
         if (amount <= LIQUIDITY_DUST) return;
         if (amount > type(uint128).max) revert E();
+        uint256 minOut = _minOutAtBand(address(tokenIn), amount, maxDevBps);
+        if (minOut == 0) revert E();
         address tokenOut = address(tokenIn) == address(WETH) ? address(_asset) : address(WETH);
         tokenIn.forceApprove(address(swapRouter), amount);
-        swapRouter.swapExactInputSingleStrict(address(tokenIn), tokenOut, poolFee, uint128(amount));
+        swapRouter.swapExactInputSingleStrict(
+            address(tokenIn), tokenOut, poolFee, uint128(amount), minOut, block.timestamp
+        );
+    }
+
+    /// @dev `0` when the oracle is unusable or spot has left `maxDevBps`, meaning the swap must not proceed.
+    function _minOutAtBand(address tokenIn, uint256 amount, uint256 maxDevBps) internal view returns (uint256) {
+        uint256 p = _priceWithinBand(maxDevBps);
+        if (p == 0) return 0;
+        // `p` is ASSET per WETH, scaled 1e18.
+        uint256 expected =
+            tokenIn == address(WETH) ? Math.mulDiv(amount, p, 1e18) : Math.mulDiv(amount, 1e18, p);
+        return Math.mulDiv(expected, DIVISOR - swapSlippageBps, DIVISOR);
+    }
+
+    /// @dev Exits tolerate more drift than rebalances: a skipped rebalance retries, a blocked exit strands a user.
+    function _withdrawBandBps() internal view returns (uint256) {
+        return maxTwapDeviationBps * WITHDRAW_DEVIATION_MULTIPLE;
+    }
+
+    /// @inheritdoc IAutoStrategyBv3
+    function minOutForSwap(address tokenIn, uint256 amount) external view override returns (uint256) {
+        return _minOutAtBand(tokenIn, amount, maxTwapDeviationBps);
+    }
+
+    /// @inheritdoc IAutoStrategyBv3
+    function minOutForWithdraw(address tokenIn, uint256 amount) external view override returns (uint256) {
+        return _minOutAtBand(tokenIn, amount, _withdrawBandBps());
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
@@ -527,19 +560,23 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    function _spotAlignedWithTwap(uint256 spot, uint256 twap) internal view returns (bool) {
-        if (spot == 0 || twap == 0) return false;
+    /// @dev TWAP price when spot sits within `maxDevBps` of it, else `0`. The band is a parameter because a
+    ///      blocked rebalance merely retries later while a blocked withdrawal traps the user, so exits are
+    ///      priced against a wider tolerance than rebalances.
+    function _priceWithinBand(uint256 maxDevBps) internal view returns (uint256) {
+        uint256 twap = _twapPrice1e18();
+        if (twap == 0) return 0;
+        uint256 spot = _spotPrice1e18();
+        if (spot == 0) return 0;
         uint256 hi = spot > twap ? spot : twap;
         uint256 lo = spot > twap ? twap : spot;
-        return Math.mulDiv(hi - lo, DIVISOR, twap) <= maxTwapDeviationBps;
+        if (Math.mulDiv(hi - lo, DIVISOR, twap) > maxDevBps) return 0;
+        return twap;
     }
 
     /// @notice TWAP price for rebalance if spot is within `maxTwapDeviationBps`; else 0 (caller skips).
     function _rebalancePrice1e18() internal view returns (uint256) {
-        uint256 twap = _twapPrice1e18();
-        if (twap == 0) return 0;
-        if (!_spotAlignedWithTwap(_spotPrice1e18(), twap)) return 0;
-        return twap;
+        return _priceWithinBand(maxTwapDeviationBps);
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256, uint256) {

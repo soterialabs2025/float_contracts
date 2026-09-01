@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./libraries/AutoBandLib.sol";
@@ -10,6 +10,8 @@ contract AutoStrategyManagerBv3 is Ownable {
     constructor() Ownable(msg.sender) {}
 
     uint256 public constant DIVISOR = 10_000;
+    /// @notice Balances at or below this are ignored as dust rather than swapped or deployed.
+    uint256 internal constant LIQUIDITY_DUST = 1_000_000_000_000;
     /// @notice ASSET share target for balance / reserve deficit pull (default 5000 = 50/50).
     uint256 public targetAssetBps = 5000;
 
@@ -30,10 +32,16 @@ contract AutoStrategyManagerBv3 is Ownable {
     uint256 public stakingShareBps = 5000;
     /// @notice True after TBA/post-transfer owner calls `setStakingShareBps` once; cannot change again.
     bool public stakingShareBpsLocked;
-    /// @notice Uniswap V3 oracle window for rebalance TWAP (default 30 minutes). `0` disables TWAP gate.
+    /// @notice Uniswap V3 oracle window for rebalance TWAP and swap floors (default 30 minutes).
     uint32 public twapSeconds = 30 minutes;
     /// @notice Max |spot − TWAP| / TWAP in bps before `_balanceTokens` / reserve deficit pulls skip (default 3%).
     uint256 public maxTwapDeviationBps = 300;
+    /// @notice Withdrawals price against this multiple of `maxTwapDeviationBps` so ordinary volatility cannot
+    ///         trap users. Rebalances keep the tighter band because skipping one costs nothing.
+    uint256 internal constant WITHDRAW_DEVIATION_MULTIPLE = 3;
+    /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 1%).
+    /// @dev Distinct from `slippageBps`, which bounds LP mint amounts.
+    uint16 public swapSlippageBps = 200;
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -53,16 +61,25 @@ contract AutoStrategyManagerBv3 is Ownable {
         stakingShareBpsLocked = true;
     }
 
-    /// @notice Set TWAP window for rebalance pricing. `0` disables TWAP (falls back to skipping gated rebalances).
+    /// @notice Set the TWAP window used for rebalance pricing and swap floors.
+    /// @dev Zero is rejected. Swap floors are priced off this oracle, so disabling it would leave `_swap` unable
+    ///      to price anything and revert every withdrawal. Shorten the window to loosen the gate instead.
     function setTwapSeconds(uint32 seconds_) external onlyOwner {
-        if (seconds_ != 0 && (seconds_ < 60 || seconds_ > 1 days)) revert TwapConfig();
+        if (seconds_ < 60 || seconds_ > 1 days) revert TwapConfig();
         twapSeconds = seconds_;
     }
 
-    /// @notice Set max spot vs TWAP deviation for rebalance. Cap `DIVISOR` (100%).
+    /// @notice Set max spot vs TWAP deviation for rebalance and swap floors.
+    /// @dev Capped well below `DIVISOR`: at 100% the gate always passes, silently disabling the only price check.
     function setMaxTwapDeviationBps(uint256 bps) external onlyOwner {
-        if (bps > DIVISOR) revert TwapConfig();
+        if (bps > 1_000) revert TwapConfig();
         maxTwapDeviationBps = bps;
+    }
+
+    /// @notice Set the haircut on TWAP-derived swap floors. Capped so a floor can never be driven to zero.
+    function setSwapSlippageBps(uint16 bps) external onlyOwner {
+        if (bps > 1_000) revert TwapConfig();
+        swapSlippageBps = bps;
     }
 
     /// @dev Strategy overrides: true after factory package ownership transfer (TBA).
@@ -94,6 +111,7 @@ contract AutoStrategyManagerBv3 is Ownable {
         stakingShareBpsLocked = false;
         twapSeconds = 30 minutes;
         maxTwapDeviationBps = 300;
+        swapSlippageBps = 100;
     }
 
     function setRangeParams(uint256 _rangeBelowTicks, uint256 _rangeAboveTicks) external onlyOwner {

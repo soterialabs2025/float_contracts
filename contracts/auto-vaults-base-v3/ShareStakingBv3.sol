@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -10,6 +10,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "./V3Deployments8453.sol";
 import "./interfaces/IShareStakingBv3.sol";
 import "./interfaces/IAutoSwapRouterBv3.sol";
+import "./interfaces/IAutoStrategyBv3.sol";
 import "./interfaces/ILiquidSharesBv3.sol";
 
 /// @title ShareStakingBv3
@@ -312,8 +313,16 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
             wethAdded = amount;
         } else if (token == asset) {
             if (amount > type(uint128).max) revert ZeroAmount();
+            // No TWAP price means no defensible floor: strand the ASSET for retry rather than swap blind.
+            uint256 minOut = IAutoStrategyBv3(strategy).minOutForSwap(token, amount);
+            if (minOut == 0) {
+                emit RewardNotified(token, amount, 0, currentEpoch);
+                return;
+            }
             IERC20(token).forceApprove(address(swapRouter), amount);
-            try swapRouter.swapExactInputSingleStrict(token, address(weth), poolFee, uint128(amount)) returns (
+            try swapRouter.swapExactInputSingleStrict(
+                token, address(weth), poolFee, uint128(amount), minOut, block.timestamp
+            ) returns (
                 uint256 out
             ) {
                 wethAdded = out;
@@ -373,8 +382,13 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);
+        uint256 minOut = IAutoStrategyBv3(strategy).minOutForSwap(asset, amount);
+        // Explicit owner action, so surface the unpriceable oracle rather than silently doing nothing.
+        if (minOut == 0) revert ZeroAmount();
         IERC20(asset).forceApprove(address(swapRouter), amount);
-        uint256 wethAdded = swapRouter.swapExactInputSingleStrict(asset, address(weth), poolFee, uint128(amount));
+        uint256 wethAdded = swapRouter.swapExactInputSingleStrict(
+            asset, address(weth), poolFee, uint128(amount), minOut, block.timestamp
+        );
         IERC20(asset).forceApprove(address(swapRouter), 0);
         if (wethAdded == 0) revert ZeroAmount();
         epochRewardWeth[currentEpoch] += wethAdded;
