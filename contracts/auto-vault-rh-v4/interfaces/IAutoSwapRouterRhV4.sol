@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 /// @dev Standalone key layout (same fields as LiquidityLibraryV4.PoolKey) so routers can avoid
 ///      importing LiquidityLibraryV4 + local TickMath alongside v4-core TickMath.

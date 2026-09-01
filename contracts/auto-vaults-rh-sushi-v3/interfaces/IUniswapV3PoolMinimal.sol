@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 /// @notice Minimal pool surface for Sushi/Uni V3 single-hop swaps + strategy reads.
 interface IUniswapV3PoolMinimal {

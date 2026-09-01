@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 interface IAllowanceTransfer {
     function approve(address token, address spender, uint160 amount, uint48 expiration) external;
