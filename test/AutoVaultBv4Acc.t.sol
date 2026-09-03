@@ -59,6 +59,12 @@ contract MockStrategyBv4 {
         return nav;
     }
 
+    /// @dev Tracks spot here so the `min` in `_sharesForDeposit` is a no-op and these tests stay about
+    ///      accounting. Entry pricing against a diverging reference is covered in ShareMintHighWaterBv4.
+    function poolValueRef() external view returns (uint256) {
+        return nav;
+    }
+
     function UniswapFeesCollected() external view returns (uint256) {
         return feesCollected;
     }

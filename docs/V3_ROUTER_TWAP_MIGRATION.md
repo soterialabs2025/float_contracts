@@ -354,7 +354,63 @@ pre-existing suites.
 
 ---
 
-## 14. Change log
+## 14. V4 port — the pool fee in the swap floor
+
+The V4 stacks carried the same defect the fee fix closed in `base-v3`. `SwapGateLib.minOut` derived
+its floor from a raw price quote, so the fee the PoolManager takes off the input before measuring
+output had to come out of `slippageBps` alone. At the 100 bps default a 0.3% pool survived on the
+remaining 70 bps and the bug stayed invisible; a 1% pool consumed the whole tolerance and every
+non-dust swap reverted with `InsufficientOutput()`.
+
+Three things differ from the V3 fix.
+
+**The fee is read from slot0, not from the pool key.** `StateLibrary.getSlot0` already returns
+`protocolFee` and `lpFee` in the word `LiquidityLibraryV4.getSlot0` was discarding, and
+`ProtocolFeeLibrary.calculateSwapFee` folds them into one pips value with the canonical rounding —
+the protocol fee comes off the input first and the LP fee off what remains, so they compound rather
+than add. Using slot0 also makes dynamic-fee pools correct: for those, `key.fee` holds only the
+`0x800000` sentinel, which as a rate would be 838% and would zero every floor on the pool.
+`getSlot0WithFees` is `internal`, so it inlines and the deployed `LiquidityLibraryV4` is unchanged.
+
+**Swap tolerance was split out of `slippageBps`.** V4 used one setting for both the swap floor and
+the `LiquidityLibraryV4` mint and increase calls, so widening what a swap would accept also loosened
+LP minting. `swapSlippageBps` now mirrors `AutoStrategyManagerBv3`, capped at 1,000 bps.
+
+**The canonical quote replaced the price-then-scale form.** `SwapGateLib.quoteAtSqrt` is the port of
+`AutoStrategyBv3._quoteAtSqrt`, and `spotPrice1e18` is now a call into it at `1e18`.
+
+### 14.1 Accepted limitation — hook fee overrides
+
+A hook returning `LPFeeLibrary.OVERRIDE_FEE_FLAG` from `beforeSwap` charges a per-swap fee that is
+not in slot0 and cannot be known when the floor is priced. If that fee exceeds the one slot0
+reports, the floor sits above what the pool will pay and the swap reverts. It fails closed rather
+than executing unprotected, and `swapSlippageBps` is the release valve. Pools with `hooks == 0`,
+which is every pool these packages use today, are unaffected.
+
+### 14.2 Sizes and deployment
+
+| Contract | Runtime | Free | Initcode | Free |
+|---|---|---|---|---|
+| `AutoStrategyBv4` | 21,780 (+341) | 2,796 | 22,515 (+345) | 26,637 |
+| `AutoFactoryBv4` | 5,765 | 18,811 | 48,111 (+345) | **1,041** |
+| `AutoStrategyRhV4` | 20,589 (+316) | 3,987 | 21,150 (+320) | 28,002 |
+| `AutoFactoryRhV4` | 5,720 | 18,856 | 45,728 (+320) | 3,424 |
+| `SwapGateLib` (both) | 1,948 (+457) | 22,628 | 1,978 | 47,174 |
+
+`AutoFactoryBv4` is the binding constraint at 1,041 bytes under EIP-3860. If it needs reclaiming,
+the contingency is moving more of `_minOutForSwap` into the already-linked `SwapGateLib`.
+
+Strategies are EIP-1167 clones of an implementation built in the factory constructor and
+`strategyImplementation` is `immutable`, so there is no in-place upgrade: this needs a new
+`SwapGateLib`, then a new factory linked against it, then new packages. Deployed V4 packages keep
+the old floor and remain usable only on sub-1% pools.
+
+Tests: 37 across `test/SwapTickGateBv4.t.sol` and `test/SwapFeeFloorBv4.t.sol`, plus 10 in
+`test/SwapFeeFloorRhV4.t.sol`.
+
+---
+
+## 15. Change log
 
 | Date | Change |
 |------|--------|
@@ -365,3 +421,4 @@ pre-existing suites.
 | 2026-08-31 | Exits price against 3x the rebalance band as an automatic release valve (§9.1). 90 tests. |
 | 2026-08-31 | Floor concedes the pool fee and quotes via canonical `getQuoteAtTick`; every swap on a 1% pool had reverted. |
 | 2026-08-31 | `LiquidityLibraryV2` linked externally to clear both size limits (§13.1). 91 tests. |
+| 2026-09-01 | Ported the fee fix to Bv4/RhV4: fee from slot0, `swapSlippageBps` split out, canonical quote (§14). 47 tests. |

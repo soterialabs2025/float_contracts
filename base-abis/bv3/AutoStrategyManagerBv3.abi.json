@@ -45,6 +45,19 @@
   },
   {
     "type": "function",
+    "name": "maxTwapDeviationBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "minHarvestDelay",
     "inputs": [],
     "outputs": [
@@ -148,6 +161,19 @@
   },
   {
     "type": "function",
+    "name": "setMaxTwapDeviationBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setRangeParams",
     "inputs": [
       {
@@ -192,12 +218,38 @@
   },
   {
     "type": "function",
+    "name": "setSwapSlippageBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setTargetAssetBps",
     "inputs": [
       {
         "name": "bps",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setTwapSeconds",
+    "inputs": [
+      {
+        "name": "seconds_",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
@@ -244,6 +296,19 @@
   },
   {
     "type": "function",
+    "name": "swapSlippageBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "targetAssetBps",
     "inputs": [],
     "outputs": [
@@ -280,6 +345,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "twapSeconds",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -348,6 +426,11 @@
   {
     "type": "error",
     "name": "StakingShareBps",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TwapConfig",
     "inputs": []
   }
 ]

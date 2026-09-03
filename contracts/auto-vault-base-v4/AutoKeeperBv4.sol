@@ -101,27 +101,29 @@ contract AutoKeeperBv4 is IAutoKeeperBv4, Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Refresh the swap-gate price anchor on `id`. Cheap, swap-free, and rate-limited in the strategy.
-    /// @dev Run this on its own cadence: `performUpkeep` only lands when the position is out of range, so without
-    ///      it the anchor is only rewritten by a successful remint and drifts stale in a quiet market.
-    function refreshAnchor(uint256 id) external nonReentrant onlyOperator {
-        _refreshAnchor(id);
+    /// @notice Refresh the truncated price reference on `id`. Cheap, swap-free, and rate-limited in the strategy.
+    /// @dev Run this on a five-minute cadence, independent of `performUpkeep`, which only lands when the position
+    ///      needs work. The reference both prices share minting and anchors the swap gate, and because its
+    ///      movement is capped per unit time, a denser cadence is what bounds one poisoned write.
+    function refreshPriceRef(uint256 id) external nonReentrant onlyOperator {
+        _refreshPriceRef(id);
     }
 
-    function refreshAnchorBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
+    /// @notice Batch form. One transaction across every watched strategy amortises the base cost at that cadence.
+    function refreshPriceRefBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
         uint256 len = ids.length;
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
             if (ids[i] >= maxId) continue;
-            _refreshAnchor(ids[i]);
+            _refreshPriceRef(ids[i]);
         }
     }
 
-    function _refreshAnchor(uint256 id) internal {
+    function _refreshPriceRef(uint256 id) internal {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
-        IAutoStrategyBv4(ws.stratAddr).refreshTickAnchor();
+        IAutoStrategyBv4(ws.stratAddr).refreshPriceRef();
     }
 
     function performHarvest(uint256 id, bool skipIncreaseLiquidity) external override nonReentrant onlyOperator {

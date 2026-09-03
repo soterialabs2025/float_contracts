@@ -19,7 +19,8 @@ interface IAutoStrategyBv4 {
     function hookData() external view returns (bytes memory);
 
     function keeperCheck() external returns (bool);
-    function refreshTickAnchor() external returns (bool);
+    function refreshPriceRef() external returns (bool);
+    function poolValueRef() external view returns (uint256);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
 
     function deposit(uint256 amount) external;

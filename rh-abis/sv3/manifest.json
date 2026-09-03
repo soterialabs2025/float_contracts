@@ -11,7 +11,7 @@
     "AutoFactorySv3": {
       "address": "0xA8832320F183bac9C019048Fb7578009571E29ad",
       "artifact": "artifacts/AutoFactorySv3.sol/AutoFactorySv3.json",
-      "abiEntries": 31
+      "abiEntries": 33
     },
     "AutoSwapRouterSv3": {
       "address": "0x568dCA271e5F7edb9769f5eA6076e2DA8D4014e8",
@@ -26,17 +26,17 @@
     "AutoStrategySv3": {
       "address": null,
       "artifact": "artifacts/AutoStrategySv3.sol/AutoStrategySv3.json",
-      "abiEntries": 68
+      "abiEntries": 71
     },
     "AutoVaultSv3": {
       "address": null,
       "artifact": "artifacts/AutoVaultSv3.sol/AutoVaultSv3.json",
-      "abiEntries": 44
+      "abiEntries": 41
     },
     "AutoStrategyManagerSv3": {
       "address": null,
       "artifact": "artifacts/AutoStrategyManagerSv3.sol/AutoStrategyManagerSv3.json",
-      "abiEntries": 29
+      "abiEntries": 34
     },
     "LiquidSharesSv3": {
       "address": null,
@@ -46,7 +46,7 @@
     "ShareStakingSv3": {
       "address": null,
       "artifact": "artifacts/ShareStakingSv3.sol/ShareStakingSv3.json",
-      "abiEntries": 77
+      "abiEntries": 74
     }
   }
 }

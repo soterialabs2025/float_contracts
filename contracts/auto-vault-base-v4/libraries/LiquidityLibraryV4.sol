@@ -235,6 +235,16 @@ library LiquidityLibraryV4 {
         return getSlot0(poolManager, key);
     }
 
+    /// @notice Slot0 including the fee fields `getSlot0` discards.
+    /// @dev `lpFee` here is the pool's live fee, so it is correct for dynamic-fee pools too, where `key.fee`
+    ///      holds only the `LPFeeLibrary.DYNAMIC_FEE_FLAG` sentinel rather than a usable rate.
+    function getSlot0WithFees(IPoolManagerV4 poolManager, PoolKey memory key)
+        internal view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)
+    {
+        (sqrtPriceX96, tick, protocolFee, lpFee) =
+            StateLibrary.getSlot0(IPoolManager(address(poolManager)), PoolId.wrap(poolId(key)));
+    }
+
 
     function getPositionLiquidity(
         PositionState storage ps,

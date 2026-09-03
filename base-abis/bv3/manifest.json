@@ -9,34 +9,34 @@
       "abiEntries": 14
     },
     "AutoFactoryBv3": {
-      "address": "0x1cC9F1C0FcB8B5203a8d88176d7d498d49d9F060",
+      "address": "0x0674bf1A9234A4CEc171e7041697C553506a8c4f",
       "artifact": "artifacts/AutoFactoryBv3.sol/AutoFactoryBv3.json",
-      "abiEntries": 31
+      "abiEntries": 33
     },
     "AutoSwapRouterBv3": {
-      "address": "0x07758574b154dF860748748365C35B15d869Cb2d",
+      "address": "0xCE8A0c81E8D6dD1132a11892fBAF56b7146Fde2c",
       "artifact": "artifacts/AutoSwapRouterBv3.sol/AutoSwapRouterBv3.json",
-      "abiEntries": 27
+      "abiEntries": 29
     },
     "AutoKeeperBv3": {
-      "address": "0xdd66727dB1D19345d3f5468e4A7a9073F28b591B",
+      "address": "0xef7914565080d7dcB6522c7d51113330B53d0dFD",
       "artifact": "artifacts/AutoKeeperBv3.sol/AutoKeeperBv3.json",
       "abiEntries": 28
     },
     "AutoStrategyBv3": {
       "address": null,
       "artifact": "artifacts/AutoStrategyBv3.sol/AutoStrategyBv3.json",
-      "abiEntries": 68
+      "abiEntries": 75
     },
     "AutoVaultBv3": {
       "address": null,
       "artifact": "artifacts/AutoVaultBv3.sol/AutoVaultBv3.json",
-      "abiEntries": 44
+      "abiEntries": 41
     },
     "AutoStrategyManagerBv3": {
       "address": null,
       "artifact": "artifacts/AutoStrategyManagerBv3.sol/AutoStrategyManagerBv3.json",
-      "abiEntries": 29
+      "abiEntries": 36
     },
     "LiquidSharesBv3": {
       "address": null,
@@ -46,7 +46,7 @@
     "ShareStakingBv3": {
       "address": null,
       "artifact": "artifacts/ShareStakingBv3.sol/ShareStakingBv3.json",
-      "abiEntries": 77
+      "abiEntries": 74
     }
   }
 }

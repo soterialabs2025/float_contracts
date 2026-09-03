@@ -4,11 +4,17 @@
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1787027013783,
+  "timestamp": 1788410339045,
   "abi": [
     {
       "type": "constructor",
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "factory_",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
       "stateMutability": "nonpayable"
     },
     {
@@ -522,30 +528,6 @@
     },
     {
       "type": "function",
-      "name": "pendingClaim",
-      "inputs": [
-        {
-          "name": "user",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "epoch",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "pendingOwnerReward",
       "inputs": [
         {
@@ -994,11 +976,6 @@
     {
       "type": "error",
       "name": "EpochNotEnded",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "InsufficientRescuable",
       "inputs": []
     },
     {

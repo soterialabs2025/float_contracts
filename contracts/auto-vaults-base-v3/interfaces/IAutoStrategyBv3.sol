@@ -9,6 +9,8 @@ interface IAutoStrategyBv3 {
 
     function poolValue() external view returns (uint256);
     function poolValueTwap() external view returns (uint256);
+    /// @notice Ungated TWAP NAV for the minting path. `0` only when the oracle itself cannot be read.
+    function poolValueTwapRaw() external view returns (uint256);
     /// @notice TWAP-derived output floor for swapping `amount` of `tokenIn`, at the rebalance band.
     /// @return `0` when the oracle is unusable or spot has left the TWAP band, meaning the caller must not swap.
     function minOutForSwap(address tokenIn, uint256 amount) external view returns (uint256);

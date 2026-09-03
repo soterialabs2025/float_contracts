@@ -9,6 +9,8 @@ interface IAutoStrategyRhV3 {
 
     function poolValue() external view returns (uint256);
     function poolValueTwap() external view returns (uint256);
+    /// @notice Ungated TWAP NAV for the minting path. `0` only when the oracle itself cannot be read.
+    function poolValueTwapRaw() external view returns (uint256);
     function balance() external view returns (uint256);
     function UniswapFeesCollected() external view returns (uint256);
     function vault() external view returns (address);

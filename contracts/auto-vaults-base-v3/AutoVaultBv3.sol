@@ -140,7 +140,7 @@ contract AutoVaultBv3 is Ownable, ReentrancyGuard, IAutoVaultBv3 {
 
         uint256 navBefore = balance();
         // TWAP must be sampled pre-deposit; post-deposit TWAP includes `amount` and under-mints.
-        uint256 navTwap = strategy.poolValueTwap();
+        uint256 navTwap = strategy.poolValueTwapRaw();
         IERC20(address(weth)).forceApprove(address(strategy), amount);
         strategy.deposit(amount);
         uint256 navAfter = balance();
@@ -156,7 +156,8 @@ contract AutoVaultBv3 is Ownable, ReentrancyGuard, IAutoVaultBv3 {
     }
 
     /// @dev Owner seeds 1:1. Later: min(spot, twap) if TWAP ok; else min(spot, high-water).
-    /// `navTwap` must be the pre-deposit TWAP NAV (0 if unavailable).
+    /// `navTwap` must be the pre-deposit, ungated TWAP NAV, so the high-water branch is reached only when the
+    /// oracle cannot be read at all, rather than whenever spot merely disagrees with it.
     function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navTwap)
         internal
         view

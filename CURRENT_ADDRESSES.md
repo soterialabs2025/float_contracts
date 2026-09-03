@@ -62,6 +62,54 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 
 
 
+## Base (8453) — AutoVault Bv3 - TWAP/FEE FIX
+
+Includes the canonical-quote swap floor, ungated `poolValueTwapRaw()` minting, and harvest deploying at the
+band ratio without a taker swap.
+
+| Contract | Address |
+|---|---|
+| AutoSwapRouterBv3 | `0xCE8A0c81E8D6dD1132a11892fBAF56b7146Fde2c` |
+| AutoKeeperBv3 | `0xef7914565080d7dcB6522c7d51113330B53d0dFD` |
+| AutoFactoryBv3 | `0x0674bf1A9234A4CEc171e7041697C553506a8c4f` | block:`50809511` |
+| LiquidityLibraryV2 (linked) | `0x62c35b90a4B1dE0a2fC96f5AfCdB34830fEA7605` | block:`50809477` |
+| AutoOperatorRegistry (shared) | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
+| feeManager (shared) | `0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe` |
+| Deployer | `0xC9EA49257ab99B4B8648DF0641F15aec038c57E8` |
+
+**InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
+
+```text
+["0xCE8A0c81E8D6dD1132a11892fBAF56b7146Fde2c","0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8","0xef7914565080d7dcB6522c7d51113330B53d0dFD","0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe"]
+```
+
+
+## Base (8453) — AutoVault Bv4 - TRUNCATED REF
+
+Truncated price reference (`refTick`/`refTime`/`refBlock`) driving both share minting and the swap gate.
+High-water mark removed; `refreshTickAnchor` replaced by `refreshPriceRef`.
+
+| Contract | Address |
+|---|---|
+| AutoSwapRouterBv4 | `0xAc0513037Aab238Be14C0358652da6c8F7046b04` |
+| AutoKeeperBv4 | `0xe9371e61711F4a405F165ABD58544a6c9D1bf01D` |
+| AutoFactoryBv4 | `0x80D6aDcE485372435737B61FAc431EE23B07294C` | block:`50810207` |
+| LiquidityLibraryV4 (linked) | `0x0a21981F734D7b4Cab145611d83eF5d843afd567` | block:`50810058` |
+| SwapGateLib (linked) | `0x5bE2BF251f38bcFd085B08d246dE23E63E21fb59` | block:`50810061` |
+| AutoOperatorRegistry (shared) | `0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8` |
+| feeManager (shared) | `0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe` |
+| Deployer | `0xC9EA49257ab99B4B8648DF0641F15aec038c57E8` |
+
+**InfraConfig** `[swapRouter, operatorRegistry, keeper, feeManager]`:
+
+```text
+["0xAc0513037Aab238Be14C0358652da6c8F7046b04","0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8","0xe9371e61711F4a405F165ABD58544a6c9D1bf01D","0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe"]
+```
+
+> Library links are passed with `--libraries` on the `forge script` / `forge verify-contract` command line.
+> They are deliberately not pinned in `foundry.toml`, since fixed addresses have no code in the test EVM.
+
+
 ## Base (8453) — AutoVault Bv4
 
 | Contract | Address |
@@ -125,7 +173,7 @@ Fresh infra deploys (router + keeper + factory). Shared per-chain `AutoOperatorR
 | ShareStakingRhv4 | `0xFa1Cd5e5f79e634354C2c902254f7a943D6D74e0` |
 
 
- 
+ 0x29802aa31a787dc1e643fbd90ed69445130f8327
 
 **Asset**:`0x6245e67affA44a23077f0Ea7f981a8DC743a0c47`:["0x0000000000000000000000000000000000000000","0x6245e67affA44a23077f0Ea7f981a8DC743a0c47",2500,60,"0x0000000000000000000000000000000000000000"] -
 

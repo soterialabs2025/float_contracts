@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperBv4",
-  "address": "0x68f9fD0c4Ad3B8079d27396510d9f183125ba5f3",
+  "address": "0xe9371e61711F4a405F165ABD58544a6c9D1bf01D",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1786901602480,
+  "timestamp": 1788410273099,
   "abi": [
     {
       "type": "constructor",
@@ -127,6 +127,32 @@
     {
       "type": "function",
       "name": "performUpkeepBatch",
+      "inputs": [
+        {
+          "name": "ids",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "refreshPriceRef",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "refreshPriceRefBatch",
       "inputs": [
         {
           "name": "ids",

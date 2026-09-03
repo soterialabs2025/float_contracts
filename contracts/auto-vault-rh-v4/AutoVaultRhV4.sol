@@ -28,18 +28,15 @@ contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
-    /// @notice High-water ETH-per-share (scaled 1e18). Later mints use min(spot, this).
-    uint256 public lastSharePriceX18;
     uint256 public accUniswapFeesPerShare;
     uint256 public uniswapFeesCollectedSynced;
-    /// @dev Near-full withdraw sweeps leftover shares below this (avoids wei dust blocking empty+HW reset).
+    /// @dev Near-full withdraw sweeps leftover shares below this, so wei dust cannot keep a vault from emptying.
     uint256 internal constant MIN_SHARE_DUST = 1e10;
 
     event Deposit(address indexed user, uint256 ethNotional, uint256 shares, uint256 acc);
     event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
     event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
     event OwnershipLocked(address indexed owner);
-    event SharePriceHighWater(uint256 priceX18);
 
     error Unauthorized();
     error ZeroAddress();
@@ -147,39 +144,37 @@ contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
         if (supply == 0 && msg.sender != owner()) revert Unauthorized();
 
         uint256 navBefore = balance();
+        // Sampled pre-deposit: after `strategy.deposit` the reference NAV includes `msg.value` and under-mints.
+        uint256 navRef = strategy.poolValueRef();
         strategy.deposit{value: msg.value}();
         uint256 navAfter = balance();
         uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
         // Cap to deposited ETH so spot/NAV jumps between reads cannot overmint shares (V-NAV-MINT).
         if (credited > msg.value) credited = msg.value;
-        shares = _sharesForDeposit(credited, navBefore, supply);
+        shares = _sharesForDeposit(credited, navBefore, supply, navRef);
         if (shares == 0) revert ZeroValue();
         _syncAcc();
         liquidShares.mint(msg.sender, shares);
-        _bumpSharePriceHighWater(balance(), totalSupply());
         emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
-    /// @dev Owner seeds 1:1. Later: min(spot NAV shares, high-water share-price shares).
-    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply)
+    /// @dev Owner seeds 1:1. Later: min(spot, truncated reference), which always selects the higher NAV. An
+    ///      attacker depressing spot to overmint is caught by the reference; one inflating it only earns
+    ///      themselves fewer shares. The reference therefore does not need to be accurate, only hard to push
+    ///      down, which is why a loose clamp is still safe.
+    /// @param navRef Pre-deposit NAV at the truncated reference, or 0 before the reference is seeded. No
+    ///        fallback is needed for a stale reference: its drift allowance grows until the clamp converges on
+    ///        spot, so neglect relaxes this toward spot pricing rather than blocking deposits.
+    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navRef)
         internal
-        view
+        pure
         returns (uint256)
     {
         if (supply == 0) return credited;
         uint256 sharesSpot =
             navBefore == 0 ? type(uint256).max : Math.mulDiv(credited, supply, navBefore);
-        if (lastSharePriceX18 == 0) return sharesSpot;
-        return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
-    }
-
-    function _bumpSharePriceHighWater(uint256 nav, uint256 supply) internal {
-        if (supply == 0 || nav == 0) return;
-        uint256 priceX18 = Math.mulDiv(nav, 1e18, supply);
-        if (priceX18 > lastSharePriceX18) {
-            lastSharePriceX18 = priceX18;
-            emit SharePriceHighWater(priceX18);
-        }
+        if (navRef == 0) return sharesSpot;
+        return Math.min(sharesSpot, Math.mulDiv(credited, supply, navRef));
     }
 
     function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
@@ -194,7 +189,6 @@ contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
         uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : msg.sender.balance;
         strategy.withdraw(shares, msg.sender, out);
         liquidShares.burn(msg.sender, shares);
-        if (totalSupply() == 0) lastSharePriceX18 = 0;
         uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : msg.sender.balance;
         uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
         emit Withdraw(msg.sender, shares, asAsset, received, accUniswapFeesPerShare);

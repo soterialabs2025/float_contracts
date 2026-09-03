@@ -223,8 +223,8 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        _balanceTokens(assetBal, wethBal);
+        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
+        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
@@ -581,6 +581,16 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
     /// @notice NAV using TWAP (same gate as rebalance). `0` if observe fails or spot off TWAP.
     function poolValueTwap() public view override returns (uint256) {
         return _navAtPrice(_rebalancePrice1e18());
+    }
+
+    /// @notice NAV at the raw TWAP, with no spot-deviation gate. Zero only when the oracle is unreadable.
+    /// @dev The gate on `poolValueTwap` guards the rebalance path, which trades. Minting only prices, and
+    ///      `min(spot, twap)` is safe however far apart the two sit: a depressed spot is caught by the TWAP,
+    ///      while an inflated one only shorts the depositor who caused it. Refusing the TWAP on deviation is
+    ///      therefore not a safeguard here, it is what drops minting into the high-water fallback precisely
+    ///      when the market is moving, charging honest depositors the full drawdown.
+    function poolValueTwapRaw() public view override returns (uint256) {
+        return _navAtPrice(_twapPrice1e18());
     }
 
     function balance() external view override returns (uint256) {

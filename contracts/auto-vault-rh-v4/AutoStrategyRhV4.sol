@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
+
 import "./V4Deployments4663.sol";
 import "../v4/libraries/TrailingFloorLib.sol";
 import "./libraries/LiquidityLibraryV4.sol";
@@ -53,12 +55,19 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
 
+    /// @notice Truncated price reference. Written on keeper cadence by `refreshPriceRef`, clamped every time,
+    ///         so no single write can adopt a price the pool only held for a moment.
+    int24 public refTick;
+    /// @notice When `refTick` was last written. The drift allowance is earned against its age.
+    uint64 public refTime;
+    /// @notice Block `refTick` was written in. A reference set this block says nothing about any prior state.
+    uint64 public refBlock;
+
+    /// @notice Base tick of the inner comfort band, written only by a successful mint.
+    /// @dev No longer feeds the swap gate; `refTick` does. Re-centring this on spot would only suppress
+    ///      reminting, which is why the keeper-driven refresh that used to write it is gone.
     int24 public lastBandBaseTick;
     bool public hasBandBase;
-    /// @notice When `lastBandBaseTick` was anchored. Packs with the two above; the swap gate widens with its age.
-    uint64 public lastBandBaseTime;
-    /// @notice Block the anchor was written in. An anchor set this block says nothing about any prior state.
-    uint64 public lastBandBaseBlock;
 
     uint256 public lastHarvest;
     uint256 public lastRebalanceTime;
@@ -248,8 +257,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        _balanceTokens(assetBal, wethBal);
+        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
+        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
@@ -467,7 +476,12 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             hookData: _hookData
         });
         (uint256 newId, uint128 liq) = liqPos.mintNewPositionWithRange(ctx, bal0, bal1, lower, upper);
-        if (newId != 0 && liq > 0) _setBandBase(currentTick);
+        if (newId != 0 && liq > 0) {
+            _setBandBase(currentTick);
+            // Seed only. Letting a remint re-anchor the reference would hand it whatever price triggered the
+            // remint, which is exactly the price a manipulator would have chosen.
+            if (refTime == 0) _setPriceRef(currentTick);
+        }
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256 bal0, uint256 bal1) {
@@ -525,24 +539,45 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         }
     }
 
-    /// @dev Single writer for the four anchor fields so they can never disagree.
     function _setBandBase(int24 tick) internal {
         lastBandBaseTick = TrailingFloorLib.alignDown(tick, _spacing());
         hasBandBase = true;
-        lastBandBaseTime = uint64(block.timestamp);
-        lastBandBaseBlock = uint64(block.number);
     }
 
-    /// @notice Keeper-cadence refresh of the swap gate's price anchor. Returns false when rate-limited.
-    /// @dev Performs no swap, so recording the live tick cannot be self-referential the way an in-transaction
-    ///      quote is. `nonReentrant` matters here: it stops a hook re-anchoring mid-swap through the shared guard.
-    function refreshTickAnchor() external override nonReentrant returns (bool) {
+    /// @dev Single writer for the three reference fields. The clamp is what makes the reference truncated:
+    ///      each write may only move it by the drift earned since the last one.
+    function _setPriceRef(int24 tick) internal {
+        refTick = SwapGateLib.nextRefTick(tick, refTick, refTime, secondsPerRefTick, maxRefDrift);
+        refTime = uint64(block.timestamp);
+        refBlock = uint64(block.number);
+    }
+
+    /// @notice Keeper-cadence write of the truncated price reference. Returns false when rate-limited.
+    /// @dev Runs on its own schedule, deliberately not tied to `keeperCheck` or harvest: those only land when the
+    ///      position needs work, which is far too sparse to keep a price reference honest.
+    function refreshPriceRef() external override nonReentrant returns (bool) {
         _onlyKeeper();
-        if (lastBandBaseTime != 0 && block.timestamp < lastBandBaseTime + minAnchorRefreshInterval) return false;
+        if (refTime != 0 && block.timestamp < refTime + minRefUpdateInterval) return false;
         (uint160 sqrtP, int24 tick) = _readSlot0();
         if (sqrtP == 0) return false;
-        _setBandBase(tick);
+        _setPriceRef(tick);
         return true;
+    }
+
+    /// @notice NAV valued at the truncated reference instead of raw spot. Zero until the reference is seeded.
+    /// @dev Token amounts still come from spot, mirroring V3's `_navAtPrice`: the amounts are what the position
+    ///      actually holds, and only their valuation needs a price the caller cannot have moved this block.
+    function poolValueRef() external view override returns (uint256) {
+        if (refTime == 0) return 0;
+        (uint160 sqrtP, int24 tick) = _readSlot0();
+        if (sqrtP == 0) return 0;
+        uint256 p = SwapGateLib.refPrice1e18(
+            tick, refTick, refTime, secondsPerRefTick, maxRefDrift, _poolKey.currency0 == address(0)
+        );
+        if (p == 0) return 0;
+        (uint256 assetInPool, uint256 wethInPool) = balanceOfPool();
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        return wethInPool + wethBal + Math.mulDiv(assetInPool + assetBal, 1e18, p);
     }
 
     /// @notice Output floor the strategy would enforce for `amount`, or 0 if it would skip the swap.
@@ -553,20 +588,32 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     /// @dev Output floor for a swap, or 0 when the swap must be skipped.
     function _minOutForSwap(bool sellEth, uint256 amount) internal view returns (uint256) {
-        (uint160 sqrtP, int24 tick) = _readSlot0();
+        (uint160 sqrtP, int24 tick, uint24 protocolFee, uint24 lpFee) =
+            LiquidityLibraryV4.getSlot0WithFees(poolManager, _poolKey);
+        bool ethIsCurrency0 = _poolKey.currency0 == address(0);
         uint256 floor_ = SwapGateLib.minOut(
             sqrtP,
             tick,
-            SwapGateLib.Anchor(lastBandBaseTick, hasBandBase, lastBandBaseTime, lastBandBaseBlock),
+            SwapGateLib.Anchor(refTick, refTime != 0, refTime, refBlock),
             maxSwapTickDeviation,
-            _poolKey.currency0 == address(0),
+            ethIsCurrency0,
             sellEth,
             amount,
-            slippageBps,
-            DIVISOR
+            swapSlippageBps,
+            DIVISOR,
+            _swapFeePips(sellEth == ethIsCurrency0, protocolFee, lpFee)
         );
         if (floor_ > type(uint128).max) revert E();
         return floor_;
+    }
+
+    /// @dev Total fee the PoolManager takes for this direction, in pips. The protocol fee comes off the input
+    ///      first and the LP fee off what remains, which is what `calculateSwapFee` folds together.
+    function _swapFeePips(bool zeroForOne, uint24 protocolFee, uint24 lpFee) internal pure returns (uint24) {
+        uint16 dirFee = zeroForOne
+            ? ProtocolFeeLibrary.getZeroForOneFee(protocolFee)
+            : ProtocolFeeLibrary.getOneForZeroFee(protocolFee);
+        return ProtocolFeeLibrary.calculateSwapFee(dirFee, lpFee);
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
