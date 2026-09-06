@@ -1,5 +1,20 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Private / operational — do not publish
+docs/
+script/
+scripts/
+CURRENT_ADDRESSES.md
+Deprecated-ADDRESSES_1.md
+ADDRESSES_2.md
+TokenKeys.tsx
+RECOVER_SOURCES_IPFS.md
+bankr/
+.claude/
+tmp_build/
+tmp_build_old/
+tmp_v5_build/
+
 # dependencies
 /node_modules
 
