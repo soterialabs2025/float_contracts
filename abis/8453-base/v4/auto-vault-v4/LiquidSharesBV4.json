@@ -1,15 +1,21 @@
 {
-  "name": "LiquidSharesBV4",
+  "name": "LiquidSharesBv4",
   "address": null,
   "chainId": 8453,
-  "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "timestamp": 1786896290431,
+  "package": "contracts/auto-vault-base-v4",
+  "timestamp": 1787528684306,
   "abi": [
     {
       "type": "constructor",
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "factory_",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
       "stateMutability": "nonpayable"
     },
     {
@@ -400,6 +406,16 @@
     {
       "type": "error",
       "name": "AlreadyInitialized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InsufficientAllowance",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InsufficientBalance",
       "inputs": []
     },
     {

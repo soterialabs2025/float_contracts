@@ -1,11 +1,11 @@
 {
-  "name": "AutoStrategyManagerBV4",
+  "name": "AutoStrategyManagerBv4",
   "address": null,
   "chainId": 8453,
   "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "timestamp": 1786896290431,
+  "timestamp": 1787457976362,
   "abi": [
     {
       "type": "constructor",

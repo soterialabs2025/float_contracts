@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../v4/libraries/TrailingFloorLib.sol";
@@ -28,17 +28,39 @@ contract AutoStrategyManagerRhV4 is Ownable {
     uint256 public innerBelowTicks = 780;
     uint256 public innerAboveTicks = 780;
 
+    /// @notice Tolerance applied to LP mint and increase amounts.
     uint16 public slippageBps = 100;
+    /// @notice Tolerance applied to the swap output floor, on top of the pool's own fee.
+    /// @dev Separate from `slippageBps` so widening what a swap will accept does not also loosen LP minting.
+    uint16 public swapSlippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
-    uint256 public withdrawalFeeBps = 50;
+    uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to protocol peel (default 500 = 5%).
-    uint256 public protocolFeeBps = 500;
+    uint256 public protocolFeeBps = 600;
     /// @notice Share of post-protocol deposit/fee capital kept idle as reserve (default 5000 = 50%).
     uint256 public reserveBps = 5000;
-    /// @notice Share of protocolFeeBps proceeds sent to ShareStakingRhV4 (rest to feeManager). Default 75%.
-    uint256 public stakingShareBps = 7500;
+    /// @notice Share of protocolFeeBps proceeds sent to ShareStaking (rest to feeManager). Default 50%.
+    uint256 public stakingShareBps = 5000;
     /// @notice True after TBA/post-transfer owner calls `setStakingShareBps` once; cannot change again.
     bool public stakingShareBpsLocked;
+    /// @notice Ticks the pool may sit from `refTick` before swaps are skipped, at zero reference age.
+    /// @dev No longer bounded below by the outer band width. That floor existed because the anchor only advanced
+    ///      on a successful remint, so the gate had to tolerate a full band exit; against a reference that tracks
+    ///      continuously, a genuine 10% move over ten minutes leaves a gap near 650 ticks and this bound refuses
+    ///      only genuinely fast movement.
+    uint256 public maxSwapTickDeviation = 1200;
+
+    /// @notice Seconds the price reference needs to earn one tick of movement. Default 2, i.e. half a tick a
+    ///         second: a genuine 10% move is tracked inside twenty minutes, one block of manipulation buys a tick.
+    uint256 public secondsPerRefTick = 2;
+    /// @notice Ceiling on the reference's drift allowance, so a neglected feed still bounds something.
+    /// @dev At the default rate this only starts binding after about 67 minutes of keeper silence, and is
+    ///      therefore invisible while the feed is healthy.
+    uint256 public maxRefDrift = 2000;
+    /// @notice Minimum spacing between keeper-driven `refreshPriceRef` writes.
+    /// @dev Shorter is safer, not just fresher: movement is capped per unit time, so a denser cadence bounds
+    ///      each individual write more tightly and limits what one poisoned write can do.
+    uint256 public minRefUpdateInterval = 5 minutes;
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -48,6 +70,32 @@ contract AutoStrategyManagerRhV4 is Ownable {
     /// @notice Set ASSET inventory target bps. No cap — `0` = all WETH, `> DIVISOR` = all ASSET.
     function setTargetAssetBps(uint256 bps) external onlyOwner {
         targetAssetBps = bps;
+    }
+
+    function setMaxSwapTickDeviation(uint256 ticks) external onlyOwner {
+        maxSwapTickDeviation = ticks;
+    }
+
+    /// @notice Capped: past 10% a floor stops bounding execution in any useful way.
+    function setSwapSlippageBps(uint16 bps) external onlyOwner {
+        if (bps > 1_000) revert SwapSlippageBps();
+        swapSlippageBps = bps;
+    }
+
+    /// @notice Zero would let the reference adopt any price instantly, which is the whole thing this prevents.
+    function setSecondsPerRefTick(uint256 seconds_) external onlyOwner {
+        if (seconds_ == 0) revert RefConfig();
+        secondsPerRefTick = seconds_;
+    }
+
+    /// @notice Capped at the usable tick range; past that the clamp bounds nothing.
+    function setMaxRefDrift(uint256 ticks) external onlyOwner {
+        if (ticks > 887_272) revert RefConfig();
+        maxRefDrift = ticks;
+    }
+
+    function setMinRefUpdateInterval(uint256 interval) external onlyOwner {
+        minRefUpdateInterval = interval;
     }
 
     /// @notice One-time set of staking/feeManager split. Only after package → TBA ownership lock.
@@ -63,6 +111,8 @@ contract AutoStrategyManagerRhV4 is Ownable {
     }
 
     error StakingShareBps();
+    error SwapSlippageBps();
+    error RefConfig();
 
     function _spacing() internal view returns (int24) {
         int24 sp = tickSpacing;
@@ -73,16 +123,21 @@ contract AutoStrategyManagerRhV4 is Ownable {
         tickSpacing = 160;
         rangeBelowTicks = 960;
         rangeAboveTicks = 960;
-        innerBelowTicks = 160;
-        innerAboveTicks = 160;
+        innerBelowTicks = 780;
+        innerAboveTicks = 780;
         slippageBps = 100;
+        swapSlippageBps = 100;
         minHarvestDelay = 2 hours;
-        withdrawalFeeBps = 50;
-        protocolFeeBps = 500;
+        withdrawalFeeBps = 100;
+        protocolFeeBps = 600;
         reserveBps = 5000;
         targetAssetBps = 5000;
-        stakingShareBps = 7500;
+        stakingShareBps = 5000;
         stakingShareBpsLocked = false;
+        maxSwapTickDeviation = 1200;
+        secondsPerRefTick = 2;
+        maxRefDrift = 2000;
+        minRefUpdateInterval = 5 minutes;
     }
 
     /// @dev Apply pool spacing + band widths. Reverts if widths are not positive multiples of `spacing`.

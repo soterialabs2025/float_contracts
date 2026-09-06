@@ -4,7 +4,7 @@
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1787027013783,
+  "timestamp": 1788410339045,
   "abi": [
     {
       "type": "constructor",
@@ -88,8 +88,57 @@
     },
     {
       "type": "function",
+      "name": "removeAuthorizedStrategy",
+      "inputs": [
+        {
+          "name": "strategy",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "renounceOwnership",
       "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "rescue",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setMaxPriceImpactBps",
+      "inputs": [
+        {
+          "name": "bps",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ],
       "outputs": [],
       "stateMutability": "nonpayable"
     },
@@ -101,19 +150,6 @@
           "name": "factory",
           "type": "address",
           "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "setStrictStrategySlippageBps",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint16",
-          "internalType": "uint16"
         }
       ],
       "outputs": [],
@@ -134,19 +170,6 @@
     },
     {
       "type": "function",
-      "name": "strictStrategySlippageBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint16",
-          "internalType": "uint16"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "swapExactInputSingleStrict",
       "inputs": [
         {
@@ -158,6 +181,16 @@
           "name": "amountIn",
           "type": "uint128",
           "internalType": "uint128"
+        },
+        {
+          "name": "minAmountOut",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
         },
         {
           "name": "libKey",
@@ -239,17 +272,17 @@
       "stateMutability": "nonpayable"
     },
     {
-      "type": "function",
-      "name": "v4Quoter",
-      "inputs": [],
-      "outputs": [
+      "type": "event",
+      "name": "MaxPriceImpactUpdated",
+      "inputs": [
         {
-          "name": "",
-          "type": "address",
-          "internalType": "contract IV4Quoter"
+          "name": "bps",
+          "type": "uint16",
+          "indexed": false,
+          "internalType": "uint16"
         }
       ],
-      "stateMutability": "view"
+      "anonymous": false
     },
     {
       "type": "event",
@@ -272,7 +305,45 @@
     },
     {
       "type": "event",
+      "name": "Rescued",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
       "name": "StrategyAuthorized",
+      "inputs": [
+        {
+          "name": "strategy",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "StrategyDeauthorized",
       "inputs": [
         {
           "name": "strategy",
@@ -292,19 +363,6 @@
           "type": "address",
           "indexed": true,
           "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "StrictStrategySlippageUpdated",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint16",
-          "indexed": false,
-          "internalType": "uint16"
         }
       ],
       "anonymous": false
@@ -364,6 +422,21 @@
     },
     {
       "type": "error",
+      "name": "Expired",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InsufficientOutput",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NotAuthorized",
+      "inputs": []
+    },
+    {
+      "type": "error",
       "name": "OwnableInvalidOwner",
       "inputs": [
         {
@@ -413,6 +486,11 @@
     {
       "type": "error",
       "name": "ZeroAmount",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ZeroMinOut",
       "inputs": []
     }
   ]

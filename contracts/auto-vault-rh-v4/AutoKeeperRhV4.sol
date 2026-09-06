@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -99,6 +99,31 @@ contract AutoKeeperRhV4 is IAutoKeeperRhV4, Ownable, ReentrancyGuard {
         if (IAutoStrategyRhV4(ws.stratAddr).keeperCheck()) {
             ws.lastUpkeep = uint32(block.timestamp);
         }
+    }
+
+    /// @notice Refresh the truncated price reference on `id`. Cheap, swap-free, and rate-limited in the strategy.
+    /// @dev Run this on a five-minute cadence, independent of `performUpkeep`, which only lands when the position
+    ///      needs work. The reference both prices share minting and anchors the swap gate, and because its
+    ///      movement is capped per unit time, a denser cadence is what bounds one poisoned write.
+    function refreshPriceRef(uint256 id) external nonReentrant onlyOperator {
+        _refreshPriceRef(id);
+    }
+
+    /// @notice Batch form. One transaction across every watched strategy amortises the base cost at that cadence.
+    function refreshPriceRefBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
+        uint256 len = ids.length;
+        uint256 maxId = watched.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] >= maxId) continue;
+            _refreshPriceRef(ids[i]);
+        }
+    }
+
+    function _refreshPriceRef(uint256 id) internal {
+        if (id >= watched.length) revert BadId();
+        WatchedStrategy storage ws = watched[id];
+        if (!ws.active || ws.stratAddr == address(0)) return;
+        IAutoStrategyRhV4(ws.stratAddr).refreshPriceRef();
     }
 
     function performHarvest(uint256 id, bool skipIncreaseLiquidity) external override nonReentrant onlyOperator {

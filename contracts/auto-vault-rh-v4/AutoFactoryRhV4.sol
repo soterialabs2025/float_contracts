@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libraries/LiquidityLibraryV4.sol";
 import "./AutoStrategyManagerRhV4.sol";
 import "./AutoStrategyRhV4.sol";
@@ -15,7 +16,7 @@ import "./interfaces/IAutoOperatorRegistryRhV4.sol";
 
 /// @title AutoFactoryRhV4
 /// @notice RH (4663) deploys AutoStrategyRhV4 + AutoVaultRhV4 + LiquidSharesRhV4 + ShareStakingRhV4 packages.
-contract AutoFactoryRhV4 is Ownable {
+contract AutoFactoryRhV4 is Ownable, ReentrancyGuard {
     using Clones for address;
 
     struct InfraConfig {
@@ -68,19 +69,23 @@ contract AutoFactoryRhV4 is Ownable {
     );
     event VaultRegistryUpdated(address indexed asset, address strategy, address vault, bool active);
     event PackageOwnershipTransferred(address indexed asset, address indexed previousOwner, address indexed newOwner);
+    event InfraUpdated(
+        address indexed swapRouter, address indexed operatorRegistry, address indexed keeper, address feeManager
+    );
 
     constructor(InfraConfig memory config) Ownable(msg.sender) {
         _validateInfra(config);
         infra = config;
         strategyImplementation = address(new AutoStrategyRhV4(address(this)));
-        vaultImplementation = address(new AutoVaultRhV4());
-        liquidSharesImplementation = address(new LiquidSharesRhV4());
-        shareStakingImplementation = address(new ShareStakingRhV4());
+        vaultImplementation = address(new AutoVaultRhV4(address(this)));
+        liquidSharesImplementation = address(new LiquidSharesRhV4(address(this)));
+        shareStakingImplementation = address(new ShareStakingRhV4(address(this)));
     }
 
     function updateInfra(InfraConfig calldata config) external onlyOwner {
         _validateInfra(config);
         infra = config;
+        emit InfraUpdated(config.swapRouter, config.operatorRegistry, config.keeper, config.feeManager);
     }
 
     function assetsLength() external view returns (uint256) {
@@ -106,6 +111,7 @@ contract AutoFactoryRhV4 is Ownable {
     )
         external
         onlyOperator
+        nonReentrant
         returns (address strategy, address vault, address liquidShares, address shareStaking, uint256 keeperId)
     {
         if (asset == address(0)) revert ZeroAddress();
@@ -152,7 +158,7 @@ contract AutoFactoryRhV4 is Ownable {
     }
 
     /// @notice One-shot transfer of package admin ownership (vault + strategy + ShareStakingRhV4) to `newOwner`.
-    function transferPackageOwnership(address asset, address newOwner) external {
+    function transferPackageOwnership(address asset, address newOwner) external nonReentrant {
         if (asset == address(0) || newOwner == address(0)) revert ZeroAddress();
         VaultRegistry memory pkg = registry[asset];
         if (pkg.strategy == address(0) || pkg.vault == address(0) || pkg.shareStaking == address(0)) {

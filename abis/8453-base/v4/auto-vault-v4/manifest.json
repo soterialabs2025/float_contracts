@@ -5,50 +5,50 @@
   "profile": "base-v4",
   "package": "contracts/auto-vault-base-v4",
   "contracts": {
-    "AutoOperatorRegistryBV4": {
+    "AutoOperatorRegistryBv4": {
       "address": "0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8",
-      "artifact": "artifacts/AutoOperatorRegistryBV4.sol/AutoOperatorRegistryBV4.json",
+      "artifact": "artifacts/auto-vault-base-v4/AutoOperatorRegistryBv4.sol/AutoOperatorRegistryBv4.json",
       "abiEntries": 14
     },
-    "AutoFactoryBV4": {
+    "AutoFactoryBv4": {
       "address": null,
       "artifact": "artifacts/AutoFactoryBV4.sol/AutoFactoryBV4.json",
-      "abiEntries": 31
+      "abiEntries": 33
     },
-    "AutoSwapRouterBV4": {
+    "AutoSwapRouterBv4": {
       "address": null,
-      "artifact": "artifacts/AutoSwapRouterBV4.sol/AutoSwapRouterBV4.json",
+      "artifact": "artifacts/auto-vault-base-v4/AutoSwapRouterBv4.sol/AutoSwapRouterBv4.json",
       "abiEntries": 29
     },
-    "AutoKeeperBV4": {
+    "AutoKeeperBv4": {
       "address": null,
-      "artifact": "artifacts/AutoKeeperBV4.sol/AutoKeeperBV4.json",
+      "artifact": "artifacts/auto-vault-base-v4/AutoKeeperBv4.sol/AutoKeeperBv4.json",
       "abiEntries": 28
     },
-    "AutoStrategyBV4": {
+    "AutoStrategyBv4": {
       "address": null,
       "artifact": "artifacts/AutoStrategyBV4.sol/AutoStrategyBV4.json",
-      "abiEntries": 71
+      "abiEntries": 65
     },
-    "AutoVaultBV4": {
+    "AutoVaultBv4": {
       "address": null,
       "artifact": "artifacts/AutoVaultBV4.sol/AutoVaultBV4.json",
-      "abiEntries": 44
+      "abiEntries": 38
     },
-    "AutoStrategyManagerBV4": {
+    "AutoStrategyManagerBv4": {
       "address": null,
       "artifact": "artifacts/AutoStrategyManagerBV4.sol/AutoStrategyManagerBV4.json",
       "abiEntries": 29
     },
-    "LiquidSharesBV4": {
+    "LiquidSharesBv4": {
       "address": null,
       "artifact": "artifacts/LiquidSharesBV4.sol/LiquidSharesBV4.json",
-      "abiEntries": 28
+      "abiEntries": 30
     },
-    "ShareStakingBV4": {
+    "ShareStakingBv4": {
       "address": null,
       "artifact": "artifacts/ShareStakingBV4.sol/ShareStakingBV4.json",
-      "abiEntries": 78
+      "abiEntries": 75
     }
   }
 }

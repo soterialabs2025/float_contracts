@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryBv3",
-  "address": "0x1cC9F1C0FcB8B5203a8d88176d7d498d49d9F060",
+  "address": "0x0674bf1A9234A4CEc171e7041697C553506a8c4f",
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1786901564779,
+  "timestamp": 1788410242673,
   "abi": [
     {
       "type": "constructor",
@@ -345,6 +345,37 @@
     },
     {
       "type": "event",
+      "name": "InfraUpdated",
+      "inputs": [
+        {
+          "name": "swapRouter",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "operatorRegistry",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "keeper",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "feeManager",
+          "type": "address",
+          "indexed": false,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
       "name": "OwnershipTransferred",
       "inputs": [
         {
@@ -534,6 +565,11 @@
     {
       "type": "error",
       "name": "PackageOwnershipLocked",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ReentrancyGuardReentrantCall",
       "inputs": []
     },
     {

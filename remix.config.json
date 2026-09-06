@@ -3,6 +3,7 @@
     "language": "Solidity",
     "settings": {
       "viaIR": true,
+      "evmVersion": "cancun",
       "metadata": {
     "bytecodeHash": "none",
     "appendCBOR": false
@@ -10,6 +11,11 @@
       "optimizer": {
         "enabled": true,
         "runs": 1
+      },
+      "libraries": {
+        "contracts/auto-vaults-base-v3/libraries/LiquidityLibraryV2.sol": {
+          "LiquidityLibraryV2": "0x91a83368242726efDc8BB1a85EB9ff9765B7B81C"
+        }
       },
       "outputSelection": {
         "*": {
@@ -32,6 +38,7 @@
       "remappings": [
         "ds-test/=lib/forge-std/lib/ds-test/src/",
         "forge-std/=lib/forge-std/src/",
+        "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
         "@uniswap/v4-core/=lib/v4-core/",
         "@uniswap/v4-periphery/=lib/v4-periphery/",
         "@uniswap/universal-router/=lib/universal-router/",

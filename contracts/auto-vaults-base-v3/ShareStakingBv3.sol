@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -10,6 +10,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "./V3Deployments8453.sol";
 import "./interfaces/IShareStakingBv3.sol";
 import "./interfaces/IAutoSwapRouterBv3.sol";
+import "./interfaces/IAutoStrategyBv3.sol";
 import "./interfaces/ILiquidSharesBv3.sol";
 
 /// @title ShareStakingBv3
@@ -22,8 +23,8 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
 
     uint256 public constant DIVISOR = 10_000;
     uint256 public constant EPOCH_DURATION = 2 days;
-    /// @notice Hard cap on owner cut of epoch WETH rewards (10%).
-    uint256 public constant MAX_OWNER_REWARD_BPS = 1_000;
+    /// @notice Hard cap on owner cut of epoch WETH rewards (30%).
+    uint256 public constant MAX_OWNER_REWARD_BPS = 3_000;
 
     IERC20 public immutable weth;
     ILiquidSharesBv3 public liquidShares;
@@ -31,7 +32,7 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
     address public strategy;
     address public asset;
     uint24 public poolFee;
-    address public factory;
+    address public immutable factory;
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
@@ -84,7 +85,6 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
     error NotActive();
     error SettingsLockedToDeployer();
     error EpochExitLocked();
-    error InsufficientRescuable();
 
     // Core lifecycle only — Ownable OwnershipTransferred covers ownership moves.
     event Staked(address indexed user, uint256 amount);
@@ -103,8 +103,10 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
         _;
     }
 
-    constructor() Ownable(msg.sender) {
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
         weth = IERC20(V3Deployments8453.WETH);
+        factory = factory_;
     }
 
     function bootstrap(
@@ -116,12 +118,12 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
         uint24 poolFee_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || liquidShares_ == address(0) || strategy_ == address(0) || asset_ == address(0)
                 || swapRouter_ == address(0)
         ) revert ZeroAddress();
 
-        factory = msg.sender;
         liquidShares = ILiquidSharesBv3(liquidShares_);
         strategy = strategy_;
         asset = asset_;
@@ -311,8 +313,16 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
             wethAdded = amount;
         } else if (token == asset) {
             if (amount > type(uint128).max) revert ZeroAmount();
+            // No TWAP price means no defensible floor: strand the ASSET for retry rather than swap blind.
+            uint256 minOut = IAutoStrategyBv3(strategy).minOutForSwap(token, amount);
+            if (minOut == 0) {
+                emit RewardNotified(token, amount, 0, currentEpoch);
+                return;
+            }
             IERC20(token).forceApprove(address(swapRouter), amount);
-            try swapRouter.swapExactInputSingleStrict(token, address(weth), poolFee, uint128(amount)) returns (
+            try swapRouter.swapExactInputSingleStrict(
+                token, address(weth), poolFee, uint128(amount), minOut, block.timestamp
+            ) returns (
                 uint256 out
             ) {
                 wethAdded = out;
@@ -367,24 +377,18 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
         emit Claimed(msg.sender, type(uint256).max, amount);
     }
 
-    /// @notice Rescue tokens not owed to stakers/owner-cut (failed ASSET swaps, dust, airdrops).
-    function rescueToken(address token, address to, uint256 amount) external onlyOwner {
-        if (to == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (token == address(weth)) {
-            uint256 bal = weth.balanceOf(address(this));
-            if (bal < accountedWeth || amount > bal - accountedWeth) revert InsufficientRescuable();
-        }
-        IERC20(token).safeTransfer(to, amount);
-    }
-
     /// @notice Retry converting stranded ASSET rewards into WETH for the active epoch.
-    function retryAssetRewardSwap(uint256 amount) external onlyOwner nonReentrant {
+    function retryAssetRewardSwap(uint256 amount) external nonReentrant onlyOwner {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);
+        uint256 minOut = IAutoStrategyBv3(strategy).minOutForSwap(asset, amount);
+        // Explicit owner action, so surface the unpriceable oracle rather than silently doing nothing.
+        if (minOut == 0) revert ZeroAmount();
         IERC20(asset).forceApprove(address(swapRouter), amount);
-        uint256 wethAdded = swapRouter.swapExactInputSingleStrict(asset, address(weth), poolFee, uint128(amount));
+        uint256 wethAdded = swapRouter.swapExactInputSingleStrict(
+            asset, address(weth), poolFee, uint128(amount), minOut, block.timestamp
+        );
         IERC20(asset).forceApprove(address(swapRouter), 0);
         if (wethAdded == 0) revert ZeroAmount();
         epochRewardWeth[currentEpoch] += wethAdded;

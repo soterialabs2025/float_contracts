@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./libraries/LiquidityLibraryV4.sol";
 import "./interfaces/IShareStakingRhV4.sol";
+import "./interfaces/IAutoStrategyRhV4.sol";
 import "./interfaces/IAutoSwapRouterRhV4.sol";
 import "./interfaces/ILiquidSharesRhV4.sol";
 
@@ -23,8 +24,8 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
 
     uint256 public constant DIVISOR = 10_000;
     uint256 public constant EPOCH_DURATION = 2 days;
-    /// @notice Hard cap on owner cut of epoch WETH rewards (10%).
-    uint256 public constant MAX_OWNER_REWARD_BPS = 1_000;
+    /// @notice Hard cap on owner cut of epoch WETH rewards (30%).
+    uint256 public constant MAX_OWNER_REWARD_BPS = 3_000;
 
     ILiquidSharesRhV4 public liquidShares;
     IAutoSwapRouterRhV4 public swapRouter;
@@ -32,7 +33,7 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
     address public asset;
     LiquidityLibraryV4.PoolKey public poolKey;
     bytes public hookData;
-    address public factory;
+    address public immutable factory;
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
@@ -85,7 +86,6 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
     error NotActive();
     error SettingsLockedToDeployer();
     error EpochExitLocked();
-    error InsufficientRescuable();
 
     event Staked(address indexed user, uint256 amount);
     event Activated(address indexed by, uint64 timestamp);
@@ -103,7 +103,10 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         _;
     }
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
+    }
 
     function bootstrap(
         address owner_,
@@ -115,12 +118,12 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         bytes calldata hookData_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || liquidShares_ == address(0) || strategy_ == address(0) || asset_ == address(0)
                 || swapRouter_ == address(0)
         ) revert ZeroAddress();
 
-        factory = msg.sender;
         liquidShares = ILiquidSharesRhV4(liquidShares_);
         strategy = strategy_;
         asset = asset_;
@@ -316,10 +319,15 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
     }
 
     function _swapAssetToWeth(uint128 amount) internal returns (uint256 wethAdded) {
+        // Strategy owns the pricing and the stale-tick gate; a zero floor means it would refuse to swap too.
+        uint256 minOut = IAutoStrategyRhV4(strategy).minOutForSwap(false, amount);
+        if (minOut == 0) return 0;
         IERC20(asset).forceApprove(address(swapRouter), amount);
         try swapRouter.swapExactInputSingleStrict(
             false,
             amount,
+            uint128(minOut),
+            block.timestamp,
             IAutoSwapRouterRhV4.AutoPoolKey({
                 currency0: poolKey.currency0,
                 currency1: poolKey.currency1,
@@ -371,23 +379,8 @@ contract ShareStakingRhV4 is Ownable, ReentrancyGuard, IShareStakingRhV4 {
         if (!ok) revert ZeroAmount();
         emit Claimed(msg.sender, type(uint256).max, amount);
     }
-
-    /// @notice Rescue tokens not owed to stakers/owner-cut (failed ASSET swaps, dust, airdrops).
-    /// @dev Native ETH (`token == address(0)`) may only skim surplus above `accountedWeth`.
-    function rescueToken(address token, address to, uint256 amount) external onlyOwner {
-        if (to == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (token == address(0)) {
-            uint256 bal = address(this).balance;
-            if (bal < accountedWeth || amount > bal - accountedWeth) revert InsufficientRescuable();
-            (bool ok,) = to.call{value: amount}("");
-            if (!ok) revert ZeroAmount();
-            return;
-        }
-        IERC20(token).safeTransfer(to, amount);
-    }
-
-    function retryAssetRewardSwap(uint256 amount) external onlyOwner nonReentrant {
+    
+    function retryAssetRewardSwap(uint256 amount) external nonReentrant onlyOwner {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);

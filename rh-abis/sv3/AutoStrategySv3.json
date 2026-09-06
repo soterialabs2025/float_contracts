@@ -4,7 +4,7 @@
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1786901723048,
+  "timestamp": 1788410377140,
   "abi": [
     {
       "type": "constructor",
@@ -155,19 +155,6 @@
     },
     {
       "type": "function",
-      "name": "bootstrapped",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "deposit",
       "inputs": [
         {
@@ -182,19 +169,6 @@
     {
       "type": "function",
       "name": "factory",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "feeManager",
       "inputs": [],
       "outputs": [
         {
@@ -330,7 +304,7 @@
     },
     {
       "type": "function",
-      "name": "minHarvestDelay",
+      "name": "maxTwapDeviationBps",
       "inputs": [],
       "outputs": [
         {
@@ -343,16 +317,16 @@
     },
     {
       "type": "function",
-      "name": "mode",
+      "name": "minHarvestDelay",
       "inputs": [],
       "outputs": [
         {
           "name": "",
-          "type": "uint8",
-          "internalType": "uint8"
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
-      "stateMutability": "pure"
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -456,6 +430,32 @@
     {
       "type": "function",
       "name": "poolValue",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "poolValueTwap",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "poolValueTwapRaw",
       "inputs": [],
       "outputs": [
         {
@@ -584,6 +584,19 @@
     },
     {
       "type": "function",
+      "name": "setMaxTwapDeviationBps",
+      "inputs": [
+        {
+          "name": "bps",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "setRangeParams",
       "inputs": [
         {
@@ -641,6 +654,19 @@
     },
     {
       "type": "function",
+      "name": "setTwapSeconds",
+      "inputs": [
+        {
+          "name": "seconds_",
+          "type": "uint32",
+          "internalType": "uint32"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "setWatched",
       "inputs": [
         {
@@ -651,19 +677,6 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "shareStaking",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -768,6 +781,19 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "twapSeconds",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint32",
+          "internalType": "uint32"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -924,6 +950,11 @@
     {
       "type": "error",
       "name": "StakingShareBps",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "TwapConfig",
       "inputs": []
     }
   ]

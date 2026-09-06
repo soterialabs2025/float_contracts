@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 /// @notice Robinhood Chain (4663) SushiSwap V3 / clAMM deployments.
 /// @dev RedSnwapper is documented for ops/API routes only — not used by vault remint/harvest.

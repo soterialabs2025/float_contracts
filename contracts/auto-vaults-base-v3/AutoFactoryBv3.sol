@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./V3Deployments8453.sol";
 import "./AutoStrategyBv3.sol";
@@ -14,7 +15,7 @@ import "./interfaces/IAutoKeeperBv3.sol";
 import "./interfaces/IAutoOperatorRegistryBv3.sol";
 import "./interfaces/IUniswapV3Factory.sol";
 
-contract AutoFactoryBv3 is Ownable {
+contract AutoFactoryBv3 is Ownable, ReentrancyGuard {
     using Clones for address;
 
     struct InfraConfig {
@@ -63,14 +64,17 @@ contract AutoFactoryBv3 is Ownable {
     event PackageOwnershipTransferred(
         address indexed asset, address indexed previousOwner, address indexed newOwner
     );
+    event InfraUpdated(
+        address indexed swapRouter, address indexed operatorRegistry, address indexed keeper, address feeManager
+    );
 
     constructor(InfraConfig memory config) Ownable(msg.sender) {
         _validateInfra(config);
         infra = config;
         strategyImplementation = address(new AutoStrategyBv3(address(this)));
-        vaultImplementation = address(new AutoVaultBv3());
-        liquidSharesImplementation = address(new LiquidSharesBv3());
-        shareStakingImplementation = address(new ShareStakingBv3());
+        vaultImplementation = address(new AutoVaultBv3(address(this)));
+        liquidSharesImplementation = address(new LiquidSharesBv3(address(this)));
+        shareStakingImplementation = address(new ShareStakingBv3(address(this)));
     }
 
     modifier onlyOperator() {
@@ -83,6 +87,7 @@ contract AutoFactoryBv3 is Ownable {
     function updateInfra(InfraConfig calldata config) external onlyOwner {
         _validateInfra(config);
         infra = config;
+        emit InfraUpdated(config.swapRouter, config.operatorRegistry, config.keeper, config.feeManager);
     }
 
     function assetsLength() external view returns (uint256) {
@@ -101,6 +106,7 @@ contract AutoFactoryBv3 is Ownable {
     function deployVaultPackage(address asset, uint24 poolFee)
         external
         onlyOperator
+        nonReentrant
         returns (address strategy, address vault, address liquidShares, address shareStaking, uint256 keeperId)
     {
         if (asset == address(0)) revert ZeroAddress();
@@ -148,7 +154,7 @@ contract AutoFactoryBv3 is Ownable {
     /// @notice One-shot transfer of package admin ownership (vault + strategy + ShareStakingBv3) to `newOwner`.
     /// @dev After this call, ownership is locked on those contracts (NFT/TBA control stays with whoever holds the NFT).
     ///      Caller must be the current owner of all three (or the factory owner). Does not move LiquidSharesBv3.
-    function transferPackageOwnership(address asset, address newOwner) external {
+    function transferPackageOwnership(address asset, address newOwner) external nonReentrant {
         if (asset == address(0) || newOwner == address(0)) revert ZeroAddress();
         VaultRegistry memory pkg = registry[asset];
         if (pkg.strategy == address(0) || pkg.vault == address(0) || pkg.shareStaking == address(0)) {

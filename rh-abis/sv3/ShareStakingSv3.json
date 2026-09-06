@@ -4,11 +4,17 @@
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1786901723048,
+  "timestamp": 1788410377140,
   "abi": [
     {
       "type": "constructor",
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "factory_",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
       "stateMutability": "nonpayable"
     },
     {
@@ -473,30 +479,6 @@
     },
     {
       "type": "function",
-      "name": "pendingClaim",
-      "inputs": [
-        {
-          "name": "user",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "epoch",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "pendingOwnerReward",
       "inputs": [
         {
@@ -533,29 +515,6 @@
       "inputs": [],
       "outputs": [],
       "stateMutability": "pure"
-    },
-    {
-      "type": "function",
-      "name": "rescueToken",
-      "inputs": [
-        {
-          "name": "token",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "to",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "amount",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
@@ -961,11 +920,6 @@
     {
       "type": "error",
       "name": "EpochNotEnded",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "InsufficientRescuable",
       "inputs": []
     },
     {

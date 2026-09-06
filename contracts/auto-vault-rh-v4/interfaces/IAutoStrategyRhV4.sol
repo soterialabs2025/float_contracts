@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "../libraries/LiquidityLibraryV4.sol";
 
@@ -10,6 +10,8 @@ interface IAutoStrategyRhV4 {
     }
 
     function poolValue() external view returns (uint256);
+    function poolValueRef() external view returns (uint256);
+    function minOutForSwap(bool sellEth, uint256 amount) external view returns (uint256);
     function balance() external view returns (uint256);
     function UniswapFeesCollected() external view returns (uint256);
     function vault() external view returns (address);
@@ -19,6 +21,7 @@ interface IAutoStrategyRhV4 {
     function hookData() external view returns (bytes memory);
 
     function keeperCheck() external returns (bool);
+    function refreshPriceRef() external returns (bool);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
 
     function deposit() external payable;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 /// @notice Minimal pool surface for Sushi/Uni V3 single-hop swaps + strategy reads.
 interface IUniswapV3PoolMinimal {
@@ -20,6 +20,11 @@ interface IUniswapV3PoolMinimal {
             uint8 feeProtocol,
             bool unlocked
         );
+
+    function observe(uint32[] calldata secondsAgos)
+        external
+        view
+        returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s);
 
     function swap(
         address recipient,

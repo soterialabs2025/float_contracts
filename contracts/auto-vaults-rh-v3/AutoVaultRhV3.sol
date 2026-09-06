@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -17,7 +16,9 @@ interface IWETHV3Rh is IERC20 {
     function deposit() external payable;
 }
 
-contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
+/// @title AutoVaultRhV3
+/// @notice RH (4663) AutoVault: ETH-only deposits (aeWETH wrap), LiquidSharesRhV3 + ShareStakingRhV3 package.
+contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 { 
     using SafeERC20 for IERC20;
 
     IWETHV3Rh public immutable weth;
@@ -25,16 +26,22 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
     ILiquidSharesRhV3 public liquidShares;
     address public shareStaking;
     IERC20 public asset;
-    address public factory;
+    address public immutable factory;
     bool public bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
-    PoolValueSnapshot[] private _poolValueSnapshots;
+    /// @notice High-water WETH-per-share (scaled 1e18). Later mints use min(spot, this).
+    uint256 public lastSharePriceX18;
+    uint256 public accUniswapFeesPerShare;
+    uint256 public uniswapFeesCollectedSynced;
+    /// @dev Near-full withdraw sweeps leftover shares below this (avoids wei dust blocking empty+HW reset).
+    uint256 internal constant MIN_SHARE_DUST = 1e10;
 
-    event Deposit(address indexed user, uint256 wethNotional, uint256 shares);
-    event Withdraw(address indexed user, uint256 shares, bool asAsset, uint256 outAmount);
-    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp);
+    event Deposit(address indexed user, uint256 wethNotional, uint256 shares, uint256 acc);
+    event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
+    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
     event OwnershipLocked(address indexed owner);
+    event SharePriceHighWater(uint256 priceX18);
 
     error Unauthorized();
     error ZeroAddress();
@@ -42,8 +49,12 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
     error AlreadyBootstrapped();
     error NotBootstrapped();
     error OwnershipIsLocked();
+    error FirstMintOwnerOnly();
 
-    constructor() Ownable(msg.sender) {
+    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
         weth = IWETHV3Rh(V3Deployments4663.WETH);
     }
 
@@ -60,18 +71,19 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
         address asset_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || strategy_ == address(0) || liquidShares_ == address(0)
                 || shareStaking_ == address(0) || asset_ == address(0)
         ) {
             revert ZeroAddress();
         }
-        factory = msg.sender;
         strategy = IAutoStrategyRhV3(strategy_);
         liquidShares = ILiquidSharesRhV3(liquidShares_);
         shareStaking = shareStaking_;
         asset = IERC20(asset_);
         bootstrapped = true;
+        uniswapFeesCollectedSynced = strategy.UniswapFeesCollected();
         _transferOwnership(owner_);
     }
 
@@ -95,26 +107,12 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
         super.renounceOwnership();
     }
 
+    /// @notice Emit NAV + cumulative Uniswap fees for off-chain indexing. Keeper-only.
     function recordPoolValueSnapshot() external override onlyAutoKeeper {
         if (!bootstrapped) revert NotBootstrapped();
-        uint256 pv = strategy.poolValue();
-        uint256 fees = strategy.UniswapFeesCollected();
-        _poolValueSnapshots.push(PoolValueSnapshot(pv, fees, uint64(block.timestamp)));
-        emit PoolValueSnapshotRecorded(pv, fees, uint64(block.timestamp));
-    }
-
-    function getPoolValueSnapshotCount() external view override returns (uint256) {
-        return _poolValueSnapshots.length;
-    }
-
-    function poolValueSnapshots(uint256 index)
-        external
-        view
-        override
-        returns (uint256 valueWeth, uint256 uniswapFeesCollected, uint64 timestamp)
-    {
-        PoolValueSnapshot storage s = _poolValueSnapshots[index];
-        return (s.valueWeth, s.uniswapFeesCollected, s.timestamp);
+        emit PoolValueSnapshotRecorded(
+            strategy.poolValue(), strategy.UniswapFeesCollected(), uint64(block.timestamp)
+        );
     }
 
     function balance() public view override returns (uint256) {
@@ -129,7 +127,7 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
         return liquidShares.totalSupply();
     }
 
-    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
+    function depositETH() external payable override nonReentrant returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         weth.deposit{value: msg.value}();
         return _mintSharesAndDeploy(msg.value);
@@ -137,33 +135,79 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, Pausable, IAutoVaultRhV3 {
 
     function _mintSharesAndDeploy(uint256 amount) internal returns (uint256 shares) {
         if (!bootstrapped) revert NotBootstrapped();
+        uint256 supply = totalSupply();
+        if (supply == 0 && msg.sender != owner()) revert FirstMintOwnerOnly();
+
         uint256 navBefore = balance();
+        // TWAP must be sampled pre-deposit; post-deposit TWAP includes `amount` and under-mints.
+        uint256 navTwap = strategy.poolValueTwapRaw();
         IERC20(address(weth)).forceApprove(address(strategy), amount);
         strategy.deposit(amount);
         uint256 navAfter = balance();
         uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
-        shares = _sharesForDeposit(credited, navBefore);
+        // Cap to deposited WETH so spot/NAV jumps between reads cannot overmint shares (V-NAV-MINT).
+        if (credited > amount) credited = amount;
+        shares = _sharesForDeposit(credited, navBefore, supply, navTwap);
         if (shares == 0) revert ZeroValue();
+        _syncAcc();
         liquidShares.mint(msg.sender, shares);
-        emit Deposit(msg.sender, credited, shares);
+        _bumpSharePriceHighWater(balance(), totalSupply());
+        emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
-    function _sharesForDeposit(uint256 amount, uint256 navBefore) internal view returns (uint256) {
+    /// @dev Owner seeds 1:1. Later: min(spot, twap) if TWAP ok; else min(spot, high-water).
+    /// `navTwap` must be the pre-deposit, ungated TWAP NAV, so the high-water branch is reached only when the
+    /// oracle cannot be read at all, rather than whenever spot merely disagrees with it.
+    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navTwap)
+        internal
+        view
+        returns (uint256)
+    {
+        if (supply == 0) return credited;
+        uint256 sharesSpot =
+            navBefore == 0 ? type(uint256).max : Math.mulDiv(credited, supply, navBefore);
+        if (navTwap > 0) {
+            return Math.min(sharesSpot, Math.mulDiv(credited, supply, navTwap));
+        }
+        if (lastSharePriceX18 == 0) return sharesSpot;
+        return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
+    }
+
+    function _bumpSharePriceHighWater(uint256 nav, uint256 supply) internal {
+        if (supply == 0 || nav == 0) return;
+        uint256 priceX18 = Math.mulDiv(nav, 1e18, supply);
+        if (priceX18 > lastSharePriceX18) {
+            lastSharePriceX18 = priceX18;
+            emit SharePriceHighWater(priceX18);
+        }
+    }
+
+    function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
         uint256 supply = totalSupply();
-        return supply == 0 || navBefore == 0 ? amount : Math.mulDiv(amount, supply, navBefore);
-    }
-
-    function withdraw(uint256 shares, bool asAsset) external override nonReentrant whenNotPaused returns (uint256) {
-        if (shares == 0 || totalSupply() == 0 || shares > balanceOf(msg.sender)) revert ZeroValue();
+        uint256 bal = balanceOf(msg.sender);
+        if (shares == 0 || supply == 0 || shares > bal) revert ZeroValue();
+        // Treat near-full personal exits as full exits so wei dust is not left behind.
+        if (bal - shares < MIN_SHARE_DUST) shares = bal;
         IAutoStrategyRhV3.WithdrawToken out =
             asAsset ? IAutoStrategyRhV3.WithdrawToken.ASSET : IAutoStrategyRhV3.WithdrawToken.WETH;
+        _syncAcc();
         uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
         strategy.withdraw(shares, msg.sender, out);
         liquidShares.burn(msg.sender, shares);
+        if (totalSupply() == 0) lastSharePriceX18 = 0;
         uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
         uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
-        emit Withdraw(msg.sender, shares, asAsset, received);
+        emit Withdraw(msg.sender, shares, asAsset, received, accUniswapFeesPerShare);
         return received;
+    }
+
+    function _syncAcc() internal {
+        uint256 feesNow = strategy.UniswapFeesCollected();
+        uint256 supply = liquidShares.totalSupply();
+        if (supply > 0 && feesNow > uniswapFeesCollectedSynced) {
+            accUniswapFeesPerShare += (feesNow - uniswapFeesCollectedSynced) * 1e18 / supply;
+        }
+        uniswapFeesCollectedSynced = feesNow;
     }
 
     receive() external payable {

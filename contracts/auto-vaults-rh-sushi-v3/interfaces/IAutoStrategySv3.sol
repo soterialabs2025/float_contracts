@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 interface IAutoStrategySv3 {
     enum WithdrawToken {
@@ -8,6 +8,9 @@ interface IAutoStrategySv3 {
     }
 
     function poolValue() external view returns (uint256);
+    function poolValueTwap() external view returns (uint256);
+    /// @notice Ungated TWAP NAV for the minting path. `0` only when the oracle itself cannot be read.
+    function poolValueTwapRaw() external view returns (uint256);
     function balance() external view returns (uint256);
     function UniswapFeesCollected() external view returns (uint256);
     function vault() external view returns (address);

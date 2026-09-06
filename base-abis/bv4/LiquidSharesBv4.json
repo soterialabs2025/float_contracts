@@ -4,11 +4,17 @@
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1786901602480,
+  "timestamp": 1788410273099,
   "abi": [
     {
       "type": "constructor",
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "factory_",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
       "stateMutability": "nonpayable"
     },
     {
@@ -399,6 +405,16 @@
     {
       "type": "error",
       "name": "AlreadyInitialized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InsufficientAllowance",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InsufficientBalance",
       "inputs": []
     },
     {

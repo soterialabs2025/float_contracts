@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+
+import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
 
 import "./V4Deployments4663.sol";
 import "../v4/libraries/TrailingFloorLib.sol";
@@ -16,6 +18,7 @@ import "./interfaces/IAllowanceTransfer.sol";
 
 import "./AutoStrategyManagerRhV4.sol";
 import "./libraries/AutoBandLib.sol";
+import "./libraries/SwapGateLib.sol";
 import "./interfaces/IAutoVaultRhV4.sol";
 import "./interfaces/IAutoStrategyRhV4.sol";
 import "./interfaces/IAutoSwapRouterRhV4.sol";
@@ -31,8 +34,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     error E();
 
-    address public feeManager;
-    address public shareStaking;
+    address private _feeManager;
+    address private _shareStaking;
     address public immutable factory;
     IPositionManagerV4 public immutable positionManager;
     IPoolManagerV4 private immutable poolManager;
@@ -48,10 +51,21 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     address public vault;
     address public keeper;
     bool public watched;
-    bool public bootstrapped;
+    bool private _bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
 
+    /// @notice Truncated price reference. Written on keeper cadence by `refreshPriceRef`, clamped every time,
+    ///         so no single write can adopt a price the pool only held for a moment.
+    int24 public refTick;
+    /// @notice When `refTick` was last written. The drift allowance is earned against its age.
+    uint64 public refTime;
+    /// @notice Block `refTick` was written in. A reference set this block says nothing about any prior state.
+    uint64 public refBlock;
+
+    /// @notice Base tick of the inner comfort band, written only by a successful mint.
+    /// @dev No longer feeds the swap gate; `refTick` does. Re-centring this on spot would only suppress
+    ///      reminting, which is why the keeper-driven refresh that used to write it is gone.
     int24 public lastBandBaseTick;
     bool public hasBandBase;
 
@@ -64,11 +78,17 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     uint256 public reservedAsset;
     uint256 public reservedWeth;
 
+    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
     constructor(address factory_) AutoStrategyManagerRhV4() {
         factory = factory_;
         positionManager = IPositionManagerV4(V4Deployments4663.POSITION_MANAGER);
         poolManager = IPoolManagerV4(V4Deployments4663.POOL_MANAGER);
         _initAutoDefaults();
+    }
+
+    modifier onlyFactory() {
+        if (msg.sender != factory) revert E();
+        _;
     }
 
     function bootstrap(
@@ -83,9 +103,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         LiquidityLibraryV4.PoolKey calldata key,
         bytes calldata hookData_,
         BandConfig calldata bands
-    ) external {
-        if (bootstrapped) revert E();
-        if (msg.sender != factory) revert E();
+    ) external onlyFactory {
+        if (_bootstrapped) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0)
                 || operatorRegistry_ == address(0) || keeper_ == address(0) || feeManager_ == address(0)
@@ -97,22 +116,21 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         swapRouter = IAutoSwapRouterRhV4(swapRouter_);
         operatorRegistry = IAutoOperatorRegistryRhV4(operatorRegistry_);
         keeper = keeper_;
-        feeManager = feeManager_;
-        shareStaking = shareStaking_;
+        _feeManager = feeManager_;
+        _shareStaking = shareStaking_;
         _asset = IERC20(asset_);
         _poolKey = key;
         _hookData = hookData_;
         _initAutoDefaults();
         // tickSpacing from PoolKey; ranges from factory BandConfig (must be multiples of spacing).
         _applyBandConfig(key.tickSpacing, bands);
-        bootstrapped = true;
+        _bootstrapped = true;
         _giveAllowances();
         _transferOwnership(owner_);
     }
 
     /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
-    function transferOwnershipFromFactory(address newOwner) external {
-        if (msg.sender != factory) revert E();
+    function transferOwnershipFromFactory(address newOwner) external onlyFactory {
         if (newOwner == address(0)) revert E();
         if (ownershipLocked) revert E();
         _transferOwnership(newOwner);
@@ -145,17 +163,17 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         if (amount == 0) return;
         uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
         uint256 toFeeManager = amount - toStaking;
-        if (toStaking > 0 && shareStaking != address(0)) {
+        if (toStaking > 0 && _shareStaking != address(0)) {
             if (token == address(0)) {
-                IShareStakingRhV4(shareStaking).notifyReward{value: toStaking}(address(0), toStaking);
+                IShareStakingRhV4(_shareStaking).notifyReward{value: toStaking}(address(0), toStaking);
             } else {
-                IERC20(token).safeTransfer(shareStaking, toStaking);
-                IShareStakingRhV4(shareStaking).notifyReward(token, toStaking);
+                IERC20(token).safeTransfer(_shareStaking, toStaking);
+                IShareStakingRhV4(_shareStaking).notifyReward(token, toStaking);
             }
         } else if (toStaking > 0) {
             toFeeManager += toStaking;
         }
-        if (toFeeManager > 0) _pay(token, feeManager, toFeeManager);
+        if (toFeeManager > 0) _pay(token, _feeManager, toFeeManager);
     }
 
     function _pay(address token, address to, uint256 amount) internal {
@@ -239,8 +257,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        _balanceTokens(assetBal, wethBal);
+        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
+        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
@@ -281,11 +299,14 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
         uint256 idleAssetBefore = _asset.balanceOf(address(this));
         uint256 idleWethBefore = address(this).balance;
+        // Share of liquidity units — avoids spot-priced LP exit sizing (H001).
         if (liqPos.positionId != 0) {
-            uint256 poolVal = _poolValueOnly();
-            if (poolVal > 0) {
-                uint256 amountFromPool = Math.mulDiv(poolVal, userShares, totalSupply_);
-                if (amountFromPool > 0) _decreaseLiquidity(amountFromPool);
+            uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
+            if (liquidity > 0) {
+                uint256 liqToRemove = Math.mulDiv(uint256(liquidity), userShares, totalSupply_);
+                if (liqToRemove == 0 && userShares > 0) liqToRemove = 1;
+                if (liqToRemove > liquidity) liqToRemove = liquidity;
+                _decreaseLiquidityInternal(uint128(liqToRemove), false);
             }
         }
         uint256 assetAfter = _asset.balanceOf(address(this));
@@ -312,8 +333,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 wethFee = Math.mulDiv(totalUserWeth, withdrawalFeeBps, DIVISOR);
         totalUserAsset -= assetFee;
         totalUserWeth -= wethFee;
-        if (assetFee > 0) _asset.safeTransfer(feeManager, assetFee);
-        if (wethFee > 0) _pay(address(0), feeManager, wethFee);
+        if (assetFee > 0) _asset.safeTransfer(_feeManager, assetFee);
+        if (wethFee > 0) _pay(address(0), _feeManager, wethFee);
 
         if (outToken == WithdrawToken.WETH) {
             if (totalUserAsset > 0) {
@@ -456,8 +477,10 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         });
         (uint256 newId, uint128 liq) = liqPos.mintNewPositionWithRange(ctx, bal0, bal1, lower, upper);
         if (newId != 0 && liq > 0) {
-            lastBandBaseTick = TrailingFloorLib.alignDown(currentTick, _spacing());
-            hasBandBase = true;
+            _setBandBase(currentTick);
+            // Seed only. Letting a remint re-anchor the reference would hand it whatever price triggered the
+            // remint, which is exactly the price a manipulator would have chosen.
+            if (refTime == 0) _setPriceRef(currentTick);
         }
     }
 
@@ -487,12 +510,15 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     }
 
     /// @dev Caps to deployable (`balance - reserved`). After withdraw consume, released reserve is spendable.
+    ///      Skips rather than reverts when unpriceable, so withdrawals degrade to paying the unswapped token.
     function _swap(bool sellEth, uint256 amount) internal {
         if (amount == 0) return;
         uint256 bal = sellEth ? _spendableEth() : _spendable(_asset);
         if (amount > bal) amount = bal;
         if (amount <= LIQUIDITY_DUST) return;
         if (amount > type(uint128).max) revert E();
+        uint256 minOut = _minOutForSwap(sellEth, amount);
+        if (minOut == 0) return;
         IAutoSwapRouterRhV4.AutoPoolKey memory key = IAutoSwapRouterRhV4.AutoPoolKey({
             currency0: _poolKey.currency0,
             currency1: _poolKey.currency1,
@@ -501,12 +527,93 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             hooks: _poolKey.hooks
         });
         if (sellEth) {
-            swapRouter.swapExactInputSingleStrict{value: amount}(true, uint128(amount), key, _hookData);
+            swapRouter.swapExactInputSingleStrict{value: amount}(
+                true, uint128(amount), uint128(minOut), block.timestamp, key, _hookData
+            );
         } else {
             _asset.forceApprove(address(swapRouter), amount);
-            swapRouter.swapExactInputSingleStrict(false, uint128(amount), key, _hookData);
+            swapRouter.swapExactInputSingleStrict(
+                false, uint128(amount), uint128(minOut), block.timestamp, key, _hookData
+            );
             _asset.forceApprove(address(swapRouter), 0);
         }
+    }
+
+    function _setBandBase(int24 tick) internal {
+        lastBandBaseTick = TrailingFloorLib.alignDown(tick, _spacing());
+        hasBandBase = true;
+    }
+
+    /// @dev Single writer for the three reference fields. The clamp is what makes the reference truncated:
+    ///      each write may only move it by the drift earned since the last one.
+    function _setPriceRef(int24 tick) internal {
+        refTick = SwapGateLib.nextRefTick(tick, refTick, refTime, secondsPerRefTick, maxRefDrift);
+        refTime = uint64(block.timestamp);
+        refBlock = uint64(block.number);
+    }
+
+    /// @notice Keeper-cadence write of the truncated price reference. Returns false when rate-limited.
+    /// @dev Runs on its own schedule, deliberately not tied to `keeperCheck` or harvest: those only land when the
+    ///      position needs work, which is far too sparse to keep a price reference honest.
+    function refreshPriceRef() external override nonReentrant returns (bool) {
+        _onlyKeeper();
+        if (refTime != 0 && block.timestamp < refTime + minRefUpdateInterval) return false;
+        (uint160 sqrtP, int24 tick) = _readSlot0();
+        if (sqrtP == 0) return false;
+        _setPriceRef(tick);
+        return true;
+    }
+
+    /// @notice NAV valued at the truncated reference instead of raw spot. Zero until the reference is seeded.
+    /// @dev Token amounts still come from spot, mirroring V3's `_navAtPrice`: the amounts are what the position
+    ///      actually holds, and only their valuation needs a price the caller cannot have moved this block.
+    function poolValueRef() external view override returns (uint256) {
+        if (refTime == 0) return 0;
+        (uint160 sqrtP, int24 tick) = _readSlot0();
+        if (sqrtP == 0) return 0;
+        uint256 p = SwapGateLib.refPrice1e18(
+            tick, refTick, refTime, secondsPerRefTick, maxRefDrift, _poolKey.currency0 == address(0)
+        );
+        if (p == 0) return 0;
+        (uint256 assetInPool, uint256 wethInPool) = balanceOfPool();
+        (uint256 assetBal, uint256 wethBal) = _getTokenBalances();
+        return wethInPool + wethBal + Math.mulDiv(assetInPool + assetBal, 1e18, p);
+    }
+
+    /// @notice Output floor the strategy would enforce for `amount`, or 0 if it would skip the swap.
+    /// @dev Lets ShareStakingRhV4 reuse this pricing instead of duplicating it into another cloned contract.
+    function minOutForSwap(bool sellEth, uint256 amount) external view override returns (uint256) {
+        return _minOutForSwap(sellEth, amount);
+    }
+
+    /// @dev Output floor for a swap, or 0 when the swap must be skipped.
+    function _minOutForSwap(bool sellEth, uint256 amount) internal view returns (uint256) {
+        (uint160 sqrtP, int24 tick, uint24 protocolFee, uint24 lpFee) =
+            LiquidityLibraryV4.getSlot0WithFees(poolManager, _poolKey);
+        bool ethIsCurrency0 = _poolKey.currency0 == address(0);
+        uint256 floor_ = SwapGateLib.minOut(
+            sqrtP,
+            tick,
+            SwapGateLib.Anchor(refTick, refTime != 0, refTime, refBlock),
+            maxSwapTickDeviation,
+            ethIsCurrency0,
+            sellEth,
+            amount,
+            swapSlippageBps,
+            DIVISOR,
+            _swapFeePips(sellEth == ethIsCurrency0, protocolFee, lpFee)
+        );
+        if (floor_ > type(uint128).max) revert E();
+        return floor_;
+    }
+
+    /// @dev Total fee the PoolManager takes for this direction, in pips. The protocol fee comes off the input
+    ///      first and the LP fee off what remains, which is what `calculateSwapFee` folds together.
+    function _swapFeePips(bool zeroForOne, uint24 protocolFee, uint24 lpFee) internal pure returns (uint24) {
+        uint16 dirFee = zeroForOne
+            ? ProtocolFeeLibrary.getZeroForOneFee(protocolFee)
+            : ProtocolFeeLibrary.getOneForZeroFee(protocolFee);
+        return ProtocolFeeLibrary.calculateSwapFee(dirFee, lpFee);
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
@@ -558,12 +665,6 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         _decreaseLiquidityInternal(0, true);
     }
 
-    function _decreaseLiquidity(uint256 amount) internal {
-        uint256 liqToRemove = _calculateLiquidityToRemove(amount);
-        if (liqToRemove == 0) return;
-        _decreaseLiquidityInternal(uint128(liqToRemove), false);
-    }
-
     function _decreaseLiquidityInternal(uint128 liquidityToRemove, bool removeAll) internal {
         if (liqPos.positionId == 0) return;
         LiquidityLibraryV4.DecreaseContext memory ctx = LiquidityLibraryV4.DecreaseContext({
@@ -579,6 +680,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             }
         } else {
             if (liquidityToRemove == 0) return;
+            // Skim protocolFeeBps / reserveBps before principal exit (parity with `_decreaseAllLiquidity`).
+            _collectAllFees(true);
             liqPos.decreaseLiquidityByAmount(ctx, liquidityToRemove);
         }
         _collectAllFees(false);
@@ -597,37 +700,6 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             hookData: _hookData
         });
         liqAdded = liqPos.increaseLiquidityInternal(ctx, amount0, amount1);
-    }
-
-    function _calculateLiquidityToRemove(uint256 amountWeth) internal view returns (uint256) {
-        if (liqPos.positionId == 0) return 0;
-        uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
-        if (liquidity == 0 || amountWeth == 0) return 0;
-
-        (uint160 sqrtP,) = _readSlot0();
-        (uint160 sqrtLowerX96, uint160 sqrtUpperX96) =
-            LiquidityLibraryV4.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
-        (uint256 amount0, uint256 amount1) =
-            LiquidityLibraryV4.getAmountsForLiquidity(sqrtP, sqrtLowerX96, sqrtUpperX96, liquidity);
-
-        address p0 = _poolKey.currency0;
-        (uint256 assetAmt, uint256 wethAmt) =
-            p0 == address(0) ? (amount1, amount0) : (amount0, amount1);
-        uint256 p = _spotPrice1e18();
-        uint256 assetAsWeth = p != 0 ? Math.mulDiv(assetAmt, 1e18, p) : 0;
-        uint256 totalValue = wethAmt + assetAsWeth;
-        if (totalValue == 0) return 0;
-
-        uint256 proportion = Math.mulDiv(amountWeth, 1e18, totalValue);
-        if (proportion > 1e18) proportion = 1e18;
-        uint256 targetTokenAmt = Math.mulDiv(assetAmt, proportion, 1e18);
-        uint256 targetWethAmt = Math.mulDiv(wethAmt, proportion, 1e18);
-        (uint256 bal0, uint256 bal1) =
-            p0 == address(0) ? (targetWethAmt, targetTokenAmt) : (targetTokenAmt, targetWethAmt);
-        uint128 liqNeeded =
-            LiquidityLibraryV4.getLiquidityForAmounts(sqrtP, sqrtLowerX96, sqrtUpperX96, bal0, bal1);
-        if (liqNeeded > liquidity) return liquidity;
-        return liqNeeded;
     }
 
     function _getTokenBalances() internal view returns (uint256 assetBal, uint256 wethBal) {
@@ -671,10 +743,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     function _spotPrice1e18() internal view returns (uint256) {
         (uint160 sqrtP,) = _readSlot0();
-        uint256 price = Math.mulDiv(uint256(sqrtP), uint256(sqrtP), (uint256(1) << 192) / 1e18);
-        if (_poolKey.currency0 == address(0)) return price;
-        if (price == 0) return 0;
-        return Math.mulDiv(1e18, 1e18, price);
+        return SwapGateLib.spotPrice1e18(sqrtP, _poolKey.currency0 == address(0));
     }
 
     function _poolValueOnly() internal view returns (uint256) {
@@ -698,7 +767,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 p = _spotPrice1e18();
         uint256 assetAsWeth = p != 0 ? Math.mulDiv(assetBal, 1e18, p) : 0;
         return wethBal + assetAsWeth;
-    }
+    } 
 
     function balanceOfPool() public view returns (uint256 assetAmt, uint256 wethAmt) {
         if (liqPos.positionId == 0) return (0, 0);

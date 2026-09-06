@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperBv3",
-  "address": "0xdd66727dB1D19345d3f5468e4A7a9073F28b591B",
+  "address": "0xef7914565080d7dcB6522c7d51113330B53d0dFD",
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1786901564779,
+  "timestamp": 1788410242673,
   "abi": [
     {
       "type": "constructor",

@@ -11,7 +11,7 @@
     "AutoFactoryRhV3": {
       "address": "0xe84eddEA07f31535201aD826235fA49Cd7b44e07",
       "artifact": "artifacts/AutoFactoryRhV3.sol/AutoFactoryRhV3.json",
-      "abiEntries": 31
+      "abiEntries": 33
     },
     "AutoSwapRouterRhV3": {
       "address": "0x8A8c18445792e04e8512D5c6CD680331F9575a3F",
@@ -31,17 +31,17 @@
     "AutoStrategyRhV3": {
       "address": null,
       "artifact": "artifacts/AutoStrategyRhV3.sol/AutoStrategyRhV3.json",
-      "abiEntries": 68
+      "abiEntries": 71
     },
     "AutoVaultRhV3": {
       "address": null,
       "artifact": "artifacts/AutoVaultRhV3.sol/AutoVaultRhV3.json",
-      "abiEntries": 44
+      "abiEntries": 41
     },
     "AutoStrategyManagerRhV3": {
       "address": null,
       "artifact": "artifacts/AutoStrategyManagerRhV3.sol/AutoStrategyManagerRhV3.json",
-      "abiEntries": 29
+      "abiEntries": 34
     },
     "LiquidSharesRhV3": {
       "address": null,
@@ -51,7 +51,7 @@
     "ShareStakingRhV3": {
       "address": null,
       "artifact": "artifacts/ShareStakingRhV3.sol/ShareStakingRhV3.json",
-      "abiEntries": 77
+      "abiEntries": 74
     }
   }
 }

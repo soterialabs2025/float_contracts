@@ -1,11 +1,11 @@
 {
-  "name": "AutoStrategyBV4",
+  "name": "AutoStrategyBv4",
   "address": null,
   "chainId": 8453,
-  "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "timestamp": 1786896290431,
+  "package": "contracts/auto-vault-base-v4",
+  "timestamp": 1787528621856,
   "abi": [
     {
       "type": "constructor",
@@ -188,19 +188,6 @@
     },
     {
       "type": "function",
-      "name": "bootstrapped",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "deposit",
       "inputs": [
         {
@@ -215,19 +202,6 @@
     {
       "type": "function",
       "name": "factory",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "feeManager",
       "inputs": [],
       "outputs": [
         {
@@ -389,19 +363,6 @@
     },
     {
       "type": "function",
-      "name": "mode",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint8",
-          "internalType": "uint8"
-        }
-      ],
-      "stateMutability": "pure"
-    },
-    {
-      "type": "function",
       "name": "onERC721Received",
       "inputs": [
         {
@@ -433,19 +394,6 @@
         }
       ],
       "stateMutability": "pure"
-    },
-    {
-      "type": "function",
-      "name": "operatorRegistry",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "contract IAutoOperatorRegistryBV4"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -714,19 +662,6 @@
     },
     {
       "type": "function",
-      "name": "shareStaking",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "slippageBps",
       "inputs": [],
       "outputs": [
@@ -760,19 +695,6 @@
           "name": "",
           "type": "bool",
           "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "swapRouter",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "contract IAutoSwapRouterBV4"
         }
       ],
       "stateMutability": "view"
@@ -872,7 +794,7 @@
         {
           "name": "outToken",
           "type": "uint8",
-          "internalType": "enum IAutoStrategyBV4.WithdrawToken"
+          "internalType": "enum IAutoStrategyBv4.WithdrawToken"
         }
       ],
       "outputs": [],

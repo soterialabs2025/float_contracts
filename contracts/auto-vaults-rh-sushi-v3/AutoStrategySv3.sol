@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -12,6 +12,7 @@ import "./AutoStrategyManagerSv3.sol";
 import "./libraries/LiquidityLibraryV2.sol";
 import "./libraries/AutoBandLib.sol";
 import "./libraries/TrailingFloorLib.sol";
+import "./libraries/TickMath.sol";
 import "./interfaces/IAutoStrategySv3.sol";
 import "./interfaces/IAutoSwapRouterSv3.sol";
 import "./interfaces/IAutoOperatorRegistrySv3.sol";
@@ -40,11 +41,11 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
     address public vault;
     address public keeper;
-    address public feeManager;
-    address public shareStaking;
+    address private _feeManager;
+    address private _shareStaking;
     uint24 public poolFee;
     bool public watched;
-    bool public bootstrapped;
+    bool private _bootstrapped;
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
     int24 public lastBandBaseTick;
@@ -56,12 +57,18 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     uint256 public reservedWeth;
     uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
+    /// @notice Sets the factory and Sushi (4663) Uniswap v3 immutables; package wiring happens in `bootstrap`.
     constructor(address factory_) AutoStrategyManagerSv3() {
         factory = factory_;
         positionManager = INonfungiblePositionManager(SushiV3Deployments4663.NPM);
         v3Factory = IUniswapV3Factory(SushiV3Deployments4663.FACTORY);
         WETH = IERC20(SushiV3Deployments4663.WETH);
         _initAutoDefaults();
+    }
+
+    modifier onlyFactory() {
+        if (msg.sender != factory) revert E();
+        _;
     }
 
     function bootstrap(
@@ -74,8 +81,8 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         address shareStaking_,
         address asset_,
         uint24 poolFee_
-    ) external {
-        if (bootstrapped || msg.sender != factory) revert E();
+    ) external onlyFactory {
+        if (_bootstrapped) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0) || operatorRegistry_ == address(0)
                 || keeper_ == address(0) || feeManager_ == address(0) || shareStaking_ == address(0)
@@ -88,8 +95,8 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         swapRouter = IAutoSwapRouterSv3(swapRouter_);
         operatorRegistry = IAutoOperatorRegistrySv3(operatorRegistry_);
         keeper = keeper_;
-        feeManager = feeManager_;
-        shareStaking = shareStaking_;
+        _feeManager = feeManager_;
+        _shareStaking = shareStaking_;
         _asset = IERC20(asset_);
         _pool = IUniswapV3PoolMinimal(pool_);
         poolFee = poolFee_;
@@ -97,15 +104,14 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         _initAutoDefaults();
         tickSpacing = _pool.tickSpacing();
         if (tickSpacing <= 0) revert E();
-        bootstrapped = true;
+        _bootstrapped = true;
         _asset.forceApprove(address(positionManager), type(uint256).max);
         WETH.forceApprove(address(positionManager), type(uint256).max);
         _transferOwnership(owner_);
     }
 
     /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
-    function transferOwnershipFromFactory(address newOwner) external {
-        if (msg.sender != factory) revert E();
+    function transferOwnershipFromFactory(address newOwner) external onlyFactory {
         if (newOwner == address(0)) revert E();
         if (ownershipLocked) revert E();
         _transferOwnership(newOwner);
@@ -148,16 +154,16 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         if (amount == 0) return;
         uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
         uint256 toFeeManager = amount - toStaking;
-        if (toStaking > 0 && shareStaking != address(0)) {
-            IERC20(token).safeTransfer(shareStaking, toStaking);
-            try IShareStakingSv3(shareStaking).notifyReward(token, toStaking) {}
+        if (toStaking > 0 && _shareStaking != address(0)) {
+            IERC20(token).safeTransfer(_shareStaking, toStaking);
+            try IShareStakingSv3(_shareStaking).notifyReward(token, toStaking) {}
             catch {
                 // Tokens already in ShareStakingSv3 (WETH credited or ASSET stranded for rescue/retry).
             }
         } else if (toStaking > 0) {
             toFeeManager += toStaking;
         }
-        if (toFeeManager > 0) IERC20(token).safeTransfer(feeManager, toFeeManager);
+        if (toFeeManager > 0) IERC20(token).safeTransfer(_feeManager, toFeeManager);
     }
 
     function _onlyVault() internal view {
@@ -178,12 +184,15 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     function _inOuterRange() internal view returns (bool) {
         if (liqPos.positionId == 0) return false;
         (, int24 tick) = _readSlot0();
+        return _inOuterRange(tick);
+    }
+
+    function _inOuterRange(int24 tick) internal view returns (bool) {
         return AutoBandLib.inBand(tick, liqPos.tickLower, liqPos.tickUpper);
     }
 
-    function _inInnerComfort() internal view returns (bool) {
-        if (liqPos.positionId == 0 || !hasBandBase) return false;
-        (, int24 tick) = _readSlot0();
+    function _inInnerComfort(int24 tick) internal view returns (bool) {
+        if (!hasBandBase) return false;
         (int24 lower, int24 upper) =
             AutoBandLib.innerTicks(lastBandBaseTick, _spacing(), innerBelowTicks, innerAboveTicks);
         return AutoBandLib.inBand(tick, lower, upper);
@@ -200,7 +209,8 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
             _remintAtTarget();
             return liqPos.positionId != 0;
         }
-        if (_inOuterRange() && _inInnerComfort()) return false;
+        (, int24 tick) = _readSlot0();
+        if (_inOuterRange(tick) && _inInnerComfort(tick)) return false;
         return _remintAtTarget();
     }
 
@@ -213,8 +223,8 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        _balanceTokens(assetBal, wethBal);
+        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
+        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
@@ -246,9 +256,15 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
         uint256 idleAssetBefore = _asset.balanceOf(address(this));
         uint256 idleWethBefore = WETH.balanceOf(address(this));
+        // Share of liquidity units — avoids spot-priced LP exit sizing (H001).
         if (liqPos.positionId != 0) {
-            uint256 poolVal = _poolValueOnly();
-            if (poolVal > 0) _decreaseLiquidity(Math.mulDiv(poolVal, userShares, supply));
+            uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
+            if (liquidity > 0) {
+                uint256 liqToRemove = Math.mulDiv(uint256(liquidity), userShares, supply);
+                if (liqToRemove == 0 && userShares > 0) liqToRemove = 1;
+                if (liqToRemove > liquidity) liqToRemove = liquidity;
+                _decreaseLiquidityInternal(uint128(liqToRemove), false);
+            }
         }
         uint256 assetAfter = _asset.balanceOf(address(this));
         uint256 wethAfter = WETH.balanceOf(address(this));
@@ -265,8 +281,8 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         uint256 wethFee = Math.mulDiv(userWeth, withdrawalFeeBps, DIVISOR);
         userAsset -= assetFee;
         userWeth -= wethFee;
-        if (assetFee > 0) _asset.safeTransfer(feeManager, assetFee);
-        if (wethFee > 0) WETH.safeTransfer(feeManager, wethFee);
+        if (assetFee > 0) _asset.safeTransfer(_feeManager, assetFee);
+        if (wethFee > 0) WETH.safeTransfer(_feeManager, wethFee);
 
         if (outToken == WithdrawToken.WETH) {
             if (userAsset > 0) {
@@ -321,7 +337,7 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     }
 
     function _fundDeficitFromReserve(uint256 assetBal, uint256 wethBal) internal {
-        uint256 p = _spotPrice1e18();
+        uint256 p = _rebalancePrice1e18();
         if (p == 0) return;
         uint256 totalValue = assetBal + Math.mulDiv(wethBal, p, 1e18);
         if (totalValue == 0) return;
@@ -371,7 +387,8 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
     function _balanceTokens(uint256 assetBal, uint256 wethBal) internal {
         if (assetBal == 0 && wethBal == 0) return;
-        uint256 p = _spotPrice1e18();
+        // H001-W2: size inventory swaps from TWAP; skip if oracle missing or spot is far from TWAP.
+        uint256 p = _rebalancePrice1e18();
         if (p == 0) return;
         uint256 total = assetBal + Math.mulDiv(wethBal, p, 1e18);
         uint256 target = Math.mulDiv(total, targetAssetBps, DIVISOR);
@@ -422,20 +439,25 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     }
 
     function _decreaseAllLiquidity() internal {
-        if (liqPos.positionId == 0) return;
-        _collectAllFees(true);
-        LiquidityLibraryV2.DecreaseContext memory ctx =
-            LiquidityLibraryV2.DecreaseContext({npm: positionManager, pool: _pool});
-        liqPos.decreaseAllLiquidity(ctx);
-        _collectAllFees(false);
+        if (liqPos.positionId != 0) _collectAllFees(true);
+        _decreaseLiquidityInternal(0, true);
     }
 
-    function _decreaseLiquidity(uint256 amountWeth) internal {
-        uint256 amount = _calculateLiquidityToRemove(amountWeth);
-        if (amount == 0) return;
+    function _decreaseLiquidityInternal(uint128 liquidityToRemove, bool removeAll) internal {
+        if (liqPos.positionId == 0) return;
         LiquidityLibraryV2.DecreaseContext memory ctx =
             LiquidityLibraryV2.DecreaseContext({npm: positionManager, pool: _pool});
-        liqPos.decreaseLiquidityByAmount(ctx, uint128(amount));
+        if (removeAll) {
+            liqPos.decreaseAllLiquidity(ctx);
+            if (liqPos.getPositionLiquidity(positionManager) > 0) {
+                liqPos.decreaseAllLiquidity(ctx);
+            }
+        } else {
+            if (liquidityToRemove == 0) return;
+            // Skim protocolFeeBps / reserveBps before principal exit (parity with `_decreaseAllLiquidity`).
+            _collectAllFees(true);
+            liqPos.decreaseLiquidityByAmount(ctx, liquidityToRemove);
+        }
         _collectAllFees(false);
     }
 
@@ -447,22 +469,6 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
             npm: positionManager, pool: _pool, fee: poolFee, slippageBps: slippageBps, dust: LIQUIDITY_DUST
         });
         return liqPos.increaseLiquidityInternal(ctx, IERC20(_pool.token0()), IERC20(_pool.token1()), amount0, amount1);
-    }
-
-    function _calculateLiquidityToRemove(uint256 amountWeth) internal view returns (uint256) {
-        uint128 liquidity = liqPos.getPositionLiquidity(positionManager);
-        if (liquidity == 0 || amountWeth == 0) return 0;
-        (uint160 sqrtP,) = _readSlot0();
-        (uint160 sqrtL, uint160 sqrtU) = LiquidityLibraryV2.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
-        (uint256 amount0, uint256 amount1) = LiquidityLibraryV2.getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liquidity);
-        (uint256 assetAmt, uint256 wethAmt) = _pool.token0() == address(WETH) ? (amount1, amount0) : (amount0, amount1);
-        uint256 p = _spotPrice1e18();
-        uint256 total = wethAmt + (p == 0 ? 0 : Math.mulDiv(assetAmt, 1e18, p));
-        if (total == 0) return 0;
-        uint256 proportion = _min(Math.mulDiv(amountWeth, 1e18, total), 1e18);
-        (uint256 bal0, uint256 bal1) =
-            _poolBalances(Math.mulDiv(assetAmt, proportion, 1e18), Math.mulDiv(wethAmt, proportion, 1e18));
-        return LiquidityLibraryV2.getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
     }
 
     function _getDeployableBalances() internal view returns (uint256 assetBal, uint256 wethBal) {
@@ -492,9 +498,48 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
     function _spotPrice1e18() internal view returns (uint256) {
         (uint160 sqrtP,) = _readSlot0();
+        return _price1e18FromSqrt(sqrtP);
+    }
+
+    /// @dev ASSET per WETH in 1e18 from a Uniswap V3 sqrtPriceX96.
+    function _price1e18FromSqrt(uint160 sqrtP) internal view returns (uint256) {
+        if (sqrtP == 0) return 0;
         uint256 price = Math.mulDiv(uint256(sqrtP), uint256(sqrtP), (uint256(1) << 192) / 1e18);
         if (_pool.token0() == address(WETH)) return price;
         return price == 0 ? 0 : Math.mulDiv(1e18, 1e18, price);
+    }
+
+    /// @dev Arithmetic mean tick TWAP via pool `observe`. Returns 0 if disabled or cardinality insufficient.
+    function _twapPrice1e18() internal view returns (uint256) {
+        uint32 period = twapSeconds;
+        if (period == 0) return 0;
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = period;
+        secondsAgos[1] = 0;
+        try _pool.observe(secondsAgos) returns (int56[] memory tickCumulatives, uint160[] memory) {
+            int56 delta = tickCumulatives[1] - tickCumulatives[0];
+            int56 periodI = int56(uint56(period));
+            int24 meanTick = int24(delta / periodI);
+            if (delta < 0 && (delta % periodI != 0)) meanTick--;
+            return _price1e18FromSqrt(TickMath.getSqrtRatioAtTick(meanTick));
+        } catch {
+            return 0;
+        }
+    }
+
+    function _spotAlignedWithTwap(uint256 spot, uint256 twap) internal view returns (bool) {
+        if (spot == 0 || twap == 0) return false;
+        uint256 hi = spot > twap ? spot : twap;
+        uint256 lo = spot > twap ? twap : spot;
+        return Math.mulDiv(hi - lo, DIVISOR, twap) <= maxTwapDeviationBps;
+    }
+
+    /// @notice TWAP price for rebalance if spot is within `maxTwapDeviationBps`; else 0 (caller skips).
+    function _rebalancePrice1e18() internal view returns (uint256) {
+        uint256 twap = _twapPrice1e18();
+        if (twap == 0) return 0;
+        if (!_spotAlignedWithTwap(_spotPrice1e18(), twap)) return 0;
+        return twap;
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256, uint256) {
@@ -507,7 +552,15 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         (uint160 sqrtP,) = _readSlot0();
         (uint160 sqrtL, uint160 sqrtU) = LiquidityLibraryV2.getSqrtRatios(liqPos.tickLower, liqPos.tickUpper);
         (uint256 amount0, uint256 amount1) = LiquidityLibraryV2.getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liquidity);
-        return _pool.token0() == address(WETH) ? (amount1, amount0) : (amount0, amount1);
+        (assetAmt, wethAmt) = _pool.token0() == address(WETH) ? (amount1, amount0) : (amount0, amount1);
+    }
+
+    function _navAtPrice(uint256 p) internal view returns (uint256) {
+        if (p == 0) return 0;
+        (uint256 assetAmt, uint256 wethAmt) = balanceOfPool();
+        uint256 poolWeth = wethAmt + Math.mulDiv(assetAmt, 1e18, p);
+        uint256 idleWeth = WETH.balanceOf(address(this)) + Math.mulDiv(_asset.balanceOf(address(this)), 1e18, p);
+        return poolWeth + idleWeth;
     }
 
     function _poolValueOnly() internal view returns (uint256) {
@@ -523,6 +576,21 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
     function poolValue() public view override returns (uint256) {
         return _poolValueOnly() + balanceOfIdle();
+    }
+
+    /// @notice NAV using TWAP (same gate as rebalance). `0` if observe fails or spot off TWAP.
+    function poolValueTwap() public view override returns (uint256) {
+        return _navAtPrice(_rebalancePrice1e18());
+    }
+
+    /// @notice NAV at the raw TWAP, with no spot-deviation gate. Zero only when the oracle is unreadable.
+    /// @dev The gate on `poolValueTwap` guards the rebalance path, which trades. Minting only prices, and
+    ///      `min(spot, twap)` is safe however far apart the two sit: a depressed spot is caught by the TWAP,
+    ///      while an inflated one only shorts the depositor who caused it. Refusing the TWAP on deviation is
+    ///      therefore not a safeguard here, it is what drops minting into the high-water fallback precisely
+    ///      when the market is moving, charging honest depositors the full drawdown.
+    function poolValueTwapRaw() public view override returns (uint256) {
+        return _navAtPrice(_twapPrice1e18());
     }
 
     function balance() external view override returns (uint256) {

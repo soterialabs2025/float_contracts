@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryBv4",
-  "address": "0x66B94BE9a2bBCF7896f2406f51545795C15b9181",
+  "address": "0x80D6aDcE485372435737B61FAc431EE23B07294C",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1786901602480,
+  "timestamp": 1788410273099,
   "abi": [
     {
       "type": "constructor",
@@ -31,28 +31,6 @@
             },
             {
               "name": "feeManager",
-              "type": "address",
-              "internalType": "address"
-            }
-          ]
-        },
-        {
-          "name": "impls",
-          "type": "tuple",
-          "internalType": "struct AutoFactoryBv4.ImplConfig",
-          "components": [
-            {
-              "name": "vault",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "liquidShares",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "shareStaking",
               "type": "address",
               "internalType": "address"
             }
@@ -394,6 +372,37 @@
     },
     {
       "type": "event",
+      "name": "InfraUpdated",
+      "inputs": [
+        {
+          "name": "swapRouter",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "operatorRegistry",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "keeper",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "feeManager",
+          "type": "address",
+          "indexed": false,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
       "name": "OwnershipTransferred",
       "inputs": [
         {
@@ -577,6 +586,11 @@
     {
       "type": "error",
       "name": "PackageOwnershipLocked",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ReentrancyGuardReentrantCall",
       "inputs": []
     },
     {

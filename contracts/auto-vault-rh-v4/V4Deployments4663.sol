@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 /// @title V4Deployments4663
 /// @notice Uniswap v4 stack on Robinhood Chain mainnet (chainId 4663).

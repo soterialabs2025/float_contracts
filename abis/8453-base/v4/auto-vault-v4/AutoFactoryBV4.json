@@ -1,11 +1,11 @@
 {
-  "name": "AutoFactoryBV4",
+  "name": "AutoFactoryBv4",
   "address": null,
   "chainId": 8453,
-  "version": "v4",
   "product": "auto-vault-v4",
   "profile": "base-v4",
-  "timestamp": 1786896290431,
+  "package": "contracts/auto-vault-base-v4",
+  "timestamp": 1787528572163,
   "abi": [
     {
       "type": "constructor",
@@ -13,7 +13,7 @@
         {
           "name": "config",
           "type": "tuple",
-          "internalType": "struct AutoFactoryBV4.InfraConfig",
+          "internalType": "struct AutoFactoryBv4.InfraConfig",
           "components": [
             {
               "name": "swapRouter",
@@ -330,7 +330,7 @@
         {
           "name": "config",
           "type": "tuple",
-          "internalType": "struct AutoFactoryBV4.InfraConfig",
+          "internalType": "struct AutoFactoryBv4.InfraConfig",
           "components": [
             {
               "name": "swapRouter",
@@ -370,6 +370,37 @@
         }
       ],
       "stateMutability": "view"
+    },
+    {
+      "type": "event",
+      "name": "InfraUpdated",
+      "inputs": [
+        {
+          "name": "swapRouter",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "operatorRegistry",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "keeper",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "feeManager",
+          "type": "address",
+          "indexed": false,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
     },
     {
       "type": "event",
@@ -556,6 +587,11 @@
     {
       "type": "error",
       "name": "PackageOwnershipLocked",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ReentrancyGuardReentrantCall",
       "inputs": []
     },
     {

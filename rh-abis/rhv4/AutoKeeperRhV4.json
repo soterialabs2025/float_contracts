@@ -4,7 +4,7 @@
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1787027013783,
+  "timestamp": 1788410339045,
   "abi": [
     {
       "type": "constructor",
@@ -127,6 +127,32 @@
     {
       "type": "function",
       "name": "performUpkeepBatch",
+      "inputs": [
+        {
+          "name": "ids",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "refreshPriceRef",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "refreshPriceRefBatch",
       "inputs": [
         {
           "name": "ids",

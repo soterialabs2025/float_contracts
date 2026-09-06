@@ -4,11 +4,17 @@
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1786901564779,
+  "timestamp": 1788410242673,
   "abi": [
     {
       "type": "constructor",
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "factory_",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
       "stateMutability": "nonpayable"
     },
     {
