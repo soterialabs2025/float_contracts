@@ -12,10 +12,7 @@ import "./interfaces/IUniswapRouter.sol";
 
 /// @title AutoSwapRouterBv3
 /// @notice Base (8453) Uniswap v3 swap router for Auto strategies and ShareStaking.
-/// @dev Slippage is caller-supplied (`minAmountOut`). The router deliberately does not derive a bound from an
-///      in-transaction quote: a quote read from the pool being swapped against reflects any manipulation already
-///      applied in the same transaction, so it cannot constrain the execution price. Callers price the swap from
-///      the pool TWAP (see `AutoStrategyBv3.minOutForSwap`).
+/// @dev Caller supplies `minAmountOut`; router does not quote.
 contract AutoSwapRouterBv3 is IAutoSwapRouterBv3, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 

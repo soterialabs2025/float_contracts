@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperSv3",
-  "address": "0x3Cb0A8c25356BF5764C4510A79458e73a6639372",
+  "address": "0xe1B5D655918b30E931110bA1E1A471C909dC715E",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1788410377140,
+  "timestamp": 1788497796896,
   "abi": [
     {
       "type": "constructor",

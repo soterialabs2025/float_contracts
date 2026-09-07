@@ -24,6 +24,7 @@ interface IAutoStrategyRhV4 {
     function refreshPriceRef() external returns (bool);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
 
+    function syncFees() external;
     function deposit() external payable;
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external;
 

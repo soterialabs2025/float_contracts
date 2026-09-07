@@ -22,17 +22,14 @@ import "./interfaces/IAutoSwapRouterBv4.sol";
 
 /// @title AutoSwapRouterBv4
 /// @notice Base (8453) v4 swap router for Auto strategies. Pool keys are owned by strategies and passed per call.
-/// @dev Slippage is caller-supplied (`minAmountOut`). The router deliberately does not derive a bound from an
-///      in-transaction quote: a quote read from the pool being swapped against reflects any manipulation already
-///      applied in the same transaction, so it cannot constrain the execution price.
+/// @dev Caller supplies `minAmountOut`; router does not quote.
 contract AutoSwapRouterBv4 is IAutoSwapRouterBv4, IUnlockCallback, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IPoolManager public immutable poolManager = IPoolManager(V4Deployments8453.POOL_MANAGER);
 
     /// @notice Cap on this swap's own price movement, measured in sqrtPriceX96 space.
-    /// @dev Because price is the square of sqrtPrice, a bound of `n` bps here permits roughly `2n` bps of price
-    ///      movement. The default 200 therefore allows about 4% of price impact.
+    /// @dev `n` bps of sqrtPrice is roughly `2n` bps of price. Default 200 ≈ 4%.
     uint16 public maxPriceImpactBps = 200;
 
     address public strategyFactory;

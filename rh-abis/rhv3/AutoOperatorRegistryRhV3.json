@@ -4,7 +4,7 @@
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1788410303974,
+  "timestamp": 1788496154989,
   "abi": [
     {
       "type": "constructor",

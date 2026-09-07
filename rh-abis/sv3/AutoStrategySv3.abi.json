@@ -559,8 +559,18 @@
   },
   {
     "type": "function",
-    "name": "setInnerBandParams",
+    "name": "setBandParams",
     "inputs": [
+      {
+        "name": "_rangeBelowTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_rangeAboveTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "_innerBelowTicks",
         "type": "uint256",
@@ -590,24 +600,6 @@
   },
   {
     "type": "function",
-    "name": "setRangeParams",
-    "inputs": [
-      {
-        "name": "_rangeBelowTicks",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_rangeAboveTicks",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setReserveBps",
     "inputs": [
       {
@@ -627,6 +619,19 @@
         "name": "bps",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSwapRouter",
+    "inputs": [
+      {
+        "name": "router_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -722,6 +727,13 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncFees",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",

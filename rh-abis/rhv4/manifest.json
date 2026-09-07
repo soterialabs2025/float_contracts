@@ -9,42 +9,42 @@
       "abiEntries": 14
     },
     "AutoFactoryRhV4": {
-      "address": "0xEDd2772fC4A3DFe73ae4dc068458f4fe36c13F93",
+      "address": "0x33df69b3D1946bDfF3fdA881335a277718CE60e7",
       "artifact": "artifacts/AutoFactoryRhV4.sol/AutoFactoryRhV4.json",
       "abiEntries": 33
     },
     "AutoSwapRouterRhV4": {
-      "address": "0x493CDA10F61fb2ad2AC7149EfBBA2114Dd460D05",
+      "address": "0xD9EF1629D493921DaB16Ee88d32658d9d6C025db",
       "artifact": "artifacts/AutoSwapRouterRhV4.sol/AutoSwapRouterRhV4.json",
       "abiEntries": 36
     },
     "AutoKeeperRhV4": {
-      "address": "0x79F9ea39E7e5304791DF8cfEe835F6592c35e022",
+      "address": "0xD9e5d7417f5139645d8A21ce2b9d6f6c7Ac84fD3",
       "artifact": "artifacts/AutoKeeperRhV4.sol/AutoKeeperRhV4.json",
       "abiEntries": 30
     },
     "AutoStrategyRhV4": {
-      "address": "0x5aDeb07fF21c80D45847f793d84C04fd309E6Cf3",
+      "address": "0x0d60930178CEFbcc3bC306C5137AAad07fdD68a8",
       "artifact": "artifacts/AutoStrategyRhV4.sol/AutoStrategyRhV4.json",
       "abiEntries": 82
     },
     "AutoVaultRhV4": {
-      "address": "0xE510075D1F7F3053Fa9C6D84404Af3D1ecAAD6E7",
+      "address": "0x3F840c477e84752c776A2d819e294a1E29fC9B18",
       "artifact": "artifacts/AutoVaultRhV4.sol/AutoVaultRhV4.json",
       "abiEntries": 43
     },
     "AutoStrategyManagerRhV4": {
       "address": null,
       "artifact": "artifacts/AutoStrategyManagerRhV4.sol/AutoStrategyManagerRhV4.json",
-      "abiEntries": 42
+      "abiEntries": 41
     },
     "LiquidSharesRhV4": {
-      "address": "0x2c0241EDe5Ac7A94Ef393D1c33635f099203912F",
+      "address": "0xC697CDd3154f9918b5bF7670bDc764B30743c899",
       "artifact": "artifacts/LiquidSharesRhV4.sol/LiquidSharesRhV4.json",
       "abiEntries": 30
     },
     "ShareStakingRhV4": {
-      "address": "0x3C62dA3297A5beeD52A65EcB9B92d986Ea0c5ADd",
+      "address": "0x030ccB6b6c6FaA2d1E566086C04d4ABC7D3664A2",
       "artifact": "artifacts/ShareStakingRhV4.sol/ShareStakingRhV4.json",
       "abiEntries": 75
     }

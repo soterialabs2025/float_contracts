@@ -1,10 +1,10 @@
 {
   "name": "ShareStakingRhV3",
-  "address": null,
+  "address": "0x0F791Bf9078d993500411658eC4Dbfa5fC153274",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1788410303974,
+  "timestamp": 1788496154989,
   "abi": [
     {
       "type": "constructor",

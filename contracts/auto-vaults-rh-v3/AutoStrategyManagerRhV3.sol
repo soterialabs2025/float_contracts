@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./libraries/TrailingFloorLib.sol";
 import "./libraries/AutoBandLib.sol";
 
 /// @title AutoStrategyManagerRhV3
@@ -14,10 +15,10 @@ contract AutoStrategyManagerRhV3 is Ownable {
     uint256 public targetAssetBps = 5000;
 
     int24 public tickSpacing = 200;
-    uint256 public rangeBelowTicks = 800;
-    uint256 public rangeAboveTicks = 800;
-    uint256 public innerBelowTicks = 600;
-    uint256 public innerAboveTicks = 600;
+    uint256 public rangeBelowTicks = 1000;
+    uint256 public rangeAboveTicks = 1000;
+    uint256 public innerBelowTicks = 800;
+    uint256 public innerAboveTicks = 800;
 
     uint16 public slippageBps = 100;
     uint256 public minHarvestDelay = 2 hours;
@@ -34,6 +35,9 @@ contract AutoStrategyManagerRhV3 is Ownable {
     uint32 public twapSeconds = 30 minutes;
     /// @notice Max |spot − TWAP| / TWAP in bps before `_balanceTokens` / reserve deficit pulls skip (default 3%).
     uint256 public maxTwapDeviationBps = 300;
+    /// @notice Withdrawals price against this multiple of `maxTwapDeviationBps` so ordinary volatility cannot
+    ///         trap users. Rebalances keep the tighter band because skipping one costs nothing.
+    uint256 internal constant WITHDRAW_DEVIATION_MULTIPLE = 3;
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -80,10 +84,10 @@ contract AutoStrategyManagerRhV3 is Ownable {
 
     function _initAutoDefaults() internal {
         tickSpacing = 200;
-        rangeBelowTicks = 800;
-        rangeAboveTicks = 800;
-        innerBelowTicks = 600;
-        innerAboveTicks = 600;
+        rangeBelowTicks = 1000; 
+        rangeAboveTicks = 1000;
+        innerBelowTicks = 800;
+        innerAboveTicks = 800;
         slippageBps = 100;
         minHarvestDelay = 2 hours;
         withdrawalFeeBps = 100;
@@ -96,16 +100,30 @@ contract AutoStrategyManagerRhV3 is Ownable {
         maxTwapDeviationBps = 300;
     }
 
-    function setRangeParams(uint256 _rangeBelowTicks, uint256 _rangeAboveTicks) external onlyOwner {
+    /// @notice Set the outer mint band and the inner comfort band together.
+    /// @dev One call rather than two because the four values are only meaningful relative to each other. Setting
+    ///      them separately required every intermediate state to be valid as well, so widening had to be applied
+    ///      outer-first and tightening inner-first or the second call reverted. Validating all four at once
+    ///      removes that ordering constraint, and lets a keeper move a band atomically.
+    /// @dev Alignment is enforced here too. `asymmetricSpacedTicks` is otherwise the first code to reject an
+    ///      unaligned value and it runs on the mint path, so a bad write would be accepted by the setter and then
+    ///      revert every subsequent remint instead — stopping rebalancing with nothing to point at.
+    function setBandParams(
+        uint256 _rangeBelowTicks,
+        uint256 _rangeAboveTicks,
+        uint256 _innerBelowTicks,
+        uint256 _innerAboveTicks
+    ) external onlyOwner {
         if (tickSpacing == 0) tickSpacing = _spacing();
+        TrailingFloorLib.requireSpacedTicks(_rangeBelowTicks, tickSpacing);
+        TrailingFloorLib.requireSpacedTicks(_rangeAboveTicks, tickSpacing);
+        TrailingFloorLib.requireSpacedTicks(_innerBelowTicks, tickSpacing);
+        TrailingFloorLib.requireSpacedTicks(_innerAboveTicks, tickSpacing);
+        AutoBandLib.requireInnerWithinOuter(
+            _rangeBelowTicks, _rangeAboveTicks, _innerBelowTicks, _innerAboveTicks
+        );
         rangeBelowTicks = _rangeBelowTicks;
         rangeAboveTicks = _rangeAboveTicks;
-        AutoBandLib.requireInnerWithinOuter(rangeBelowTicks, rangeAboveTicks, innerBelowTicks, innerAboveTicks);
-    }
-
-    function setInnerBandParams(uint256 _innerBelowTicks, uint256 _innerAboveTicks) external onlyOwner {
-        if (tickSpacing == 0) tickSpacing = _spacing();
-        AutoBandLib.requireInnerWithinOuter(rangeBelowTicks, rangeAboveTicks, _innerBelowTicks, _innerAboveTicks);
         innerBelowTicks = _innerBelowTicks;
         innerAboveTicks = _innerAboveTicks;
     }

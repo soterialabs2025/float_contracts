@@ -135,6 +135,12 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         return address(_asset);
     }
 
+    /// @notice Repoint this strategy at a different swap router.
+    function setSwapRouter(address router_) external onlyOwner {
+        if (router_ == address(0)) revert E();
+        swapRouter = IAutoSwapRouterRhV3(router_);
+    }
+
     function pool() external view override returns (address) {
         return address(_pool);
     }
@@ -148,8 +154,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         return ownershipLocked;
     }
 
-    /// @dev Split protocol fee token amount: stakingShareBps → ShareStakingRhV3 (as epoch rewards), rest → feeManager.
-    ///      ShareStakingRhV3 soft-fails ASSET→WETH swaps; try/catch here still protects harvest if notify reverts.
+    /// @dev Split protocol fee: stakingShareBps → ShareStakingRhV3, rest → feeManager.
     function _routeProtocolFee(address token, uint256 amount) internal {
         if (amount == 0) return;
         uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
@@ -198,6 +203,19 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         return AutoBandLib.inBand(tick, lower, upper);
     }
 
+    /// @dev Unreserved idle ≥ 5% of NAV and rebalance-priceable. Reserved inventory does not count.
+    uint256 private constant IDLE_DEPLOY_BPS = 500;
+
+    function _idleDeployableMaterial() internal view returns (bool) {
+        (uint256 a, uint256 w) = _getDeployableBalances();
+        if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) return false;
+        uint256 p = _rebalancePrice1e18();
+        if (p == 0) return false;
+        uint256 nav = poolValue();
+        if (nav == 0) return true;
+        return w + Math.mulDiv(a, 1e18, p) >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
+    }
+
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
         if (liqPos.positionId == 0) {
@@ -210,7 +228,16 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
             return liqPos.positionId != 0;
         }
         (, int24 tick) = _readSlot0();
-        if (_inOuterRange(tick) && _inInnerComfort(tick)) return false;
+        if (_inOuterRange(tick) && _inInnerComfort(tick)) {
+            if (!_idleDeployableMaterial()) return false;
+            _increaseLiquidityInternal();
+            if (!_idleDeployableMaterial()) return true;
+            if (
+                minHarvestDelay > 0 && lastRebalanceTime != 0
+                    && block.timestamp - lastRebalanceTime < minHarvestDelay
+            ) return true;
+            return _remintAtTarget();
+        }
         return _remintAtTarget();
     }
 
@@ -223,8 +250,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
-        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
+        // Increase at the band ratio. Do not `_balanceTokens`.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
@@ -234,7 +260,13 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         _onlyVault();
         if (amount == 0) revert E();
         WETH.safeTransferFrom(msg.sender, address(this), amount);
-        _deposit();
+        _deposit(amount);
+    }
+
+    /// @notice Collect pending LP fees into idle before the vault prices a deposit.
+    function syncFees() external override nonReentrant {
+        _onlyVault();
+        _collectAllFees(true);
     }
 
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external override nonReentrant {
@@ -287,7 +319,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         if (outToken == WithdrawToken.WETH) {
             if (userAsset > 0) {
                 uint256 beforeOut = WETH.balanceOf(address(this));
-                _swap(_asset, _min(userAsset, _asset.balanceOf(address(this))));
+                _swap(_asset, _min(userAsset, _asset.balanceOf(address(this))), _withdrawBandBps());
                 userWeth += WETH.balanceOf(address(this)) - beforeOut;
             }
             userWeth = _min(userWeth, WETH.balanceOf(address(this)));
@@ -295,7 +327,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         } else {
             if (userWeth > 0) {
                 uint256 beforeOut = _asset.balanceOf(address(this));
-                _swap(WETH, _min(userWeth, WETH.balanceOf(address(this))));
+                _swap(WETH, _min(userWeth, WETH.balanceOf(address(this))), _withdrawBandBps());
                 userAsset += _asset.balanceOf(address(this)) - beforeOut;
             }
             userAsset = _min(userAsset, _asset.balanceOf(address(this)));
@@ -303,11 +335,11 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         }
     }
 
-    function _deposit() internal {
+    function _deposit(uint256 newCapital) internal {
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         _balanceTokens(assetBal, wethBal);
-        _peelReserveFromDeployable();
+        _peelReserveForCapital(newCapital);
         (assetBal, wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         if (liqPos.positionId == 0) _mintPosition();
@@ -351,13 +383,25 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         }
     }
 
-    function _peelReserveFromDeployable() internal {
+    /// @notice Peel `reserveBps` of `newCapital` into reserve. Per-leg peel if unpriceable.
+    function _peelReserveForCapital(uint256 newCapital) internal {
         if (reserveBps == 0) return;
         (uint256 a, uint256 w) = _getDeployableBalances();
-        _setReserved(
-            reservedAsset + _min(Math.mulDiv(a, reserveBps, DIVISOR), a),
-            reservedWeth + _min(Math.mulDiv(w, reserveBps, DIVISOR), w)
-        );
+        uint256 p = _rebalancePrice1e18();
+        uint256 ra;
+        uint256 rw;
+        if (p == 0) {
+            ra = Math.mulDiv(a, reserveBps, DIVISOR);
+            rw = Math.mulDiv(w, reserveBps, DIVISOR);
+        } else {
+            uint256 deployable = w + Math.mulDiv(a, 1e18, p);
+            if (deployable == 0) return;
+            uint256 want = Math.mulDiv(newCapital, reserveBps, DIVISOR);
+            if (want > deployable) want = deployable;
+            ra = Math.mulDiv(a, want, deployable);
+            rw = Math.mulDiv(w, want, deployable);
+        }
+        _setReserved(reservedAsset + _min(ra, a), reservedWeth + _min(rw, w));
     }
 
     function _mintPosition() internal {
@@ -392,17 +436,27 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         if (p == 0) return;
         uint256 total = assetBal + Math.mulDiv(wethBal, p, 1e18);
         uint256 target = Math.mulDiv(total, targetAssetBps, DIVISOR);
-        if (assetBal > target) _swap(_asset, assetBal - target);
-        else if (assetBal < target) _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal));
+        if (assetBal > target) _swap(_asset, assetBal - target, maxTwapDeviationBps);
+        else if (assetBal < target) {
+            _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal), maxTwapDeviationBps);
+        }
     }
 
-    function _swap(IERC20 tokenIn, uint256 amount) internal {
+    /// @dev Sole swap chokepoint. Router prices the TWAP-gated floor for `maxDevBps`.
+    function _swap(IERC20 tokenIn, uint256 amount, uint256 maxDevBps) internal {
         amount = _min(amount, _spendable(tokenIn));
         if (amount <= LIQUIDITY_DUST) return;
         if (amount > type(uint128).max) revert E();
         address tokenOut = address(tokenIn) == address(WETH) ? address(_asset) : address(WETH);
         tokenIn.forceApprove(address(swapRouter), amount);
-        swapRouter.swapExactInputSingleStrict(address(tokenIn), tokenOut, poolFee, uint128(amount));
+        swapRouter.swapExactInputSingleStrict(
+            address(tokenIn), tokenOut, poolFee, uint128(amount), maxDevBps, block.timestamp
+        );
+    }
+
+    /// @dev Exits tolerate more drift than rebalances: a skipped rebalance retries, a blocked exit strands a user.
+    function _withdrawBandBps() internal view returns (uint256) {
+        return maxTwapDeviationBps * WITHDRAW_DEVIATION_MULTIPLE;
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
@@ -584,11 +638,6 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
     }
 
     /// @notice NAV at the raw TWAP, with no spot-deviation gate. Zero only when the oracle is unreadable.
-    /// @dev The gate on `poolValueTwap` guards the rebalance path, which trades. Minting only prices, and
-    ///      `min(spot, twap)` is safe however far apart the two sit: a depressed spot is caught by the TWAP,
-    ///      while an inflated one only shorts the depositor who caused it. Refusing the TWAP on deviation is
-    ///      therefore not a safeguard here, it is what drops minting into the high-water fallback precisely
-    ///      when the market is moving, charging honest depositors the full drawdown.
     function poolValueTwapRaw() public view override returns (uint256) {
         return _navAtPrice(_twapPrice1e18());
     }

@@ -101,15 +101,12 @@ contract AutoKeeperRhV4 is IAutoKeeperRhV4, Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Refresh the truncated price reference on `id`. Cheap, swap-free, and rate-limited in the strategy.
-    /// @dev Run this on a five-minute cadence, independent of `performUpkeep`, which only lands when the position
-    ///      needs work. The reference both prices share minting and anchors the swap gate, and because its
-    ///      movement is capped per unit time, a denser cadence is what bounds one poisoned write.
+    /// @notice Refresh the truncated price reference on `id`. Rate-limited in the strategy.
     function refreshPriceRef(uint256 id) external nonReentrant onlyOperator {
         _refreshPriceRef(id);
     }
 
-    /// @notice Batch form. One transaction across every watched strategy amortises the base cost at that cadence.
+    /// @notice Batch form of `refreshPriceRef`.
     function refreshPriceRefBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
         uint256 len = ids.length;
         uint256 maxId = watched.length;

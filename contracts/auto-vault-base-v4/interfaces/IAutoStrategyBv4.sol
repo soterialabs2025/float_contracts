@@ -23,6 +23,7 @@ interface IAutoStrategyBv4 {
     function poolValueRef() external view returns (uint256);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
 
+    function syncFees() external;
     function deposit(uint256 amount) external;
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external;
 

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -13,13 +12,7 @@ import "./interfaces/ILiquidSharesRhV4.sol";
 
 /// @title AutoVaultRhV4
 /// @notice RH (4663) AutoVault: ETH-only deposits into token/native-ETH v4 packages.
-/// @dev Minimal view used only to resolve pause authority: the strategy holds the operator registry.
-interface IOperatorGate {
-    function operatorRegistry() external view returns (address);
-    function isOperator(address account) external view returns (bool);
-}
-
-contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
+contract AutoVaultRhV4 is Ownable, ReentrancyGuard, IAutoVaultRhV4 {
     IAutoStrategyRhV4 public strategy;
     ILiquidSharesRhV4 public liquidShares;
     address public shareStaking;
@@ -120,31 +113,16 @@ contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
         return liquidShares.totalSupply();
     }
 
-    /// @notice Halt new deposits. Operators may trip this for fast incident response; only the owner clears it.
-    /// @dev `withdraw` is deliberately never gated, so a pause cannot trap depositor funds.
-    function pause() external {
-        if (msg.sender != owner() && !_isOperator(msg.sender)) revert Unauthorized();
-        _pause();
-    }
-
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
-    function _isOperator(address account) internal view returns (bool) {
-        if (!bootstrapped) return false;
-        address registry = IOperatorGate(address(strategy)).operatorRegistry();
-        return registry != address(0) && IOperatorGate(registry).isOperator(account);
-    }
-
-    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
+    function depositETH() external payable override nonReentrant returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         if (!bootstrapped) revert NotBootstrapped();
         uint256 supply = totalSupply();
         if (supply == 0 && msg.sender != owner()) revert Unauthorized();
 
+        // Collect fees before pricing so they accrue to the pre-mint supply.
+        strategy.syncFees();
         uint256 navBefore = balance();
-        // Sampled pre-deposit: after `strategy.deposit` the reference NAV includes `msg.value` and under-mints.
+        // Pre-deposit NAV. After `strategy.deposit` the reference includes `msg.value`.
         uint256 navRef = strategy.poolValueRef();
         strategy.deposit{value: msg.value}();
         uint256 navAfter = balance();
@@ -158,13 +136,7 @@ contract AutoVaultRhV4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultRhV4 {
         emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
-    /// @dev Owner seeds 1:1. Later: min(spot, truncated reference), which always selects the higher NAV. An
-    ///      attacker depressing spot to overmint is caught by the reference; one inflating it only earns
-    ///      themselves fewer shares. The reference therefore does not need to be accurate, only hard to push
-    ///      down, which is why a loose clamp is still safe.
-    /// @param navRef Pre-deposit NAV at the truncated reference, or 0 before the reference is seeded. No
-    ///        fallback is needed for a stale reference: its drift allowance grows until the clamp converges on
-    ///        spot, so neglect relaxes this toward spot pricing rather than blocking deposits.
+    /// @dev Owner seeds 1:1. Later min(spot, truncated reference). `navRef` is pre-deposit, or 0 if unseeded.
     function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navRef)
         internal
         pure

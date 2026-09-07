@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -17,15 +16,9 @@ interface IWETH is IERC20 {
     function deposit() external payable;
 }
 
-/// @dev Minimal view used only to resolve pause authority: the strategy holds the operator registry.
-interface IOperatorGate {
-    function operatorRegistry() external view returns (address);
-    function isOperator(address account) external view returns (bool);
-}
-
 /// @title AutoVaultBv4
 /// @notice Base (8453) AutoVault: ETH-only deposits, LiquidSharesBv4 + ShareStakingBv4 package, ownership lock.
-contract AutoVaultBv4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultBv4 {
+contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
     using SafeERC20 for IERC20;
 
     IWETH public immutable weth;
@@ -130,24 +123,7 @@ contract AutoVaultBv4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultBv4 {
         return liquidShares.totalSupply();
     }
 
-    /// @notice Halt new deposits. Operators may trip this for fast incident response; only the owner clears it.
-    /// @dev `withdraw` is deliberately never gated, so a pause cannot trap depositor funds.
-    function pause() external {
-        if (msg.sender != owner() && !_isOperator(msg.sender)) revert Unauthorized();
-        _pause();
-    }
-
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
-    function _isOperator(address account) internal view returns (bool) {
-        if (!bootstrapped) return false;
-        address registry = IOperatorGate(address(strategy)).operatorRegistry();
-        return registry != address(0) && IOperatorGate(registry).isOperator(account);
-    }
-
-    function depositETH() external payable override nonReentrant whenNotPaused returns (uint256 shares) {
+    function depositETH() external payable override nonReentrant returns (uint256 shares) {
         if (msg.value == 0) revert ZeroValue();
         weth.deposit{value: msg.value}();
         return _mintSharesAndDeploy(msg.value);
@@ -158,8 +134,10 @@ contract AutoVaultBv4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultBv4 {
         uint256 supply = totalSupply();
         if (supply == 0 && msg.sender != owner()) revert Unauthorized();
 
+        // Collect fees before pricing so they accrue to the pre-mint supply.
+        strategy.syncFees();
         uint256 navBefore = balance();
-        // Sampled pre-deposit: after `strategy.deposit` the reference NAV includes `amount` and under-mints.
+        // Pre-deposit NAV. After `strategy.deposit` the reference includes `amount`.
         uint256 navRef = strategy.poolValueRef();
         IERC20(address(weth)).forceApprove(address(strategy), amount);
         strategy.deposit(amount);
@@ -174,13 +152,7 @@ contract AutoVaultBv4 is Ownable, Pausable, ReentrancyGuard, IAutoVaultBv4 {
         emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
-    /// @dev Owner seeds 1:1. Later: min(spot, truncated reference), which always selects the higher NAV. An
-    ///      attacker depressing spot to overmint is caught by the reference; one inflating it only earns
-    ///      themselves fewer shares. The reference therefore does not need to be accurate, only hard to push
-    ///      down, which is why a loose clamp is still safe.
-    /// @param navRef Pre-deposit NAV at the truncated reference, or 0 before the reference is seeded. No
-    ///        fallback is needed for a stale reference: its drift allowance grows until the clamp converges on
-    ///        spot, so neglect relaxes this toward spot pricing rather than blocking deposits.
+    /// @dev Owner seeds 1:1. Later min(spot, truncated reference). `navRef` is pre-deposit, or 0 if unseeded.
     function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navRef)
         internal
         pure

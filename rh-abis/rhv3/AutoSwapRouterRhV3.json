@@ -1,10 +1,10 @@
 {
   "name": "AutoSwapRouterRhV3",
-  "address": "0x8A8c18445792e04e8512D5c6CD680331F9575a3F",
+  "address": "0xc7DaC278098AA1A0084cdC0Cb7Ff62f050CA4E3f",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1788410303974,
+  "timestamp": 1788496154989,
   "abi": [
     {
       "type": "constructor",
@@ -23,6 +23,19 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "factory",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract IUniswapV3Factory"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -58,21 +71,44 @@
     },
     {
       "type": "function",
-      "name": "quoter",
-      "inputs": [],
-      "outputs": [
+      "name": "removeAuthorizedStrategy",
+      "inputs": [
         {
-          "name": "",
+          "name": "strategy",
           "type": "address",
-          "internalType": "contract IQuoterV2"
+          "internalType": "address"
         }
       ],
-      "stateMutability": "view"
+      "outputs": [],
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
       "name": "renounceOwnership",
       "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "rescue",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
       "outputs": [],
       "stateMutability": "nonpayable"
     },
@@ -110,6 +146,19 @@
           "name": "bps",
           "type": "uint16",
           "internalType": "uint16"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setTwapSeconds",
+      "inputs": [
+        {
+          "name": "secs",
+          "type": "uint32",
+          "internalType": "uint32"
         }
       ],
       "outputs": [],
@@ -164,6 +213,16 @@
           "name": "amountIn",
           "type": "uint128",
           "internalType": "uint128"
+        },
+        {
+          "name": "maxDevBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
       "outputs": [
@@ -189,6 +248,19 @@
       "stateMutability": "nonpayable"
     },
     {
+      "type": "function",
+      "name": "twapSeconds",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint32",
+          "internalType": "uint32"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
       "type": "event",
       "name": "OwnershipTransferred",
       "inputs": [
@@ -209,7 +281,45 @@
     },
     {
       "type": "event",
+      "name": "Rescued",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
       "name": "StrategyAuthorized",
+      "inputs": [
+        {
+          "name": "strategy",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "StrategyDeauthorized",
       "inputs": [
         {
           "name": "strategy",
@@ -284,13 +394,46 @@
       "anonymous": false
     },
     {
+      "type": "event",
+      "name": "TwapSecondsUpdated",
+      "inputs": [
+        {
+          "name": "secs",
+          "type": "uint32",
+          "indexed": false,
+          "internalType": "uint32"
+        }
+      ],
+      "anonymous": false
+    },
+    {
       "type": "error",
       "name": "AlreadyAuthorized",
       "inputs": []
     },
     {
       "type": "error",
+      "name": "Expired",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InvalidPool",
+      "inputs": []
+    },
+    {
+      "type": "error",
       "name": "InvalidSlippage",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NotAuthorized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OracleUnavailable",
       "inputs": []
     },
     {
@@ -314,6 +457,11 @@
           "internalType": "address"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "PriceOutOfBand",
+      "inputs": []
     },
     {
       "type": "error",

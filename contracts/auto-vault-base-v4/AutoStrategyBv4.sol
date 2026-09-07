@@ -47,7 +47,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     bytes private _hookData;
     IERC20 private _asset;
     IAutoSwapRouterBv4 private swapRouter;
-    /// @dev Public so the vault can resolve operators for its pause authority without storing a second copy.
     IAutoOperatorRegistryBv4 public operatorRegistry;
 
     address public vault;
@@ -57,8 +56,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
     bool public ownershipLocked;
 
-    /// @notice Truncated price reference. Written on keeper cadence by `refreshPriceRef`, clamped every time,
-    ///         so no single write can adopt a price the pool only held for a moment.
+    /// @notice Truncated price reference. Written on keeper cadence by `refreshPriceRef`, clamped each write.
     int24 public refTick;
     /// @notice When `refTick` was last written. The drift allowance is earned against its age.
     uint64 public refTime;
@@ -66,8 +64,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     uint64 public refBlock;
 
     /// @notice Base tick of the inner comfort band, written only by a successful mint.
-    /// @dev No longer feeds the swap gate; `refTick` does. Re-centring this on spot would only suppress
-    ///      reminting, which is why the keeper-driven refresh that used to write it is gone.
     int24 public lastBandBaseTick;
     bool public hasBandBase;
 
@@ -220,7 +216,20 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         return AutoBandLib.inBand(poolTick, lower, upper);
     }
 
-    /// @dev Remint if OOR (outer) or tick left inner comfort band.
+    /// @dev Unreserved idle ≥ 5% of NAV. Reserved inventory does not count.
+    uint256 private constant IDLE_DEPLOY_BPS = 500;
+
+    function _idleDeployableMaterial() internal view returns (bool) {
+        (uint256 a, uint256 w) = _getDeployableBalances();
+        if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) return false;
+        uint256 p = _spotPrice1e18();
+        if (p == 0) return false;
+        uint256 nav = poolValue();
+        if (nav == 0) return true;
+        return w + Math.mulDiv(a, 1e18, p) >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
+    }
+
+    /// @dev Remint if OOR, tick left inner comfort, or unreserved idle is still material after increase.
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
         if (liqPos.positionId == 0) {
@@ -231,7 +240,16 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
             _remintAtTarget();
             return liqPos.positionId != 0;
         }
-        if (_inOuterRange() && _inInnerComfort()) return false;
+        if (_inOuterRange() && _inInnerComfort()) {
+            if (!_idleDeployableMaterial()) return false;
+            _increaseLiquidityInternal();
+            if (!_idleDeployableMaterial()) return true;
+            if (
+                minHarvestDelay > 0 && lastRebalanceTime != 0
+                    && block.timestamp - lastRebalanceTime < minHarvestDelay
+            ) return true;
+            return _remintAtTarget();
+        }
         return _remintAtTarget();
     }
 
@@ -249,18 +267,23 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
-        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
+        // Increase at the band ratio. Do not `_balanceTokens`.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
+    }
+
+    /// @notice Collect pending LP fees into idle before the vault prices a deposit.
+    function syncFees() external override nonReentrant {
+        _onlyVault();
+        _collectAllFees(true);
     }
 
     function deposit(uint256 amount) external override nonReentrant {
         _onlyVault();
         if (amount == 0) revert E();
         WETH.safeTransferFrom(msg.sender, address(this), amount);
-        _deposit();
+        _deposit(amount);
     }
 
     function withdraw(
@@ -426,11 +449,11 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         }
     }
 
-    function _deposit() internal {
+    function _deposit(uint256 newCapital) internal {
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         _balanceTokens(assetBal, wethBal);
-        _peelReserveFromDeployable();
+        _peelReserveForCapital(newCapital);
         (assetBal, wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         if (liqPos.positionId == 0) {
@@ -442,12 +465,26 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         }
     }
 
-    /// @dev After target balance of deployable, credit `reserveBps` of each leg into reserved buckets.
-    function _peelReserveFromDeployable() internal {
+    /// @notice Peel `reserveBps` of `newCapital` into reserve. Per-leg peel if unpriceable.
+    function _peelReserveForCapital(uint256 newCapital) internal {
         if (reserveBps == 0) return;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        uint256 ra = Math.mulDiv(assetBal, reserveBps, DIVISOR);
-        uint256 rw = Math.mulDiv(wethBal, reserveBps, DIVISOR);
+        uint256 p = _spotPrice1e18();
+        uint256 ra;
+        uint256 rw;
+        if (p == 0) {
+            ra = Math.mulDiv(assetBal, reserveBps, DIVISOR);
+            rw = Math.mulDiv(wethBal, reserveBps, DIVISOR);
+        } else {
+            uint256 deployable = wethBal + Math.mulDiv(assetBal, 1e18, p);
+            if (deployable == 0) return;
+            uint256 want = Math.mulDiv(newCapital, reserveBps, DIVISOR);
+            if (want > deployable) want = deployable;
+            ra = Math.mulDiv(assetBal, want, deployable);
+            rw = Math.mulDiv(wethBal, want, deployable);
+        }
+        if (ra > assetBal) ra = assetBal;
+        if (rw > wethBal) rw = wethBal;
         if (ra == 0 && rw == 0) return;
         _setReserved(reservedAsset + ra, reservedWeth + rw);
     }
@@ -502,8 +539,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         }
     }
 
-    /// @dev Caps to deployable (`balance - reserved`). After withdraw consume, released reserve is spendable.
-    ///      Skips rather than reverts when unpriceable, so withdrawals degrade to paying the unswapped token.
+    /// @dev Caps to deployable. Skips if unpriceable so withdrawals can still pay the unswapped token.
     function _swap(IERC20 tokenIn, uint256 amount) internal {
         if (amount == 0) return;
         uint256 bal = _spendable(tokenIn);
@@ -537,8 +573,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         hasBandBase = true;
     }
 
-    /// @dev Single writer for the three reference fields. The clamp is what makes the reference truncated:
-    ///      each write may only move it by the drift earned since the last one.
+    /// @dev Write `refTick` / `refTime` / `refBlock`. Clamp limits movement to earned drift.
     function _setPriceRef(int24 tick) internal {
         refTick = SwapGateLib.nextRefTick(tick, refTick, refTime, secondsPerRefTick, maxRefDrift);
         refTime = uint64(block.timestamp);
@@ -546,8 +581,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     }
 
     /// @notice Keeper-cadence write of the truncated price reference. Returns false when rate-limited.
-    /// @dev Runs on its own schedule, deliberately not tied to `keeperCheck` or harvest: those only land when the
-    ///      position needs work, which is far too sparse to keep a price reference honest.
     function refreshPriceRef() external override nonReentrant returns (bool) {
         _onlyKeeper();
         if (refTime != 0 && block.timestamp < refTime + minRefUpdateInterval) return false;
@@ -558,8 +591,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     }
 
     /// @notice NAV valued at the truncated reference instead of raw spot. Zero until the reference is seeded.
-    /// @dev Token amounts still come from spot, mirroring V3's `_navAtPrice`: the amounts are what the position
-    ///      actually holds, and only their valuation needs a price the caller cannot have moved this block.
     function poolValueRef() external view override returns (uint256) {
         if (refTime == 0) return 0;
         (uint160 sqrtP, int24 tick) = _readSlot0();
@@ -574,7 +605,6 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     }
 
     /// @notice Output floor the strategy would enforce for `amount` of `tokenIn`, or 0 if it would skip the swap.
-    /// @dev Lets ShareStakingBv4 reuse this pricing instead of duplicating it into another cloned contract.
     function minOutForSwap(address tokenIn, uint256 amount) external view override returns (uint256) {
         return _minOutForSwap(tokenIn, amount);
     }
@@ -599,8 +629,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
         return floor_;
     }
 
-    /// @dev Total fee the PoolManager takes for this direction, in pips. The protocol fee comes off the input
-    ///      first and the LP fee off what remains, which is what `calculateSwapFee` folds together.
+    /// @dev Combined protocol + LP fee in pips for this swap direction.
     function _swapFeePips(bool zeroForOne, uint24 protocolFee, uint24 lpFee) internal pure returns (uint24) {
         uint16 dirFee = zeroForOne
             ? ProtocolFeeLibrary.getZeroForOneFee(protocolFee)

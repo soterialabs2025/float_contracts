@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperRhV4",
-  "address": "0x79F9ea39E7e5304791DF8cfEe835F6592c35e022",
+  "address": "0xD9e5d7417f5139645d8A21ce2b9d6f6c7Ac84fD3",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1788410339045,
+  "timestamp": 1788497330559,
   "abi": [
     {
       "type": "constructor",

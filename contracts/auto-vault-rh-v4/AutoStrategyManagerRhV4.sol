@@ -23,10 +23,10 @@ contract AutoStrategyManagerRhV4 is Ownable {
     uint256 public targetAssetBps = 5000;
 
     int24 public tickSpacing = 160;
-    uint256 public rangeBelowTicks = 960;
-    uint256 public rangeAboveTicks = 960;
-    uint256 public innerBelowTicks = 780;
-    uint256 public innerAboveTicks = 780;
+    uint256 public rangeBelowTicks = 1120;
+    uint256 public rangeAboveTicks = 1120;
+    uint256 public innerBelowTicks = 960;
+    uint256 public innerAboveTicks = 960;
 
     /// @notice Tolerance applied to LP mint and increase amounts.
     uint16 public slippageBps = 100;
@@ -52,7 +52,7 @@ contract AutoStrategyManagerRhV4 is Ownable {
 
     /// @notice Seconds the price reference needs to earn one tick of movement. Default 2, i.e. half a tick a
     ///         second: a genuine 10% move is tracked inside twenty minutes, one block of manipulation buys a tick.
-    uint256 public secondsPerRefTick = 2;
+    uint256 public secondsPerRefTick = 4;
     /// @notice Ceiling on the reference's drift allowance, so a neglected feed still bounds something.
     /// @dev At the default rate this only starts binding after about 67 minutes of keeper silence, and is
     ///      therefore invisible while the feed is healthy.
@@ -60,7 +60,7 @@ contract AutoStrategyManagerRhV4 is Ownable {
     /// @notice Minimum spacing between keeper-driven `refreshPriceRef` writes.
     /// @dev Shorter is safer, not just fresher: movement is capped per unit time, so a denser cadence bounds
     ///      each individual write more tightly and limits what one poisoned write can do.
-    uint256 public minRefUpdateInterval = 5 minutes;
+    uint256 public minRefUpdateInterval = 10 minutes;
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -121,10 +121,10 @@ contract AutoStrategyManagerRhV4 is Ownable {
 
     function _initAutoDefaults() internal {
         tickSpacing = 160;
-        rangeBelowTicks = 960;
-        rangeAboveTicks = 960;
-        innerBelowTicks = 780;
-        innerAboveTicks = 780;
+        rangeBelowTicks = 1120;
+        rangeAboveTicks = 1120;
+        innerBelowTicks = 960;
+        innerAboveTicks = 960;
         slippageBps = 100;
         swapSlippageBps = 100;
         minHarvestDelay = 2 hours;
@@ -157,20 +157,27 @@ contract AutoStrategyManagerRhV4 is Ownable {
         innerAboveTicks = bands.innerAboveTicks;
     }
 
-    function setRangeParams(uint256 _rangeBelowTicks, uint256 _rangeAboveTicks) external onlyOwner {
+    /// @notice Set the outer mint band and the inner comfort band together.
+    /// @dev One call rather than two because the four values are only meaningful relative to each other. Setting
+    ///      them separately required every intermediate state to be valid as well, so widening had to be applied
+    ///      outer-first and tightening inner-first or the second call reverted. Validating all four at once
+    ///      removes that ordering constraint, and lets a keeper move a band atomically.
+    function setBandParams(
+        uint256 _rangeBelowTicks,
+        uint256 _rangeAboveTicks,
+        uint256 _innerBelowTicks,
+        uint256 _innerAboveTicks
+    ) external onlyOwner {
         if (tickSpacing == 0) tickSpacing = _spacing();
         TrailingFloorLib.requireSpacedTicks(_rangeBelowTicks, tickSpacing);
         TrailingFloorLib.requireSpacedTicks(_rangeAboveTicks, tickSpacing);
-        AutoBandLib.requireInnerWithinOuter(_rangeBelowTicks, _rangeAboveTicks, innerBelowTicks, innerAboveTicks);
-        rangeBelowTicks = _rangeBelowTicks;
-        rangeAboveTicks = _rangeAboveTicks;
-    }
-
-    function setInnerBandParams(uint256 _innerBelowTicks, uint256 _innerAboveTicks) external onlyOwner {
-        if (tickSpacing == 0) tickSpacing = _spacing();
         TrailingFloorLib.requireSpacedTicks(_innerBelowTicks, tickSpacing);
         TrailingFloorLib.requireSpacedTicks(_innerAboveTicks, tickSpacing);
-        AutoBandLib.requireInnerWithinOuter(rangeBelowTicks, rangeAboveTicks, _innerBelowTicks, _innerAboveTicks);
+        AutoBandLib.requireInnerWithinOuter(
+            _rangeBelowTicks, _rangeAboveTicks, _innerBelowTicks, _innerAboveTicks
+        );
+        rangeBelowTicks = _rangeBelowTicks;
+        rangeAboveTicks = _rangeAboveTicks;
         innerBelowTicks = _innerBelowTicks;
         innerAboveTicks = _innerAboveTicks;
     }

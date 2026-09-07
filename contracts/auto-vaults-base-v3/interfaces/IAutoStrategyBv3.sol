@@ -25,6 +25,7 @@ interface IAutoStrategyBv3 {
     function pool() external view returns (address);
     function keeperCheck() external returns (bool);
     function harvestBoolean(bool skipIncreaseLiquidity) external returns (uint256);
+    function syncFees() external;
     function deposit(uint256 amount) external;
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external;
     function setWatched(bool status) external;

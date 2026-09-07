@@ -1,10 +1,10 @@
 {
   "name": "AutoVaultRhV4",
-  "address": "0xE510075D1F7F3053Fa9C6D84404Af3D1ecAAD6E7",
+  "address": "0x3F840c477e84752c776A2d819e294a1E29fC9B18",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1788410339045,
+  "timestamp": 1788497330559,
   "abi": [
     {
       "type": "constructor",

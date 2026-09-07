@@ -745,8 +745,18 @@
   },
   {
     "type": "function",
-    "name": "setInnerBandParams",
+    "name": "setBandParams",
     "inputs": [
+      {
+        "name": "_rangeBelowTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_rangeAboveTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "_innerBelowTicks",
         "type": "uint256",
@@ -793,24 +803,6 @@
     "inputs": [
       {
         "name": "interval",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setRangeParams",
-    "inputs": [
-      {
-        "name": "_rangeBelowTicks",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_rangeAboveTicks",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -960,6 +952,13 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncFees",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",

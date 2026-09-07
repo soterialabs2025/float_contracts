@@ -147,8 +147,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         return ownershipLocked;
     }
 
-    /// @dev Split protocol fee token amount: stakingShareBps → ShareStakingBv3 (as epoch rewards), rest → feeManager.
-    ///      ShareStakingBv3 soft-fails ASSET→WETH swaps; try/catch here still protects harvest if notify reverts.
+    /// @dev Split protocol fee: stakingShareBps → ShareStakingBv3, rest → feeManager.
     function _routeProtocolFee(address token, uint256 amount) internal {
         if (amount == 0) return;
         uint256 toStaking = Math.mulDiv(amount, stakingShareBps, DIVISOR);
@@ -197,6 +196,19 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         return AutoBandLib.inBand(tick, lower, upper);
     }
 
+    /// @dev Unreserved idle ≥ 5% of NAV and rebalance-priceable. Reserved inventory does not count.
+    uint256 private constant IDLE_DEPLOY_BPS = 500;
+
+    function _idleDeployableMaterial() internal view returns (bool) {
+        (uint256 a, uint256 w) = _getDeployableBalances();
+        if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) return false;
+        uint256 p = _rebalancePrice1e18();
+        if (p == 0) return false;
+        uint256 nav = poolValue();
+        if (nav == 0) return true;
+        return w + Math.mulDiv(a, 1e18, p) >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
+    }
+
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
         if (liqPos.positionId == 0) {
@@ -209,7 +221,16 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
             return liqPos.positionId != 0;
         }
         (, int24 tick) = _readSlot0();
-        if (_inOuterRange(tick) && _inInnerComfort(tick)) return false;
+        if (_inOuterRange(tick) && _inInnerComfort(tick)) {
+            if (!_idleDeployableMaterial()) return false;
+            _increaseLiquidityInternal();
+            if (!_idleDeployableMaterial()) return true;
+            if (
+                minHarvestDelay > 0 && lastRebalanceTime != 0
+                    && block.timestamp - lastRebalanceTime < minHarvestDelay
+            ) return true;
+            return _remintAtTarget();
+        }
         return _remintAtTarget();
     }
 
@@ -222,18 +243,23 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
             return poolValue();
         }
         if (valueInWeth == 0) return poolValue();
-        // Deploy at the band's own ratio. Balancing here would swap the whole idle pool to `targetAssetBps`
-        // without consulting the reserve, so any imbalance is left for `_remintAtTarget` to close from reserve.
+        // Increase at the band ratio. Do not `_balanceTokens`.
         _increaseLiquidityInternal();
         lastHarvest = block.timestamp;
         return poolValue();
+    }
+
+    /// @notice Collect pending LP fees into idle before the vault prices a deposit.
+    function syncFees() external override nonReentrant {
+        _onlyVault();
+        _collectAllFees(true);
     }
 
     function deposit(uint256 amount) external override nonReentrant {
         _onlyVault();
         if (amount == 0) revert E();
         WETH.safeTransferFrom(msg.sender, address(this), amount);
-        _deposit();
+        _deposit(amount);
     }
 
     function withdraw(uint256 userShares, address receiver, WithdrawToken outToken) external override nonReentrant {
@@ -302,11 +328,11 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    function _deposit() internal {
+    function _deposit(uint256 newCapital) internal {
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         _balanceTokens(assetBal, wethBal);
-        _peelReserveFromDeployable();
+        _peelReserveForCapital(newCapital);
         (assetBal, wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         if (liqPos.positionId == 0) _mintPosition();
@@ -350,13 +376,25 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    function _peelReserveFromDeployable() internal {
+    /// @notice Peel `reserveBps` of `newCapital` into reserve. Per-leg peel if unpriceable.
+    function _peelReserveForCapital(uint256 newCapital) internal {
         if (reserveBps == 0) return;
         (uint256 a, uint256 w) = _getDeployableBalances();
-        _setReserved(
-            reservedAsset + _min(Math.mulDiv(a, reserveBps, DIVISOR), a),
-            reservedWeth + _min(Math.mulDiv(w, reserveBps, DIVISOR), w)
-        );
+        uint256 p = _rebalancePrice1e18();
+        uint256 ra;
+        uint256 rw;
+        if (p == 0) {
+            ra = Math.mulDiv(a, reserveBps, DIVISOR);
+            rw = Math.mulDiv(w, reserveBps, DIVISOR);
+        } else {
+            uint256 deployable = w + Math.mulDiv(a, 1e18, p);
+            if (deployable == 0) return;
+            uint256 want = Math.mulDiv(newCapital, reserveBps, DIVISOR);
+            if (want > deployable) want = deployable;
+            ra = Math.mulDiv(a, want, deployable);
+            rw = Math.mulDiv(w, want, deployable);
+        }
+        _setReserved(reservedAsset + _min(ra, a), reservedWeth + _min(rw, w));
     }
 
     function _mintPosition() internal {
@@ -397,9 +435,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    /// @dev Sole swap chokepoint for this contract, reached from both `_balanceTokens` and `_payWithdraw`.
-    ///      The floor is priced off the TWAP, never off an in-transaction quote of the pool being traded.
-    ///      Reverts when the oracle cannot price the swap: callers that can skip must gate before calling here.
+    /// @dev Sole swap chokepoint. Floor is TWAP-gated; reverts if unpriceable.
     function _swap(IERC20 tokenIn, uint256 amount, uint256 maxDevBps) internal {
         amount = _min(amount, _spendable(tokenIn));
         if (amount <= LIQUIDITY_DUST) return;
@@ -413,12 +449,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         );
     }
 
-    /// @dev `0` when the oracle is unusable or spot has left `maxDevBps`, meaning the swap must not proceed.
-    ///      Two deductions, kept separate because they are different things. `poolFee` is the pool's own charge:
-    ///      an exact, known amount that Uniswap removes from the output before testing it against this floor, so
-    ///      a floor that ignores it can never be met and every swap reverts with "Too little received".
-    ///      `swapSlippageBps` is the operator's tolerance for what cannot be known here, namely liquidity-based
-    ///      price impact and drift between reading the pool and executing against it.
+    /// @dev `0` if the oracle is unusable or spot is outside `maxDevBps`. Floor is quote after `poolFee`, then `swapSlippageBps`.
     function _minOutAtBand(address tokenIn, uint256 amount, uint256 maxDevBps) internal view returns (uint256) {
         (, uint160 spotSqrt) = _bandPrices(maxDevBps);
         if (spotSqrt == 0) return 0;
@@ -540,11 +571,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         return _price1e18FromSqrt(sqrtP);
     }
 
-    /// @dev Amount of the opposite token for `amount` of the base side at `sqrtRatioX96`, following Uniswap's
-    ///      `OracleLibrary.getQuoteAtTick`: both precision branches and token ordering honoured, with
-    ///      `Math.mulDiv` supplying the 512-bit intermediate that `FullMath.mulDiv` does upstream.
-    /// @dev This is a price quote only. It excludes the pool fee and any liquidity-based impact, which is why
-    ///      callers deriving a swap floor must subtract both.
+    /// @dev Quote the opposite token at `sqrtRatioX96`. Excludes pool fee and impact.
     function _quoteAtSqrt(uint160 sqrtRatioX96, uint256 amount, bool baseIsToken0)
         internal
         pure
@@ -584,11 +611,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    /// @dev Both prices, or `(0, 0)` when the oracle is unusable or spot has left `maxDevBps` of the TWAP.
-    ///      The TWAP gates and values; the validated spot prices swap floors, because only spot can bound what
-    ///      this transaction actually executes at. Manipulation is bounded by the band the TWAP enforces.
-    ///      The band is a parameter because a blocked rebalance merely retries later while a blocked withdrawal
-    ///      traps the user, so exits are gated against a wider tolerance than rebalances.
+    /// @dev TWAP and spot, or `(0, 0)` if unreadable or spot is outside `maxDevBps` of TWAP.
     function _bandPrices(uint256 maxDevBps) internal view returns (uint256 twap, uint160 spotSqrt) {
         twap = _twapPrice1e18();
         if (twap == 0) return (0, 0);
@@ -647,11 +670,6 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
     }
 
     /// @notice NAV at the raw TWAP, with no spot-deviation gate. Zero only when the oracle is unreadable.
-    /// @dev The gate on `poolValueTwap` guards the rebalance path, which trades. Minting only prices, and
-    ///      `min(spot, twap)` is safe however far apart the two sit: a depressed spot is caught by the TWAP,
-    ///      while an inflated one only shorts the depositor who caused it. Refusing the TWAP on deviation is
-    ///      therefore not a safeguard here, it is what drops minting into the high-water fallback precisely
-    ///      when the market is moving, charging honest depositors the full drawdown.
     function poolValueTwapRaw() public view override returns (uint256) {
         return _navAtPrice(_twapPrice1e18());
     }

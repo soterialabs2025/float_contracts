@@ -27,6 +27,12 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
 
     IERC20 public immutable weth;
     ILiquidSharesSv3 public liquidShares;
+    /// @dev Bands handed to the router's TWAP gate. Automatic conversion keeps the tight band because a refusal
+    ///      is soft — the tokens stay here and `retryAssetRewardSwap` picks them up — while that explicit retry
+    ///      gets the wider one so a prolonged volatile stretch cannot strand rewards.
+    uint256 private constant SWAP_MAX_DEV_BPS = 300;
+    uint256 private constant RETRY_MAX_DEV_BPS = 900;
+
     IAutoSwapRouterSv3 public swapRouter;
     address public strategy;
     address public asset;
@@ -313,9 +319,9 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
         } else if (token == asset) {
             if (amount > type(uint128).max) revert ZeroAmount();
             IERC20(token).forceApprove(address(swapRouter), amount);
-            try swapRouter.swapExactInputSingleStrict(token, address(weth), poolFee, uint128(amount)) returns (
-                uint256 out
-            ) {
+            try swapRouter.swapExactInputSingleStrict(
+                token, address(weth), poolFee, uint128(amount), SWAP_MAX_DEV_BPS, block.timestamp
+            ) returns (uint256 out) {
                 wethAdded = out;
             } catch {
                 IERC20(token).forceApprove(address(swapRouter), 0);
@@ -374,7 +380,9 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);
         IERC20(asset).forceApprove(address(swapRouter), amount);
-        uint256 wethAdded = swapRouter.swapExactInputSingleStrict(asset, address(weth), poolFee, uint128(amount));
+        uint256 wethAdded = swapRouter.swapExactInputSingleStrict(
+            asset, address(weth), poolFee, uint128(amount), RETRY_MAX_DEV_BPS, block.timestamp
+        );
         IERC20(asset).forceApprove(address(swapRouter), 0);
         if (wethAdded == 0) revert ZeroAmount();
         epochRewardWeth[currentEpoch] += wethAdded;

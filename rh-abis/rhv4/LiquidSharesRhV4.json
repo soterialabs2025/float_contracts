@@ -1,10 +1,10 @@
 {
   "name": "LiquidSharesRhV4",
-  "address": "0x2c0241EDe5Ac7A94Ef393D1c33635f099203912F",
+  "address": "0xC697CDd3154f9918b5bF7670bDc764B30743c899",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1788410339045,
+  "timestamp": 1788497330559,
   "abi": [
     {
       "type": "constructor",

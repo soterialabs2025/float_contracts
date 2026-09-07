@@ -1,10 +1,10 @@
 {
   "name": "AutoSwapRouterSv3",
-  "address": "0x568dCA271e5F7edb9769f5eA6076e2DA8D4014e8",
+  "address": "0x8B47DaF1Bead45B0f77cfBD447f398969909Bb71",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1788410377140,
+  "timestamp": 1788497796896,
   "abi": [
     {
       "type": "constructor",
@@ -71,21 +71,44 @@
     },
     {
       "type": "function",
-      "name": "quoter",
-      "inputs": [],
-      "outputs": [
+      "name": "removeAuthorizedStrategy",
+      "inputs": [
         {
-          "name": "",
+          "name": "strategy",
           "type": "address",
-          "internalType": "contract IQuoterV2"
+          "internalType": "address"
         }
       ],
-      "stateMutability": "view"
+      "outputs": [],
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
       "name": "renounceOwnership",
       "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "rescue",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
       "outputs": [],
       "stateMutability": "nonpayable"
     },
@@ -110,6 +133,19 @@
           "name": "bps",
           "type": "uint16",
           "internalType": "uint16"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setTwapSeconds",
+      "inputs": [
+        {
+          "name": "secs",
+          "type": "uint32",
+          "internalType": "uint32"
         }
       ],
       "outputs": [],
@@ -164,6 +200,16 @@
           "name": "amountIn",
           "type": "uint128",
           "internalType": "uint128"
+        },
+        {
+          "name": "maxDevBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
       "outputs": [
@@ -187,6 +233,19 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "twapSeconds",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint32",
+          "internalType": "uint32"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -232,7 +291,45 @@
     },
     {
       "type": "event",
+      "name": "Rescued",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
       "name": "StrategyAuthorized",
+      "inputs": [
+        {
+          "name": "strategy",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "StrategyDeauthorized",
       "inputs": [
         {
           "name": "strategy",
@@ -307,8 +404,26 @@
       "anonymous": false
     },
     {
+      "type": "event",
+      "name": "TwapSecondsUpdated",
+      "inputs": [
+        {
+          "name": "secs",
+          "type": "uint32",
+          "indexed": false,
+          "internalType": "uint32"
+        }
+      ],
+      "anonymous": false
+    },
+    {
       "type": "error",
       "name": "AlreadyAuthorized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "Expired",
       "inputs": []
     },
     {
@@ -324,6 +439,16 @@
     {
       "type": "error",
       "name": "InvalidSlippage",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NotAuthorized",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OracleUnavailable",
       "inputs": []
     },
     {
@@ -347,6 +472,11 @@
           "internalType": "address"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "PriceOutOfBand",
+      "inputs": []
     },
     {
       "type": "error",
