@@ -471,9 +471,10 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         );
         if (amount0 == 0 && amount1 == 0) return (0, 0, 0);
         address token0 = _pool.token0();
-        if (trackFees && protocolFeeBps > 0) {
-            uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
-            uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
+        uint256 feeBps = _protocolFeeBps();
+        if (trackFees && feeBps > 0) {
+            uint256 fee0 = Math.mulDiv(amount0, feeBps, DIVISOR);
+            uint256 fee1 = Math.mulDiv(amount1, feeBps, DIVISOR);
             if (fee0 > 0) _routeProtocolFee(token0, fee0);
             if (fee1 > 0) _routeProtocolFee(_pool.token1(), fee1);
             amount0 -= fee0;

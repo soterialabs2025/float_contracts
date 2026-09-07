@@ -17,6 +17,9 @@ import {TrailingFloorLib} from "../contracts/v4/libraries/TrailingFloorLib.sol";
 
 interface IBandParams {
     function setBandParams(uint256, uint256, uint256, uint256) external;
+    function setProtocolFeeOn(bool) external;
+    function protocolFeeOn() external view returns (bool);
+    function protocolFeeBps() external view returns (uint256);
     function tickSpacing() external view returns (int24);
     function rangeBelowTicks() external view returns (uint256);
     function rangeAboveTicks() external view returns (uint256);
@@ -172,6 +175,29 @@ contract BandParamsTest is Test {
 
     /// @dev The old selectors must be gone, not merely unused: a keeper still calling them should fail loudly at
     ///      simulation rather than silently no-op through the fallback of a contract that has none.
+    function test_ProtocolFeeDefaultsOnAndKeepsBps() public {
+        for (uint256 i = 0; i < managers.length; i++) {
+            assertTrue(managers[i].protocolFeeOn(), names[i]);
+            assertEq(managers[i].protocolFeeBps(), 600, names[i]);
+
+            managers[i].setProtocolFeeOn(false);
+            assertFalse(managers[i].protocolFeeOn(), names[i]);
+            assertEq(managers[i].protocolFeeBps(), 600, names[i]);
+
+            managers[i].setProtocolFeeOn(true);
+            assertTrue(managers[i].protocolFeeOn(), names[i]);
+        }
+    }
+
+    function test_ProtocolFeeSwitchRevertsForNonOwner() public {
+        for (uint256 i = 0; i < managers.length; i++) {
+            vm.prank(STRANGER);
+            vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, STRANGER));
+            managers[i].setProtocolFeeOn(false);
+            assertTrue(managers[i].protocolFeeOn(), names[i]);
+        }
+    }
+
     function test_LegacySettersAreRemoved() public {
         for (uint256 i = 0; i < managers.length; i++) {
             address m = address(managers[i]);

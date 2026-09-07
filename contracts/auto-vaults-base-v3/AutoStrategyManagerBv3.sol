@@ -27,6 +27,8 @@ contract AutoStrategyManagerBv3 is Ownable {
     uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to `feeManager` (default 600 = 6%).
     uint256 public protocolFeeBps = 600;
+    /// @notice When false, `_collectAllFees` skips the protocol peel; `protocolFeeBps` is left as-is.
+    bool public protocolFeeOn = true;
     /// @notice Share of post-protocol deposit/fee capital kept idle as reserve (default 5000 = 50%).
     uint256 public reserveBps = 5000;
     /// @notice Share of protocolFeeBps proceeds sent to ShareStaking (rest to feeManager). Default 50%.
@@ -43,6 +45,14 @@ contract AutoStrategyManagerBv3 is Ownable {
     /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 1%).
     /// @dev Distinct from `slippageBps`, which bounds LP mint amounts.
     uint16 public swapSlippageBps = 200;
+
+    function setProtocolFeeOn(bool on) external onlyOwner {
+        protocolFeeOn = on;
+    }
+
+    function _protocolFeeBps() internal view returns (uint256) {
+        return protocolFeeOn ? protocolFeeBps : 0;
+    }
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
     function setReserveBps(uint256 bps) external onlyOwner {
@@ -106,6 +116,7 @@ contract AutoStrategyManagerBv3 is Ownable {
         minHarvestDelay = 2 hours;
         withdrawalFeeBps = 100;
         protocolFeeBps = 600;
+        protocolFeeOn = true;
         reserveBps = 5000;
         targetAssetBps = 5000;
         stakingShareBps = 5000;

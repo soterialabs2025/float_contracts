@@ -660,9 +660,10 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
         address p0 = _poolKey.currency0;
         address p1 = _poolKey.currency1;
-        if (trackFees && protocolFeeBps > 0) {
-            uint256 fee0 = Math.mulDiv(amount0, protocolFeeBps, DIVISOR);
-            uint256 fee1 = Math.mulDiv(amount1, protocolFeeBps, DIVISOR);
+        uint256 feeBps = _protocolFeeBps();
+        if (trackFees && feeBps > 0) {
+            uint256 fee0 = Math.mulDiv(amount0, feeBps, DIVISOR);
+            uint256 fee1 = Math.mulDiv(amount1, feeBps, DIVISOR);
             if (fee0 > 0) _routeProtocolFee(p0, fee0);
             if (fee1 > 0) _routeProtocolFee(p1, fee1);
             amount0 -= fee0;
