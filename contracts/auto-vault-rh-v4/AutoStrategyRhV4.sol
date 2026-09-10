@@ -125,6 +125,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         _poolKey = key;
         _hookData = hookData_;
         _initAutoDefaults();
+        _alignBandOffsets(key.tickSpacing);
         // tickSpacing from PoolKey; ranges from factory BandConfig (must be multiples of spacing).
         _applyBandConfig(key.tickSpacing, bands);
         _bootstrapped = true;
@@ -425,6 +426,9 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     /// @dev Drain LP, fund `targetAssetBps` deficit from reserve then swap, mint deployable only. Does not refill reserve.
     function _remintAtTarget() internal returns (bool) {
+        // Do not exit the old range when the swap gate would refuse: that is the sandwich (dump, remint at
+        // the fake tick or sit idle, reverse without our liquidity).
+        if (!_swapGateOpen()) return false;
         if (liqPos.positionId != 0) {
             _decreaseAllLiquidity();
             liqPos.positionId = 0;
@@ -457,7 +461,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
         uint256 totalValue = assetBal + wethAsTokens;
         if (totalValue == 0) return;
-        uint256 targetAsset = Math.mulDiv(totalValue, targetAssetBps, DIVISOR);
+        uint256 targetAsset = Math.mulDiv(totalValue, _bps(targetAssetBps), DIVISOR);
 
         if (assetBal > targetAsset) {
             uint256 surplusAsset = assetBal - targetAsset;
@@ -499,12 +503,12 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 ra;
         uint256 rw;
         if (p == 0) {
-            ra = Math.mulDiv(assetBal, reserveBps, DIVISOR);
-            rw = Math.mulDiv(wethBal, reserveBps, DIVISOR);
+            ra = Math.mulDiv(assetBal, _bps(reserveBps), DIVISOR);
+            rw = Math.mulDiv(wethBal, _bps(reserveBps), DIVISOR);
         } else {
             uint256 deployable = wethBal + Math.mulDiv(assetBal, 1e18, p);
             if (deployable == 0) return;
-            uint256 want = Math.mulDiv(newCapital, reserveBps, DIVISOR);
+            uint256 want = Math.mulDiv(newCapital, _bps(reserveBps), DIVISOR);
             if (want > deployable) want = deployable;
             ra = Math.mulDiv(assetBal, want, deployable);
             rw = Math.mulDiv(wethBal, want, deployable);
@@ -516,6 +520,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     }
 
     function _mintPosition() internal {
+        if (!_swapGateOpen()) return;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
         (, int24 currentTick) = _readSlot0();
@@ -553,7 +558,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
         uint256 totalValue = assetBal + wethAsTokens;
         if (totalValue == 0) return;
-        uint256 target = Math.mulDiv(totalValue, targetAssetBps, DIVISOR);
+        uint256 target = Math.mulDiv(totalValue, _bps(targetAssetBps), DIVISOR);
         if (assetBal > target) {
             uint256 toSell = assetBal - target;
             if (toSell > 0) _swap(false, toSell, swapSlippageBps);
@@ -651,6 +656,18 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         return bps > MAX_WITHDRAW_SLIPPAGE_BPS ? MAX_WITHDRAW_SLIPPAGE_BPS : bps;
     }
 
+    /// @dev Same refusal as `SwapGateLib.minOut`. Open before the first mint so the vault can open; after that,
+    ///      skip LP deploy when spot is too far from `refTick` or the reference was written this block.
+    function _swapGateOpen() internal view returns (bool) {
+        if (refTime == 0) return true;
+        (uint160 sqrtP, int24 tick) = _readSlot0();
+        if (sqrtP == 0) return false;
+        if (block.number <= refBlock) return false;
+        int256 dev = int256(tick) - int256(refTick);
+        if (dev < 0) dev = -dev;
+        return uint256(dev) <= SwapGateLib.allowedTickDeviation(maxSwapTickDeviation, block.timestamp - refTime);
+    }
+
     /// @dev Output floor for a swap, or 0 when the swap must be skipped.
     function _minOutForSwap(bool sellEth, uint256 amount, uint256 slipBps) internal view returns (uint256) {
         (uint160 sqrtP, int24 tick, uint24 protocolFee, uint24 lpFee) =
@@ -706,8 +723,8 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
         // After protocol skim: reserveBps of each remaining leg → reserved buckets (rest stays deployable).
         if (trackFees && reserveBps > 0) {
-            uint256 r0 = Math.mulDiv(amount0, reserveBps, DIVISOR);
-            uint256 r1 = Math.mulDiv(amount1, reserveBps, DIVISOR);
+            uint256 r0 = Math.mulDiv(amount0, _bps(reserveBps), DIVISOR);
+            uint256 r1 = Math.mulDiv(amount1, _bps(reserveBps), DIVISOR);
             if (r0 > 0 || r1 > 0) {
                 if (p0 == address(0)) {
                     _setReserved(reservedAsset + r1, reservedWeth + r0);
@@ -753,7 +770,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     }
 
     function _increaseLiquidityInternal() internal returns (uint128 liqAdded) {
-        if (liqPos.positionId == 0) return 0;
+        if (liqPos.positionId == 0 || !_swapGateOpen()) return 0;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         (uint256 amount0, uint256 amount1) = _poolBalances(assetBal, wethBal);
         LiquidityLibraryV4.IncreaseContext memory ctx = LiquidityLibraryV4.IncreaseContext({

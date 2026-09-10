@@ -107,8 +107,9 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         poolFee = poolFee_;
         // Clones do not run constructors — init defaults here (same pattern as Base AutoStrategyV2).
         _initAutoDefaults();
-        tickSpacing = _pool.tickSpacing();
-        if (tickSpacing <= 0) revert E();
+        int24 sp = _pool.tickSpacing();
+        if (sp <= 0) revert E();
+        _alignBandOffsets(sp);
         _bootstrapped = true;
         _asset.forceApprove(address(positionManager), type(uint256).max);
         WETH.forceApprove(address(positionManager), type(uint256).max);
@@ -377,6 +378,9 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
     }
 
     function _remintAtTarget() internal returns (bool) {
+        // Do not exit the old range when TWAP is unusable: that is the sandwich (dump, remint at the fake
+        // tick or sit idle, reverse without our liquidity).
+        if (_rebalancePrice1e18() == 0) return false;
         if (liqPos.positionId != 0) {
             _decreaseAllLiquidity();
             liqPos.positionId = 0;
@@ -402,7 +406,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         if (p == 0) return;
         uint256 totalValue = assetBal + Math.mulDiv(wethBal, p, 1e18);
         if (totalValue == 0) return;
-        uint256 target = Math.mulDiv(totalValue, targetAssetBps, DIVISOR);
+        uint256 target = Math.mulDiv(totalValue, _bps(targetAssetBps), DIVISOR);
         if (assetBal > target && reservedWeth > 0) {
             uint256 pull = _min(Math.mulDiv(assetBal - target, 1e18, p), reservedWeth);
             _setReserved(reservedAsset, reservedWeth - pull);
@@ -420,12 +424,12 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         uint256 ra;
         uint256 rw;
         if (p == 0) {
-            ra = Math.mulDiv(a, reserveBps, DIVISOR);
-            rw = Math.mulDiv(w, reserveBps, DIVISOR);
+            ra = Math.mulDiv(a, _bps(reserveBps), DIVISOR);
+            rw = Math.mulDiv(w, _bps(reserveBps), DIVISOR);
         } else {
             uint256 deployable = w + Math.mulDiv(a, 1e18, p);
             if (deployable == 0) return;
-            uint256 want = Math.mulDiv(newCapital, reserveBps, DIVISOR);
+            uint256 want = Math.mulDiv(newCapital, _bps(reserveBps), DIVISOR);
             if (want > deployable) want = deployable;
             ra = Math.mulDiv(a, want, deployable);
             rw = Math.mulDiv(w, want, deployable);
@@ -434,6 +438,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
     }
 
     function _mintPosition() internal {
+        if (_rebalancePrice1e18() == 0) return;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
         (, int24 currentTick) = _readSlot0();
@@ -464,7 +469,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         uint256 p = _rebalancePrice1e18();
         if (p == 0) return;
         uint256 total = assetBal + Math.mulDiv(wethBal, p, 1e18);
-        uint256 target = Math.mulDiv(total, targetAssetBps, DIVISOR);
+        uint256 target = Math.mulDiv(total, _bps(targetAssetBps), DIVISOR);
         if (assetBal > target) _swap(_asset, assetBal - target, maxTwapDeviationBps, swapSlippageBps);
         else if (assetBal < target) {
             _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal), maxTwapDeviationBps, swapSlippageBps);
@@ -523,8 +528,8 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
             amount1 -= fee1;
         }
         if (trackFees && reserveBps > 0) {
-            uint256 r0 = _min(Math.mulDiv(amount0, reserveBps, DIVISOR), amount0);
-            uint256 r1 = _min(Math.mulDiv(amount1, reserveBps, DIVISOR), amount1);
+            uint256 r0 = _min(Math.mulDiv(amount0, _bps(reserveBps), DIVISOR), amount0);
+            uint256 r1 = _min(Math.mulDiv(amount1, _bps(reserveBps), DIVISOR), amount1);
             if (token0 == address(WETH)) _setReserved(reservedAsset + r1, reservedWeth + r0);
             else _setReserved(reservedAsset + r0, reservedWeth + r1);
         }
@@ -559,7 +564,7 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
     }
 
     function _increaseLiquidityInternal() internal returns (uint128) {
-        if (liqPos.positionId == 0) return 0;
+        if (liqPos.positionId == 0 || _rebalancePrice1e18() == 0) return 0;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         (uint256 amount0, uint256 amount1) = _poolBalances(assetBal, wethBal);
         LiquidityLibraryV2.IncreaseContext memory ctx = LiquidityLibraryV2.IncreaseContext({

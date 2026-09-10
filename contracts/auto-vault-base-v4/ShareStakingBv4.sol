@@ -16,16 +16,16 @@ import "./interfaces/ILiquidSharesBv4.sol";
 
 /// @title ShareStakingBv4
 /// @notice Per-vault LiquidSharesBv4 staking with fixed-length epochs (Base V4).
-/// @dev Weight = amount × seconds in epoch. Rewards paid in WETH after epoch ends.
+/// @dev Weight = amount × seconds in epoch. Rewards paid in ASSET after epoch ends.
 ///      No early exit: stake locks until that epoch's end. Stake is non-transferable.
 ///      EPOCH_DURATION is 14 days for production.
-///      ASSET→WETH uses AutoSwapRouterBv4 with the package PoolKey (not native ETH pairs).
+///      WETH→ASSET uses AutoSwapRouterBv4 with the package PoolKey (not native ETH pairs).
 contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     using SafeERC20 for IERC20;
 
     uint256 public constant DIVISOR = 10_000;
     uint256 public constant EPOCH_DURATION = 14 days;
-    /// @notice Hard cap on owner cut of epoch WETH rewards (30%).
+    /// @notice Hard cap on owner cut of epoch ASSET rewards (30%).
     uint256 public constant MAX_OWNER_REWARD_BPS = 3_000;
 
     IERC20 public immutable weth;
@@ -42,7 +42,7 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     /// @notice One-shot open switch. Starts false; activate() can flip to true once.
     bool public active;
 
-    /// @notice Share of each epoch's WETH pot credited to `ownerRewardRecipient` at finalize. Default 0; max 10%.
+    /// @notice Share of each epoch's ASSET pot credited to `ownerRewardRecipient` at finalize. Default 0; max 10%.
     /// @dev Only settable after ownership is locked (second/last owner). Deployer cannot raise above 0.
     uint256 public ownerRewardBps;
     /// @notice Recipient of the owner cut at epoch finalize. If zero, uses `owner()`.
@@ -56,8 +56,8 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     /// @dev Claimable stake-seconds accrued in the active epoch.
     uint256 public totalWeightCurrent;
 
-    /// @dev WETH owed to stakers (sum of epochRewardWeth) + pendingOwnerReward. Rescue may only skim surplus.
-    uint256 public accountedWeth;
+    /// @dev ASSET owed to stakers (sum of epochRewardAsset) + pendingOwnerReward. Rescue may only skim surplus.
+    uint256 public accountedAsset;
 
     mapping(address => uint256) public stakedBalance;
     mapping(address => uint256) public userLastCheckpoint;
@@ -66,7 +66,7 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     /// @dev Pull-based owner cut so a reverting recipient cannot brick epoch finalization.
     mapping(address => uint256) public pendingOwnerReward;
 
-    mapping(uint256 => uint256) public epochRewardWeth;
+    mapping(uint256 => uint256) public epochRewardAsset;
     mapping(uint256 => uint256) public epochTotalWeight;
     mapping(uint256 => bool) public epochFinalized;
 
@@ -94,14 +94,14 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     event Staked(address indexed user, uint256 amount);
     event Activated(address indexed by, uint64 timestamp);
     event Unstaked(address indexed user, uint256 amount);
-    /// @dev `wethAdded == 0` means ASSET→WETH soft-fail (tokens stranded for `retryAssetRewardSwap`).
-    event RewardNotified(address indexed token, uint256 amountIn, uint256 wethAdded, uint256 epoch);
+    /// @dev `assetAdded == 0` means WETH→ASSET soft-fail (tokens stranded for `retryWethRewardSwap`).
+    event RewardNotified(address indexed token, uint256 amountIn, uint256 assetAdded, uint256 epoch);
     event EpochFinalized(
-        uint256 indexed epoch, uint256 stakerRewardWeth, uint256 ownerRewardWeth, uint256 totalWeight
+        uint256 indexed epoch, uint256 stakerRewardAsset, uint256 ownerRewardAsset, uint256 totalWeight
     );
     /// @dev Owner-cut pulls use `epoch == type(uint256).max`.
-    event Claimed(address indexed user, uint256 indexed epoch, uint256 wethAmount);
-    event RewardRolledForward(uint256 indexed fromEpoch, uint256 indexed toEpoch, uint256 wethAmount);
+    event Claimed(address indexed user, uint256 indexed epoch, uint256 assetAmount);
+    event RewardRolledForward(uint256 indexed fromEpoch, uint256 indexed toEpoch, uint256 assetAmount);
     event Rescued(address indexed token, address indexed to, uint256 amount);
 
     modifier onlyStrategy() {
@@ -137,9 +137,7 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
         swapRouter = IAutoSwapRouterBv4(swapRouter_);
         poolKey = key;
         hookData = hookData_;
-        epoch0Start = block.timestamp;
         currentEpoch = 0;
-        lastGlobalCheckpoint = block.timestamp;
         bootstrapped = true;
         _transferOwnership(owner_);
     }
@@ -162,10 +160,14 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
         revert OwnershipIsLocked();
     }
 
-    /// @notice One-shot: open staking. Starts inactive; cannot be turned off after activate.
+    /// @notice One-shot: open staking and start epoch 0. Harvests and `boostReward` that arrived while
+    ///         inactive stay in epoch 0; the 14-day clock does not run until this call.
     function activate() external onlyOwner {
         if (active) revert AlreadyActive();
         if (!bootstrapped) revert NotBootstrapped();
+        epoch0Start = block.timestamp;
+        lastGlobalCheckpoint = block.timestamp;
+        currentEpoch = 0;
         active = true;
         emit Activated(msg.sender, uint64(block.timestamp));
     }
@@ -214,6 +216,7 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     }
 
     function _advanceGlobalTo(uint256 until) internal {
+        if (!active) return;
         if (until <= lastGlobalCheckpoint) return;
         uint256 t = lastGlobalCheckpoint;
         while (t < until) {
@@ -232,13 +235,13 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
                 uint256 ownerCut;
                 if (totalWeightCurrent == 0) {
                     // No stake-time means no address can ever satisfy the claim condition for this pot, so
-                    // carry it into the next epoch rather than burning it. accountedWeth is unchanged: the
+                    // carry it into the next epoch rather than burning it. accountedAsset is unchanged: the
                     // liability only moves epochs. The owner cut travels with it and is taken on the epoch
                     // that actually pays out.
-                    uint256 rolled = epochRewardWeth[closing];
+                    uint256 rolled = epochRewardAsset[closing];
                     if (rolled > 0) {
-                        epochRewardWeth[closing] = 0;
-                        epochRewardWeth[closing + 1] += rolled;
+                        epochRewardAsset[closing] = 0;
+                        epochRewardAsset[closing + 1] += rolled;
                         emit RewardRolledForward(closing, closing + 1, rolled);
                     }
                 } else {
@@ -246,7 +249,7 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
                 }
                 epochTotalWeight[closing] = totalWeightCurrent;
                 epochFinalized[closing] = true;
-                emit EpochFinalized(closing, epochRewardWeth[closing], ownerCut, totalWeightCurrent);
+                emit EpochFinalized(closing, epochRewardAsset[closing], ownerCut, totalWeightCurrent);
                 currentEpoch = closing + 1;
                 totalWeightCurrent = 0;
             }
@@ -268,11 +271,11 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
     }
 
     function _takeOwnerEpochCut(uint256 epoch) internal returns (uint256 ownerCut) {
-        uint256 pot = epochRewardWeth[epoch];
+        uint256 pot = epochRewardAsset[epoch];
         if (pot == 0 || ownerRewardBps == 0) return 0;
         ownerCut = Math.mulDiv(pot, ownerRewardBps, DIVISOR);
         if (ownerCut == 0) return 0;
-        epochRewardWeth[epoch] = pot - ownerCut;
+        epochRewardAsset[epoch] = pot - ownerCut;
         address to = ownerRewardRecipient == address(0) ? owner() : ownerRewardRecipient;
         pendingOwnerReward[to] += ownerCut;
     }
@@ -329,42 +332,56 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
         if (amount == 0) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);
 
-        uint256 wethAdded;
-        if (token == address(weth)) {
-            wethAdded = amount;
-        } else if (token == asset) {
+        uint256 assetAdded;
+        if (token == asset) {
+            assetAdded = amount;
+        } else if (token == address(weth)) {
             if (amount > type(uint128).max) revert ZeroAmount();
-            wethAdded = _swapAssetToWeth(uint128(amount));
-            if (wethAdded == 0) {
-                emit RewardNotified(token, amount, 0, currentEpoch);
-                return;
-            }
+            assetAdded = _swapWethToAsset(uint128(amount));
         } else {
             revert Unauthorized();
         }
 
-        if (wethAdded == 0) return;
-        epochRewardWeth[currentEpoch] += wethAdded;
-        accountedWeth += wethAdded;
-        _assertBacked();
-        emit RewardNotified(token, amount, wethAdded, currentEpoch);
+        _creditAsset(token, amount, assetAdded);
     }
 
-    /// @dev Every epoch pot and owner-cut balance is drawn from one pooled WETH balance, so an accounted
-    ///      liability that was never funded would let one epoch's claimants spend another's WETH. The WETH
+    /// @notice Permissionless ASSET deposit into the current epoch pot. Anyone, any epoch, including before
+    ///         `activate` (then it parks in epoch 0). Shares `nonReentrant` with `claim`, so a deposit cannot
+    ///         resize the pot mid-payout.
+    function boostReward(uint256 amount) external nonReentrant {
+        if (!bootstrapped) revert NotBootstrapped();
+        if (amount == 0) revert ZeroAmount();
+        IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+        _advanceGlobalTo(block.timestamp);
+        _creditAsset(asset, amount, amount);
+    }
+
+    /// @dev Write `added` into the live epoch pot, or emit a zero-credit if the conversion produced nothing.
+    function _creditAsset(address tokenIn, uint256 amountIn, uint256 added) internal {
+        if (added == 0) {
+            emit RewardNotified(tokenIn, amountIn, 0, currentEpoch);
+            return;
+        }
+        epochRewardAsset[currentEpoch] += added;
+        accountedAsset += added;
+        _assertBacked();
+        emit RewardNotified(tokenIn, amountIn, added, currentEpoch);
+    }
+
+    /// @dev Every epoch pot and owner-cut balance is drawn from one pooled ASSET balance, so an accounted
+    ///      liability that was never funded would let one epoch's claimants spend another's ASSET. The ASSET
     ///      branch of `notifyReward` takes the strategy's `amount` on trust; this makes a fabricated or
     ///      replayed notification revert instead. Strategies wrap this in try/catch, so a harvest or
     ///      withdraw still settles; tokens already transferred here stay for rescue/retry.
     function _assertBacked() internal view {
-        if (accountedWeth > weth.balanceOf(address(this))) revert UnbackedReward();
+        if (accountedAsset > IERC20(asset).balanceOf(address(this))) revert UnbackedReward();
     }
 
-    function _swapAssetToWeth(uint128 amount) internal returns (uint256 wethAdded) {
-        // Strategy owns the pricing and the stale-tick gate; a zero floor means it would refuse to swap too.
-        uint256 minOut = IAutoStrategyBv4(strategy).minOutForSwap(asset, amount);
+    function _swapWethToAsset(uint128 amount) internal returns (uint256 assetAdded) {
+        uint256 minOut = IAutoStrategyBv4(strategy).minOutForSwap(address(weth), amount);
         if (minOut == 0) return 0;
-        bool zeroForOne = asset == poolKey.currency0;
-        IERC20(asset).forceApprove(address(swapRouter), amount);
+        bool zeroForOne = address(weth) == poolKey.currency0;
+        IERC20(weth).forceApprove(address(swapRouter), amount);
         try swapRouter.swapExactInputSingleStrict(
             zeroForOne,
             amount,
@@ -379,92 +396,88 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
             }),
             hookData
         ) returns (uint256 out) {
-            wethAdded = out;
+            assetAdded = out;
         } catch {
-            IERC20(asset).forceApprove(address(swapRouter), 0);
+            IERC20(weth).forceApprove(address(swapRouter), 0);
             return 0;
         }
-        IERC20(asset).forceApprove(address(swapRouter), 0);
+        IERC20(weth).forceApprove(address(swapRouter), 0);
     }
 
-    function claim(uint256 epoch) external nonReentrant returns (uint256 wethOut) {
+    function claim(uint256 epoch) external nonReentrant returns (uint256 assetOut) {
         _checkpointUser(msg.sender);
         if (epoch >= currentEpoch) revert EpochNotEnded();
         if (!epochFinalized[epoch]) revert EpochNotEnded();
         if (epochClaimed[msg.sender][epoch]) revert AlreadyClaimed();
 
-        wethOut = _claimEpoch(msg.sender, epoch);
-        if (wethOut == 0) revert NothingToClaim();
-        weth.safeTransfer(msg.sender, wethOut);
+        assetOut = _claimEpoch(msg.sender, epoch);
+        if (assetOut == 0) revert NothingToClaim();
+        IERC20(asset).safeTransfer(msg.sender, assetOut);
     }
 
-    /// @notice Claim several finalized epochs in one transaction and receive one WETH transfer. Epochs with
+    /// @notice Claim several finalized epochs in one transaction and receive one ASSET transfer. Epochs with
     ///         nothing to claim are skipped, so a long-held position can pass a whole range in one call
     ///         instead of one transaction per epoch. Reverts only when no listed epoch pays anything.
-    function claimMany(uint256[] calldata epochs) external nonReentrant returns (uint256 wethOut) {
+    function claimMany(uint256[] calldata epochs) external nonReentrant returns (uint256 assetOut) {
         _checkpointUser(msg.sender);
         for (uint256 i; i < epochs.length; ++i) {
-            wethOut += _claimEpoch(msg.sender, epochs[i]);
+            assetOut += _claimEpoch(msg.sender, epochs[i]);
         }
-        if (wethOut == 0) revert NothingToClaim();
-        weth.safeTransfer(msg.sender, wethOut);
+        if (assetOut == 0) revert NothingToClaim();
+        IERC20(asset).safeTransfer(msg.sender, assetOut);
     }
 
     /// @dev Settles one epoch's claim accounting and returns the amount owed without transferring. Returns 0
     ///      instead of reverting when the epoch pays nothing so `claimMany` can walk a range; `claim` keeps
     ///      its explicit reverts by checking first.
-    function _claimEpoch(address user, uint256 epoch) internal returns (uint256 wethOut) {
+    function _claimEpoch(address user, uint256 epoch) internal returns (uint256 assetOut) {
         if (!epochFinalized[epoch] || epochClaimed[user][epoch]) return 0;
 
         uint256 weight = userEpochWeight[user][epoch];
         uint256 totalW = epochTotalWeight[epoch];
         if (weight == 0 || totalW == 0) return 0;
 
-        uint256 pot = epochRewardWeth[epoch];
-        wethOut = Math.mulDiv(pot, weight, totalW);
-        if (wethOut == 0) return 0;
+        uint256 pot = epochRewardAsset[epoch];
+        assetOut = Math.mulDiv(pot, weight, totalW);
+        if (assetOut == 0) return 0;
 
         epochClaimed[user][epoch] = true;
-        epochRewardWeth[epoch] = pot - wethOut;
+        epochRewardAsset[epoch] = pot - assetOut;
         epochTotalWeight[epoch] = totalW - weight;
         userEpochWeight[user][epoch] = 0;
-        accountedWeth -= wethOut;
-        emit Claimed(user, epoch, wethOut);
+        accountedAsset -= assetOut;
+        emit Claimed(user, epoch, assetOut);
     }
 
     function claimOwnerReward() external nonReentrant returns (uint256 amount) {
         amount = pendingOwnerReward[msg.sender];
         if (amount == 0) revert NothingToClaim();
         pendingOwnerReward[msg.sender] = 0;
-        accountedWeth -= amount;
-        weth.safeTransfer(msg.sender, amount);
+        accountedAsset -= amount;
+        IERC20(asset).safeTransfer(msg.sender, amount);
         emit Claimed(msg.sender, type(uint256).max, amount);
     }
 
-
-    function retryAssetRewardSwap(uint256 amount) external nonReentrant onlyOwner {
+    /// @notice Retry converting stranded WETH rewards into ASSET for the live epoch.
+    function retryWethRewardSwap(uint256 amount) external nonReentrant onlyOwner {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);
-        uint256 wethAdded = _swapAssetToWeth(uint128(amount));
-        if (wethAdded == 0) revert ZeroAmount();
-        epochRewardWeth[currentEpoch] += wethAdded;
-        accountedWeth += wethAdded;
-        _assertBacked();
-        emit RewardNotified(asset, amount, wethAdded, currentEpoch);
+        uint256 assetAdded = _swapWethToAsset(uint128(amount));
+        if (assetAdded == 0) revert ZeroAmount();
+        _creditAsset(address(weth), amount, assetAdded);
     }
 
-    /// @notice Withdraw tokens that are not owed to anyone: WETH above `accountedWeth`, LiquidShares above
-    ///         `totalStaked`, and ASSET whose reward swap can never be priced. Staker principal and unclaimed
+    /// @notice Withdraw tokens that are not owed to anyone: ASSET above `accountedAsset`, LiquidShares above
+    ///         `totalStaked`, and WETH whose reward swap can never be priced. Staker principal and unclaimed
     ///         reward pots are unreachable here.
     function rescueToken(address token, address to, uint256 amount) external nonReentrant onlyOwner {
         if (token == address(0) || to == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
-        // Settle pending roll-forwards first so surplus is measured against final liabilities.
         _advanceGlobalTo(block.timestamp);
 
         uint256 reserved;
-        if (token == address(weth)) reserved = accountedWeth;
+        if (token == asset) reserved = accountedAsset;
         else if (token == address(liquidShares)) reserved = totalStaked;
 
         uint256 bal = IERC20(token).balanceOf(address(this));

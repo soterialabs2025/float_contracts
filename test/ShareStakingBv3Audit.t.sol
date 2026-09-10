@@ -17,7 +17,7 @@ contract MockERC20 is ERC20 {
 }
 
 /// @dev Stands in for AutoStrategyBv3: ShareStakingBv3 staticcalls `minOutForSwap` on the bootstrapped
-///      strategy, so the strategy address has to be a contract even when only the WETH path is exercised.
+///      strategy, so the strategy address has to be a contract even when only the ASSET path is exercised.
 contract MockStrategy {
     uint256 public floor;
 
@@ -71,28 +71,28 @@ contract ShareStakingBv3AuditTest is Test {
     }
 
     /// @dev Funds the active epoch the way the strategy does: transfer first, then notify.
-    function _fundWeth(uint256 amount) internal {
-        MockERC20(WETH).mint(address(staking), amount);
+    function _fundAsset(uint256 amount) internal {
+        asset.mint(address(staking), amount);
         vm.prank(address(strategy));
-        staking.notifyReward(WETH, amount);
+        staking.notifyReward(address(asset), amount);
     }
 
     /// @dev The accounting invariant the audit asserts: the liability counter equals the sum of live pots.
     function _assertAccountingConsistent(uint256 upToEpoch) internal view {
         uint256 sum;
         for (uint256 e; e <= upToEpoch; ++e) {
-            sum += staking.epochRewardWeth(e);
+            sum += staking.epochRewardAsset(e);
         }
-        assertEq(staking.accountedWeth(), sum, "accountedWeth != sum of epoch pots");
-        assertLe(staking.accountedWeth(), MockERC20(WETH).balanceOf(address(staking)), "accounted exceeds balance");
+        assertEq(staking.accountedAsset(), sum, "accountedAsset != sum of epoch pots");
+        assertLe(staking.accountedAsset(), asset.balanceOf(address(staking)), "accounted exceeds balance");
     }
 
     // --- Finding 1: rewards funded into an epoch with zero stake-time ---
 
     function test_zeroWeightEpoch_rollsPotForward_insteadOfStranding() public {
         // Nobody staked in epoch 0, but a harvest funds it.
-        _fundWeth(1 ether);
-        assertEq(staking.epochRewardWeth(0), 1 ether);
+        _fundAsset(1 ether);
+        assertEq(staking.epochRewardAsset(0), 1 ether);
 
         vm.warp(staking.epochEnd(0));
         staking.advance();
@@ -100,9 +100,9 @@ contract ShareStakingBv3AuditTest is Test {
         // Epoch 0 closed with no claimable weight, so its pot moved to epoch 1 rather than being burned.
         assertTrue(staking.epochFinalized(0));
         assertEq(staking.epochTotalWeight(0), 0);
-        assertEq(staking.epochRewardWeth(0), 0, "pot stranded in zero-weight epoch");
-        assertEq(staking.epochRewardWeth(1), 1 ether, "pot did not roll forward");
-        assertEq(staking.accountedWeth(), 1 ether, "roll-forward must not change the liability total");
+        assertEq(staking.epochRewardAsset(0), 0, "pot stranded in zero-weight epoch");
+        assertEq(staking.epochRewardAsset(1), 1 ether, "pot did not roll forward");
+        assertEq(staking.accountedAsset(), 1 ether, "roll-forward must not change the liability total");
 
         // A staker who arrives in epoch 1 can claim the carried pot in full.
         vm.prank(alice);
@@ -113,12 +113,12 @@ contract ShareStakingBv3AuditTest is Test {
         uint256 got = staking.claim(1);
 
         assertEq(got, 1 ether);
-        assertEq(MockERC20(WETH).balanceOf(alice), 1 ether);
-        assertEq(staking.accountedWeth(), 0);
+        assertEq(asset.balanceOf(alice), 1 ether);
+        assertEq(staking.accountedAsset(), 0);
     }
 
     function test_zeroWeightEpochs_chainRollForwardAcrossManyEpochs() public {
-        _fundWeth(3 ether);
+        _fundAsset(3 ether);
 
         // Five consecutive empty epochs: the pot should follow the chain, not fall out of it.
         vm.warp(staking.epochEnd(4));
@@ -126,24 +126,28 @@ contract ShareStakingBv3AuditTest is Test {
 
         assertEq(staking.currentEpoch(), 5);
         for (uint256 e; e < 5; ++e) {
-            assertEq(staking.epochRewardWeth(e), 0, "pot left behind in an empty epoch");
+            assertEq(staking.epochRewardAsset(e), 0, "pot left behind in an empty epoch");
         }
-        assertEq(staking.epochRewardWeth(5), 3 ether);
+        assertEq(staking.epochRewardAsset(5), 3 ether);
         _assertAccountingConsistent(5);
     }
 
-    /// @dev `notifyReward` is not gated by `whenActive` while `stake` is, so a harvest between deployment and
-    ///      `activate()` used to fund an epoch in which nobody was permitted to create stake-time.
+    /// @dev `notifyReward` is not gated by `whenActive` while `stake` is. Funding before `activate()`
+    ///      parks in epoch 0; the clock starts at activate, so the first stakers claim that pot.
     function test_fundingBeforeActivation_isNotLost() public {
         ShareStakingBv3 s2 = new ShareStakingBv3(address(this));
         s2.bootstrap(address(this), address(shares), address(strategy), address(asset), router, POOL_FEE);
         // Deliberately not activated yet.
 
-        MockERC20(WETH).mint(address(s2), 2 ether);
+        asset.mint(address(s2), 2 ether);
         vm.prank(address(strategy));
-        s2.notifyReward(WETH, 2 ether);
+        s2.notifyReward(address(asset), 2 ether);
 
-        vm.warp(s2.epochEnd(0));
+        // Time passing while inactive must not close epoch 0.
+        vm.warp(block.timestamp + 30 days);
+        assertEq(s2.currentEpoch(), 0);
+        assertEq(s2.epochRewardAsset(0), 2 ether);
+
         s2.activate();
 
         vm.prank(alice);
@@ -151,9 +155,9 @@ contract ShareStakingBv3AuditTest is Test {
         vm.prank(alice);
         s2.stake(10 ether);
 
-        vm.warp(s2.epochEnd(1));
+        vm.warp(s2.epochEnd(0));
         vm.prank(alice);
-        uint256 got = s2.claim(1);
+        uint256 got = s2.claim(0);
 
         assertEq(got, 2 ether, "pre-activation harvest was burned");
     }
@@ -167,13 +171,13 @@ contract ShareStakingBv3AuditTest is Test {
         vm.prank(tba);
         staking.setOwnerRewardRecipient(tba);
 
-        _fundWeth(10 ether);
+        _fundAsset(10 ether);
         vm.warp(staking.epochEnd(0));
         staking.advance();
 
         // Empty epoch took no cut.
         assertEq(staking.pendingOwnerReward(tba), 0);
-        assertEq(staking.epochRewardWeth(1), 10 ether);
+        assertEq(staking.epochRewardAsset(1), 10 ether);
 
         vm.prank(alice);
         staking.stake(10 ether);
@@ -186,53 +190,53 @@ contract ShareStakingBv3AuditTest is Test {
         assertEq(got, 9 ether);
     }
 
-    // --- Finding 3: unbacked WETH notifications ---
+    // --- Finding 3: unbacked ASSET notifications ---
 
-    function test_notifyWethWithoutTransfer_reverts() public {
+    function test_notifyAssetWithoutTransfer_reverts() public {
         vm.prank(alice);
         staking.stake(10 ether);
 
-        // Strategy claims 5 WETH it never sent.
+        // Strategy claims 5 ASSET it never sent.
         vm.prank(address(strategy));
         vm.expectRevert(ShareStakingBv3.UnbackedReward.selector);
-        staking.notifyReward(WETH, 5 ether);
+        staking.notifyReward(address(asset), 5 ether);
 
-        assertEq(staking.accountedWeth(), 0);
-        assertEq(staking.epochRewardWeth(0), 0);
+        assertEq(staking.accountedAsset(), 0);
+        assertEq(staking.epochRewardAsset(0), 0);
     }
 
-    /// @dev The audit's exact scenario: a later epoch's fake pot must not be able to spend the WETH that is
+    /// @dev The audit's exact scenario: a later epoch's fake pot must not be able to spend the ASSET that is
     ///      physically backing an already-finalized epoch.
     function test_replayedNotify_cannotDrainAnEarlierEpochsBacking() public {
         vm.prank(alice);
         staking.stake(10 ether);
 
-        _fundWeth(100 ether); // genuinely funded epoch 0
+        _fundAsset(100 ether); // genuinely funded epoch 0
         vm.warp(staking.epochEnd(0));
         staking.advance();
-        assertEq(staking.epochRewardWeth(0), 100 ether);
+        assertEq(staking.epochRewardAsset(0), 100 ether);
 
         vm.prank(bob);
         staking.stake(10 ether);
 
-        // Re-notify the same 100 WETH the contract already holds for epoch 0.
+        // Re-notify the same 100 ASSET the contract already holds for epoch 0.
         vm.prank(address(strategy));
         vm.expectRevert(ShareStakingBv3.UnbackedReward.selector);
-        staking.notifyReward(WETH, 100 ether);
+        staking.notifyReward(address(asset), 100 ether);
 
         // Epoch 0's claimant is still fully backed.
         vm.prank(alice);
         uint256 got = staking.claim(0);
         assertEq(got, 100 ether);
-        assertEq(MockERC20(WETH).balanceOf(alice), 100 ether);
+        assertEq(asset.balanceOf(alice), 100 ether);
     }
 
     function test_honestNotify_stillSucceeds() public {
         vm.prank(alice);
         staking.stake(10 ether);
-        _fundWeth(4 ether);
+        _fundAsset(4 ether);
 
-        assertEq(staking.epochRewardWeth(0), 4 ether);
+        assertEq(staking.epochRewardAsset(0), 4 ether);
         _assertAccountingConsistent(0);
     }
 
@@ -252,11 +256,11 @@ contract ShareStakingBv3AuditTest is Test {
         vm.prank(alice);
         staking.stake(10 ether);
 
-        _fundWeth(1 ether); // epoch 0
+        _fundAsset(1 ether); // epoch 0
         vm.warp(staking.epochEnd(0));
-        _fundWeth(1 ether); // finalizes 0, credits epoch 1
+        _fundAsset(1 ether); // finalizes 0, credits epoch 1
         vm.warp(staking.epochEnd(1));
-        _fundWeth(1 ether); // finalizes 1, credits epoch 2
+        _fundAsset(1 ether); // finalizes 1, credits epoch 2
         vm.warp(staking.epochEnd(2));
 
         uint256[] memory epochs = new uint256[](3);
@@ -268,8 +272,8 @@ contract ShareStakingBv3AuditTest is Test {
         uint256 got = staking.claimMany(epochs);
 
         assertEq(got, 3 ether);
-        assertEq(MockERC20(WETH).balanceOf(alice), 3 ether);
-        assertEq(staking.accountedWeth(), 0);
+        assertEq(asset.balanceOf(alice), 3 ether);
+        assertEq(staking.accountedAsset(), 0);
     }
 
     /// @dev Skipping (rather than reverting on) empty entries is what lets a caller pass a whole range.
@@ -277,9 +281,9 @@ contract ShareStakingBv3AuditTest is Test {
         vm.prank(alice);
         staking.stake(10 ether);
 
-        _fundWeth(1 ether);
+        _fundAsset(1 ether);
         vm.warp(staking.epochEnd(0));
-        _fundWeth(1 ether);
+        _fundAsset(1 ether);
         vm.warp(staking.epochEnd(1));
         staking.advance();
 
@@ -314,7 +318,7 @@ contract ShareStakingBv3AuditTest is Test {
     function test_claim_preservesOriginalErrors() public {
         vm.prank(alice);
         staking.stake(10 ether);
-        _fundWeth(1 ether);
+        _fundAsset(1 ether);
 
         vm.prank(alice);
         vm.expectRevert(ShareStakingBv3.EpochNotEnded.selector);
@@ -334,17 +338,17 @@ contract ShareStakingBv3AuditTest is Test {
     function test_rescue_takesSurplusButNotStakerRewards() public {
         vm.prank(alice);
         staking.stake(10 ether);
-        _fundWeth(1 ether); // accounted, must stay
+        _fundAsset(1 ether); // accounted, must stay
 
         // Unsolicited donation on top of the accounted pot.
-        MockERC20(WETH).mint(address(staking), 5 ether);
+        asset.mint(address(staking), 5 ether);
 
-        staking.rescueToken(WETH, bob, 5 ether);
-        assertEq(MockERC20(WETH).balanceOf(bob), 5 ether);
+        staking.rescueToken(address(asset), bob, 5 ether);
+        assertEq(asset.balanceOf(bob), 5 ether);
 
-        // Nothing left above accountedWeth.
+        // Nothing left above accountedAsset.
         vm.expectRevert(ShareStakingBv3.NothingToRescue.selector);
-        staking.rescueToken(WETH, bob, 1);
+        staking.rescueToken(address(asset), bob, 1);
 
         // The staker's pot survived and still pays out.
         vm.warp(staking.epochEnd(0));
@@ -368,11 +372,11 @@ contract ShareStakingBv3AuditTest is Test {
         assertEq(shares.balanceOf(address(staking)), 10 ether, "staked principal must remain");
     }
 
-    function test_rescue_recoversUnpriceableAssetRewards() public {
-        // ASSET whose swap floor is unavailable is stranded by design; rescue is its only exit.
-        asset.mint(address(staking), 7 ether);
-        staking.rescueToken(address(asset), bob, 7 ether);
-        assertEq(asset.balanceOf(bob), 7 ether);
+    function test_rescue_recoversUnpriceableWethRewards() public {
+        // WETH whose swap floor is unavailable is stranded by design; rescue is its only exit.
+        MockERC20(WETH).mint(address(staking), 7 ether);
+        staking.rescueToken(WETH, bob, 7 ether);
+        assertEq(MockERC20(WETH).balanceOf(bob), 7 ether);
     }
 
     function test_rescue_onlyOwner() public {
@@ -392,7 +396,7 @@ contract ShareStakingBv3AuditTest is Test {
         vm.prank(bob);
         staking.stake(10 ether);
 
-        _fundWeth(3 ether);
+        _fundAsset(3 ether);
         vm.warp(staking.epochEnd(0));
 
         vm.prank(alice);

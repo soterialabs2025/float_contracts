@@ -123,6 +123,21 @@ contract AutoStrategyManagerBv3 is Ownable {
         return sp > 0 ? sp : int24(200);
     }
 
+    /// @dev `> DIVISOR` means 100%. Cap before `mulDiv` so a huge stored value cannot overflow.
+    function _bps(uint256 bps) internal pure returns (uint256) {
+        return bps > DIVISOR ? DIVISOR : bps;
+    }
+
+    /// @dev Floor band widths to a positive multiple of `spacing` after the pool's step replaces the default.
+    function _alignBandOffsets(int24 spacing) internal {
+        if (spacing <= 0) spacing = _spacing();
+        tickSpacing = spacing;
+        rangeBelowTicks = TrailingFloorLib.alignTicksDownToSpacing(rangeBelowTicks, spacing);
+        rangeAboveTicks = TrailingFloorLib.alignTicksDownToSpacing(rangeAboveTicks, spacing);
+        innerBelowTicks = TrailingFloorLib.alignTicksDownToSpacing(innerBelowTicks, spacing);
+        innerAboveTicks = TrailingFloorLib.alignTicksDownToSpacing(innerAboveTicks, spacing);
+    }
+
     function _initAutoDefaults() internal {
         tickSpacing = 200;
         rangeBelowTicks = 1000;
