@@ -75,6 +75,12 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     uint256 public reservedAsset;
     uint256 public reservedWeth;
 
+    /// @notice Router rejected the swap. The caller continued and the unswapped token stayed put.
+    /// @dev `tokenIn` is `address(0)` for the native ETH leg.
+    event SwapFailed(address indexed tokenIn, uint256 amountIn);
+    /// @notice ShareStaking rejected the notification. ETH stays in the strategy; ERC20 already sent stays for rescue/retry.
+    event RewardNotifyFailed(address indexed token, uint256 amount);
+
     /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
     constructor(address factory_) AutoStrategyManagerRhV4() {
         factory = factory_;
@@ -166,10 +172,16 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 toFeeManager = amount - toStaking;
         if (toStaking > 0 && _shareStaking != address(0)) {
             if (token == address(0)) {
-                IShareStakingRhV4(_shareStaking).notifyReward{value: toStaking}(address(0), toStaking);
+                try IShareStakingRhV4(_shareStaking).notifyReward{value: toStaking}(address(0), toStaking) {}
+                catch {
+                    emit RewardNotifyFailed(address(0), toStaking);
+                }
             } else {
                 IERC20(token).safeTransfer(_shareStaking, toStaking);
-                IShareStakingRhV4(_shareStaking).notifyReward(token, toStaking);
+                try IShareStakingRhV4(_shareStaking).notifyReward(token, toStaking) {}
+                catch {
+                    emit RewardNotifyFailed(token, toStaking);
+                }
             }
         } else if (toStaking > 0) {
             toFeeManager += toStaking;
@@ -372,7 +384,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
                 uint256 toSwap = totalUserAsset > assetBal ? assetBal : totalUserAsset;
                 uint256 assetBefore = _asset.balanceOf(address(this));
                 uint256 wethBefore = address(this).balance;
-                _swap(false, toSwap);
+                _swap(false, toSwap, _withdrawSlippageBps());
                 totalUserWeth += address(this).balance - wethBefore;
                 uint256 sold = assetBefore - _asset.balanceOf(address(this));
                 uint256 unsold = toSwap > sold ? toSwap - sold : 0;
@@ -393,7 +405,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
                 uint256 toSwap = totalUserWeth > wethBal ? wethBal : totalUserWeth;
                 uint256 wethBefore = address(this).balance;
                 uint256 assetBefore = _asset.balanceOf(address(this));
-                _swap(true, toSwap);
+                _swap(true, toSwap, _withdrawSlippageBps());
                 totalUserAsset += _asset.balanceOf(address(this)) - assetBefore;
                 uint256 sold = wethBefore - address(this).balance;
                 uint256 unsold = toSwap > sold ? toSwap - sold : 0;
@@ -505,7 +517,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     function _mintPosition() internal {
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        if (assetBal == 0 && wethBal == 0) return;
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
         (, int24 currentTick) = _readSlot0();
         (int24 lower, int24 upper) =
             AutoBandLib.outerTicks(currentTick, _spacing(), rangeBelowTicks, rangeAboveTicks);
@@ -544,23 +556,24 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 target = Math.mulDiv(totalValue, targetAssetBps, DIVISOR);
         if (assetBal > target) {
             uint256 toSell = assetBal - target;
-            if (toSell > 0) _swap(false, toSell);
+            if (toSell > 0) _swap(false, toSell, swapSlippageBps);
         } else if (assetBal < target) {
             uint256 deficit = target - assetBal;
             uint256 wethToSell = Math.mulDiv(deficit, 1e18, p);
             if (wethToSell > wethBal) wethToSell = wethBal;
-            if (wethToSell > 0) _swap(true, wethToSell);
+            if (wethToSell > 0) _swap(true, wethToSell, swapSlippageBps);
         }
     }
 
     /// @dev Caps to deployable. Skips if unpriceable so withdrawals can still pay the unswapped token.
-    function _swap(bool sellEth, uint256 amount) internal {
+    /// @dev `slipBps` is the tight value for rebalances and the widened one for exits.
+    function _swap(bool sellEth, uint256 amount, uint256 slipBps) internal {
         if (amount == 0) return;
         uint256 bal = sellEth ? _spendableEth() : _spendable(_asset);
         if (amount > bal) amount = bal;
-        if (amount <= LIQUIDITY_DUST) return;
-        if (amount > type(uint128).max) revert E();
-        uint256 minOut = _minOutForSwap(sellEth, amount);
+        if (amount == 0) return;
+        if (amount > type(uint128).max) return;
+        uint256 minOut = _minOutForSwap(sellEth, amount, slipBps);
         if (minOut == 0) return;
         IAutoSwapRouterRhV4.AutoPoolKey memory key = IAutoSwapRouterRhV4.AutoPoolKey({
             currency0: _poolKey.currency0,
@@ -569,15 +582,23 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             tickSpacing: _poolKey.tickSpacing,
             hooks: _poolKey.hooks
         });
+        // A router rejection must not unwind the caller. Withdrawals pay the unswapped leg in kind and
+        // rebalances retry, so a rejected swap is treated exactly like a skipped one.
         if (sellEth) {
-            swapRouter.swapExactInputSingleStrict{value: amount}(
+            try swapRouter.swapExactInputSingleStrict{value: amount}(
                 true, uint128(amount), uint128(minOut), block.timestamp, key, _hookData
-            );
+            ) {
+            } catch {
+                emit SwapFailed(address(0), amount);
+            }
         } else {
             _asset.forceApprove(address(swapRouter), amount);
-            swapRouter.swapExactInputSingleStrict(
+            try swapRouter.swapExactInputSingleStrict(
                 false, uint128(amount), uint128(minOut), block.timestamp, key, _hookData
-            );
+            ) {
+            } catch {
+                emit SwapFailed(address(_asset), amount);
+            }
             _asset.forceApprove(address(swapRouter), 0);
         }
     }
@@ -620,11 +641,18 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     /// @notice Output floor the strategy would enforce for `amount`, or 0 if it would skip the swap.
     function minOutForSwap(bool sellEth, uint256 amount) external view override returns (uint256) {
-        return _minOutForSwap(sellEth, amount);
+        return _minOutForSwap(sellEth, amount, swapSlippageBps);
+    }
+
+    /// @dev Exit counterpart to `swapSlippageBps`. Clamped so the widened haircut stays inside the same 10% the
+    ///      base setter enforces, however high an owner has pushed `swapSlippageBps`.
+    function _withdrawSlippageBps() internal view returns (uint256) {
+        uint256 bps = uint256(swapSlippageBps) * WITHDRAW_SLIPPAGE_MULTIPLE;
+        return bps > MAX_WITHDRAW_SLIPPAGE_BPS ? MAX_WITHDRAW_SLIPPAGE_BPS : bps;
     }
 
     /// @dev Output floor for a swap, or 0 when the swap must be skipped.
-    function _minOutForSwap(bool sellEth, uint256 amount) internal view returns (uint256) {
+    function _minOutForSwap(bool sellEth, uint256 amount, uint256 slipBps) internal view returns (uint256) {
         (uint160 sqrtP, int24 tick, uint24 protocolFee, uint24 lpFee) =
             LiquidityLibraryV4.getSlot0WithFees(poolManager, _poolKey);
         bool ethIsCurrency0 = _poolKey.currency0 == address(0);
@@ -636,11 +664,11 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             ethIsCurrency0,
             sellEth,
             amount,
-            swapSlippageBps,
+            slipBps,
             DIVISOR,
             _swapFeePips(sellEth == ethIsCurrency0, protocolFee, lpFee)
         );
-        if (floor_ > type(uint128).max) revert E();
+        if (floor_ > type(uint128).max) return 0;
         return floor_;
     }
 

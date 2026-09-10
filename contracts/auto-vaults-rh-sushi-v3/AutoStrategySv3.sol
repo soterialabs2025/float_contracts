@@ -57,6 +57,11 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     uint256 public reservedWeth;
     uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
+    /// @notice Router rejected the swap. The caller continued and the unswapped token stayed put.
+    event SwapFailed(address indexed tokenIn, uint256 amountIn);
+    /// @notice ShareStaking rejected the notification. Tokens already transferred there stay for rescue/retry.
+    event RewardNotifyFailed(address indexed token, uint256 amount);
+
     /// @notice Sets the factory and Sushi (4663) Uniswap v3 immutables; package wiring happens in `bootstrap`.
     constructor(address factory_) AutoStrategyManagerSv3() {
         factory = factory_;
@@ -167,7 +172,7 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
             IERC20(token).safeTransfer(_shareStaking, toStaking);
             try IShareStakingSv3(_shareStaking).notifyReward(token, toStaking) {}
             catch {
-                // Tokens already in ShareStakingSv3 (WETH credited or ASSET stranded for rescue/retry).
+                emit RewardNotifyFailed(token, toStaking);
             }
         } else if (toStaking > 0) {
             toFeeManager += toStaking;
@@ -324,17 +329,35 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
         if (outToken == WithdrawToken.WETH) {
             if (userAsset > 0) {
+                uint256 beforeIn = _asset.balanceOf(address(this));
                 uint256 beforeOut = WETH.balanceOf(address(this));
-                _swap(_asset, _min(userAsset, _asset.balanceOf(address(this))), _withdrawBandBps());
+                uint256 toSwap = _min(userAsset, beforeIn);
+                _swap(_asset, toSwap, _withdrawBandBps(), _withdrawSlippageBps());
                 userWeth += WETH.balanceOf(address(this)) - beforeOut;
+                // Shares burn whether or not the swap ran, so a skipped or partial conversion pays the
+                // remainder in ASSET rather than leaving it behind in the strategy.
+                uint256 sold = beforeIn - _asset.balanceOf(address(this));
+                uint256 unsold = toSwap > sold ? toSwap - sold : 0;
+                if (unsold > 0) {
+                    unsold = _min(unsold, _asset.balanceOf(address(this)));
+                    if (unsold > 0) _asset.safeTransfer(receiver, unsold);
+                }
             }
             userWeth = _min(userWeth, WETH.balanceOf(address(this)));
             if (userWeth > 0) WETH.safeTransfer(receiver, userWeth);
         } else {
             if (userWeth > 0) {
+                uint256 beforeIn = WETH.balanceOf(address(this));
                 uint256 beforeOut = _asset.balanceOf(address(this));
-                _swap(WETH, _min(userWeth, WETH.balanceOf(address(this))), _withdrawBandBps());
+                uint256 toSwap = _min(userWeth, beforeIn);
+                _swap(WETH, toSwap, _withdrawBandBps(), _withdrawSlippageBps());
                 userAsset += _asset.balanceOf(address(this)) - beforeOut;
+                uint256 sold = beforeIn - WETH.balanceOf(address(this));
+                uint256 unsold = toSwap > sold ? toSwap - sold : 0;
+                if (unsold > 0) {
+                    unsold = _min(unsold, WETH.balanceOf(address(this)));
+                    if (unsold > 0) WETH.safeTransfer(receiver, unsold);
+                }
             }
             userAsset = _min(userAsset, _asset.balanceOf(address(this)));
             if (userAsset > 0) _asset.safeTransfer(receiver, userAsset);
@@ -412,7 +435,7 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
 
     function _mintPosition() internal {
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        if (assetBal == 0 && wethBal == 0) return;
+        if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
         (, int24 currentTick) = _readSlot0();
         (int24 lower, int24 upper) = AutoBandLib.outerTicks(currentTick, _spacing(), rangeBelowTicks, rangeAboveTicks);
         LiquidityLibraryV2.MintContext memory ctx = LiquidityLibraryV2.MintContext({
@@ -442,27 +465,40 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         if (p == 0) return;
         uint256 total = assetBal + Math.mulDiv(wethBal, p, 1e18);
         uint256 target = Math.mulDiv(total, targetAssetBps, DIVISOR);
-        if (assetBal > target) _swap(_asset, assetBal - target, maxTwapDeviationBps);
+        if (assetBal > target) _swap(_asset, assetBal - target, maxTwapDeviationBps, swapSlippageBps);
         else if (assetBal < target) {
-            _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal), maxTwapDeviationBps);
+            _swap(WETH, _min(Math.mulDiv(target - assetBal, 1e18, p), wethBal), maxTwapDeviationBps, swapSlippageBps);
         }
     }
 
-    /// @dev Sole swap chokepoint. Router prices the TWAP-gated floor for `maxDevBps`.
-    function _swap(IERC20 tokenIn, uint256 amount, uint256 maxDevBps) internal {
+    /// @dev Sole swap chokepoint. Router prices the TWAP-gated floor for `maxDevBps` and `slipBps`.
+    /// @dev `maxDevBps` and `slipBps` travel together: rebalances pass the tight pair, exits the widened pair.
+    function _swap(IERC20 tokenIn, uint256 amount, uint256 maxDevBps, uint256 slipBps) internal {
         amount = _min(amount, _spendable(tokenIn));
-        if (amount <= LIQUIDITY_DUST) return;
-        if (amount > type(uint128).max) revert E();
+        if (amount == 0) return;
+        if (amount > type(uint128).max) return;
         address tokenOut = address(tokenIn) == address(WETH) ? address(_asset) : address(WETH);
         tokenIn.forceApprove(address(swapRouter), amount);
-        swapRouter.swapExactInputSingleStrict(
-            address(tokenIn), tokenOut, poolFee, uint128(amount), maxDevBps, block.timestamp
-        );
+        // A router rejection must not unwind the caller. Withdrawals pay the unswapped leg in kind and
+        // rebalances retry, so a rejected swap is treated exactly like a skipped one.
+        try swapRouter.swapExactInputSingleStrict(
+            address(tokenIn), tokenOut, poolFee, uint128(amount), maxDevBps, slipBps, block.timestamp
+        ) {
+        } catch {
+            emit SwapFailed(address(tokenIn), amount);
+        }
     }
 
     /// @dev Exits tolerate more drift than rebalances: a skipped rebalance retries, a blocked exit strands a user.
     function _withdrawBandBps() internal view returns (uint256) {
         return maxTwapDeviationBps * WITHDRAW_DEVIATION_MULTIPLE;
+    }
+
+    /// @dev Exit counterpart to `_withdrawBandBps`. Clamped so the widened haircut stays inside the same 10% the
+    ///      base setter enforces, however high an owner has pushed `swapSlippageBps`.
+    function _withdrawSlippageBps() internal view returns (uint256) {
+        uint256 bps = uint256(swapSlippageBps) * WITHDRAW_SLIPPAGE_MULTIPLE;
+        return bps > MAX_WITHDRAW_SLIPPAGE_BPS ? MAX_WITHDRAW_SLIPPAGE_BPS : bps;
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {

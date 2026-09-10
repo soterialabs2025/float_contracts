@@ -40,6 +40,19 @@ contract AutoStrategyManagerSv3 is Ownable {
     /// @notice Withdrawals price against this multiple of `maxTwapDeviationBps` so ordinary volatility cannot
     ///         trap users. Rebalances keep the tighter band because skipping one costs nothing.
     uint256 internal constant WITHDRAW_DEVIATION_MULTIPLE = 3;
+    /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 1%).
+    /// @dev Distinct from `slippageBps`, which bounds LP mint amounts.
+    uint16 public swapSlippageBps = 100;
+    /// @notice Withdrawals widen the floor haircut by this multiple, for the same reason they widen the deviation
+    ///         band: a skipped rebalance retries, a blocked exit strands a user.
+    /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
+    ///      the proceeds straight back to them, so a worse fill is charged to the caller who asked for it rather
+    ///      than to the remaining holders. Pool movement — the part that does touch everyone — stays bounded by
+    ///      the router's TWAP gate, which this does not relax.
+    uint256 internal constant WITHDRAW_SLIPPAGE_MULTIPLE = 3;
+    /// @dev Ceiling on the widened haircut. `setSwapSlippageBps` allows up to 1_000, and an unclamped multiple
+    ///      would reach 30% — past which a floor no longer bounds execution in any useful way.
+    uint256 internal constant MAX_WITHDRAW_SLIPPAGE_BPS = 1_000;
 
     function setProtocolFeeOn(bool on) external onlyOwner {
         protocolFeeOn = on;
@@ -81,6 +94,12 @@ contract AutoStrategyManagerSv3 is Ownable {
         maxTwapDeviationBps = bps;
     }
 
+    /// @notice Set the haircut on TWAP-derived swap floors. Capped so a floor can never be driven to zero.
+    function setSwapSlippageBps(uint16 bps) external onlyOwner {
+        if (bps > 1_000) revert TwapConfig();
+        swapSlippageBps = bps;
+    }
+
     /// @dev Strategy overrides: true after factory package ownership transfer (TBA).
     function _stakingShareBpsEditable() internal view virtual returns (bool) {
         return false;
@@ -116,6 +135,7 @@ contract AutoStrategyManagerSv3 is Ownable {
         stakingShareBpsLocked = false;
         twapSeconds = 30 minutes;
         maxTwapDeviationBps = 300;
+        swapSlippageBps = 100;
     }
 
     /// @notice Set the outer mint band and the inner comfort band together.

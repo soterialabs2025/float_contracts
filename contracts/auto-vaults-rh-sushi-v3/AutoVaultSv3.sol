@@ -185,7 +185,11 @@ contract AutoVaultSv3 is Ownable, ReentrancyGuard, IAutoVaultSv3 {
     function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
         uint256 supply = totalSupply();
         uint256 bal = balanceOf(msg.sender);
-        if (shares == 0 || supply == 0 || shares > bal) revert ZeroValue();
+        if (shares == 0 || supply == 0) revert ZeroValue();
+        // Clamp rather than revert. A caller sizing shares from a supply or NAV that has since moved overshoots its
+        // own balance, and reverting gives it no way to tell that apart from an empty vault: estimation just fails
+        // and no transaction is produced. Nobody can withdraw more than they hold either way.
+        if (shares > bal) shares = bal;
         // Treat near-full personal exits as full exits so wei dust is not left behind.
         if (bal - shares < MIN_SHARE_DUST) shares = bal;
         IAutoStrategySv3.WithdrawToken out =

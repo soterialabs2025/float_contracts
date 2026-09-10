@@ -44,7 +44,17 @@ contract AutoStrategyManagerBv3 is Ownable {
     uint256 internal constant WITHDRAW_DEVIATION_MULTIPLE = 3;
     /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 1%).
     /// @dev Distinct from `slippageBps`, which bounds LP mint amounts.
-    uint16 public swapSlippageBps = 200;
+    uint16 public swapSlippageBps = 100;
+    /// @notice Withdrawals widen the floor haircut by this multiple, for the same reason they widen the deviation
+    ///         band: a skipped rebalance retries, a blocked exit strands a user.
+    /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
+    ///      the proceeds straight back to them, so a worse fill is charged to the caller who asked for it rather
+    ///      than to the remaining holders. Pool movement — the part that does touch everyone — stays bounded by the
+    ///      router's own price-impact check, which this does not relax.
+    uint256 internal constant WITHDRAW_SLIPPAGE_MULTIPLE = 3;
+    /// @dev Ceiling on the widened haircut. `setSwapSlippageBps` allows up to 1_000, and an unclamped multiple
+    ///      would reach 30% — past which a floor no longer bounds execution in any useful way.
+    uint256 internal constant MAX_WITHDRAW_SLIPPAGE_BPS = 1_000;
 
     function setProtocolFeeOn(bool on) external onlyOwner {
         protocolFeeOn = on;

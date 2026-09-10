@@ -21,6 +21,7 @@ interface ISoteriaV3SwapRouter {
         uint24 fee,
         uint128 amountIn,
         uint256 maxDevBps,
+        uint256 slipBps,
         uint256 deadline
     ) external returns (uint256 amountOut);
 }
@@ -174,7 +175,8 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
     /// @notice Swap this contract's full `token` balance to WETH via AutoSwapRouterSv3.
     /// @param fee The Sushi V3 pool fee tier that actually exists for `token`/WETH.
     /// @param maxDevBps How far spot may sit from the pool TWAP (router-derived minOut).
-    function swapTokenToWethV3(address token, uint24 fee, uint256 maxDevBps)
+    /// @param slipBps Haircut on the TWAP-admitted floor, in bps.
+    function swapTokenToWethV3(address token, uint24 fee, uint256 maxDevBps, uint256 slipBps)
         external
         nonReentrant
         onlyOwnerOrOperator
@@ -190,7 +192,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
         IERC20(token).forceApprove(address(v3SwapRouter), amountIn);
         amountOut = v3SwapRouter.swapExactInputSingleStrict(
-            token, address(WETH), fee, uint128(amountIn), maxDevBps, 0
+            token, address(WETH), fee, uint128(amountIn), maxDevBps, slipBps, 0
         );
         emit TokenSwappedToWeth(token, false, amountIn, amountOut);
     }
@@ -222,7 +224,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
     }
 
     /// @notice Wrap any ETH, then swap this contract's full WETH balance to USDG via AutoSwapRouterSv3.
-    function swapEthToUsdcV3(uint24 fee, uint256 maxDevBps)
+    function swapEthToUsdcV3(uint24 fee, uint256 maxDevBps, uint256 slipBps)
         external
         nonReentrant
         onlyOwnerOrOperator
@@ -243,7 +245,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
         IERC20(address(WETH)).forceApprove(address(v3SwapRouter), amountIn);
         amountOut = v3SwapRouter.swapExactInputSingleStrict(
-            address(WETH), address(usdc), fee, uint128(amountIn), maxDevBps, 0
+            address(WETH), address(usdc), fee, uint128(amountIn), maxDevBps, slipBps, 0
         );
         emit EthSwappedToUsdc(amountIn, amountOut);
     }

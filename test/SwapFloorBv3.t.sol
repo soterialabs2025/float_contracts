@@ -231,10 +231,21 @@ contract SwapFloorBv3Test is Test {
         assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 0);
     }
 
-    /// @dev The wider exit band widens what the gate tolerates, not what the floor concedes: at rest the exit
-    ///      floor is identical to the rebalance floor, so a sandwich gains nothing from the looser band.
-    function test_WithdrawFloorIsNoLooserThanRebalanceAtRest() public view {
-        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 987.03 ether);
+    /// @dev The exit path concedes more than a rebalance on purpose: a skipped rebalance retries next block, but a
+    ///      skipped exit swap pays the user in the token they did not ask for. The concession is charged to the
+    ///      withdrawer, whose own pro-rata tokens are the ones being sold.
+    function test_WithdrawFloorConcedesThreeTimesTheRebalanceHaircut() public view {
+        // 1,000 ASSET less the 30 bps pool fee, then the haircut: 1% for rebalances, 3% for exits.
+        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 987.03 ether);
+        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 967.09 ether);
+    }
+
+    /// @dev The multiple is clamped rather than applied without bound. `swapSlippageBps` caps at 1,000, so an
+    ///      unclamped 3x would concede 30% and stop being a floor at all.
+    function test_WithdrawFloorHaircutIsClampedAtTheBaseCap() public {
+        strategy.setSwapSlippageBps(1_000);
+        // 30 bps pool fee, then the 10% clamp instead of 30%, which leaves the exit floor level with rebalances.
+        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 897.3 ether);
         assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), strategy.minOutForSwap(address(asset), AMOUNT));
     }
 

@@ -373,7 +373,8 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
     /// @dev Every epoch pot and owner-cut balance is drawn from one pooled WETH balance, so an accounted
     ///      liability that was never funded would let one epoch's claimants spend another's WETH. The WETH
     ///      branch of `notifyReward` takes the strategy's `amount` on trust; this makes a fabricated or
-    ///      replayed notification revert instead. The strategy soft-catches, so a harvest still settles.
+    ///      replayed notification revert instead. Strategies wrap this in try/catch, so a harvest or
+    ///      withdraw still settles; tokens already transferred here stay for rescue/retry.
     function _assertBacked() internal view {
         if (accountedWeth > weth.balanceOf(address(this))) revert UnbackedReward();
     }

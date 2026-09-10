@@ -25,6 +25,16 @@ contract AutoStrategyManagerBv4 is Ownable {
     /// @notice Tolerance applied to the swap output floor, on top of the pool's own fee.
     /// @dev Separate from `slippageBps` so widening what a swap will accept does not also loosen LP minting.
     uint16 public swapSlippageBps = 100;
+    /// @notice Withdrawals widen the floor haircut by this multiple, because a skipped rebalance retries whereas a
+    ///         skipped exit swap pays the user in the token they did not ask for.
+    /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
+    ///      the proceeds straight back to them, so a worse fill is charged to the caller who asked for it rather
+    ///      than to the remaining holders. Pool movement — the part that does touch everyone — stays bounded by
+    ///      `maxSwapTickDeviation` and the router's price-impact check, neither of which this relaxes.
+    uint256 internal constant WITHDRAW_SLIPPAGE_MULTIPLE = 3;
+    /// @dev Ceiling on the widened haircut. `setSwapSlippageBps` allows up to 1_000, and an unclamped multiple
+    ///      would reach 30% — past which a floor no longer bounds execution in any useful way.
+    uint256 internal constant MAX_WITHDRAW_SLIPPAGE_BPS = 1_000;
     uint256 public minHarvestDelay = 2 hours;
     uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to protocol peel (default 600 = 6%).

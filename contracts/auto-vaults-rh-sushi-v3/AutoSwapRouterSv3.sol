@@ -16,7 +16,7 @@ import "./interfaces/IUniswapV3SwapCallback.sol";
 
 /// @title AutoSwapRouterSv3
 /// @notice Authorized single-hop Sushi V3 swaps via direct `pool.swap` (no RedSnwapper / SwapRouter02).
-/// @dev Caller supplies `minAmountOut`. Floor is TWAP-gated spot; router does not quote.
+/// @dev Caller supplies `maxDevBps` and `slipBps`. Floor is TWAP-gated spot.
 contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -28,8 +28,6 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
 
     IUniswapV3Factory public immutable factory = IUniswapV3Factory(SushiV3Deployments4663.FACTORY);
 
-    /// @notice Haircut on the TWAP-admitted floor, covering liquidity-based price impact and read-to-execute drift.
-    uint16 public strictStrategySlippageBps = 200;
     /// @notice Oracle window used to admit the swap. `0` is rejected rather than treated as "no gate".
     uint32 public twapSeconds = 30 minutes;
     address public strategyFactory;
@@ -50,7 +48,6 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
     event StrategyFactoryUpdated(address indexed factory);
     event StrategyAuthorized(address indexed strategy);
     event StrategyDeauthorized(address indexed strategy);
-    event StrictStrategySlippageUpdated(uint16 bps);
     event TwapSecondsUpdated(uint32 secs);
     event Rescued(address indexed token, address indexed to, uint256 amount);
     event SwapExecuted(
@@ -68,13 +65,6 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
         if (factory_ == address(0)) revert ZeroAddress();
         strategyFactory = factory_;
         emit StrategyFactoryUpdated(factory_);
-    }
-
-    function setStrictStrategySlippageBps(uint16 bps) external onlyOwner {
-        // Capped well below `DIVISOR`: a tolerance approaching 100% is indistinguishable from having no floor.
-        if (bps > 1_000) revert InvalidSlippage();
-        strictStrategySlippageBps = bps;
-        emit StrictStrategySlippageUpdated(bps);
     }
 
     function setTwapSeconds(uint32 secs) external onlyOwner {
@@ -114,6 +104,7 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
         uint24 fee,
         uint128 amountIn,
         uint256 maxDevBps,
+        uint256 slipBps,
         uint256 deadline
     ) external override nonReentrant returns (uint256 amountOut) {
         if (!isAuthorizedStrategy[msg.sender]) revert Unauthorized();
@@ -122,7 +113,7 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
 
         address pool = factory.getPool(tokenIn, tokenOut, fee);
         if (pool == address(0)) revert InvalidPool();
-        uint256 minOut = _minOut(pool, tokenIn, amountIn, fee, maxDevBps);
+        uint256 minOut = _minOut(pool, tokenIn, amountIn, fee, maxDevBps, slipBps);
         if (minOut == 0) revert ZeroAmount();
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
@@ -146,11 +137,12 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
     }
 
     /// @dev TWAP-admitted spot floor. Reverts if unpriceable.
-    function _minOut(address pool, address tokenIn, uint128 amountIn, uint24 fee, uint256 maxDevBps)
+    function _minOut(address pool, address tokenIn, uint128 amountIn, uint24 fee, uint256 maxDevBps, uint256 slipBps)
         internal
         view
         returns (uint256)
     {
+        if (slipBps > 1_000) revert InvalidSlippage();
         bool baseIsToken0 = tokenIn == IUniswapV3PoolMinimal(pool).token0();
         uint160 twapSqrt = _twapSqrt(pool);
         if (twapSqrt == 0) revert OracleUnavailable();
@@ -167,7 +159,7 @@ contract AutoSwapRouterSv3 is IAutoSwapRouterSv3, IUniswapV3SwapCallback, Ownabl
         if (quote == 0) revert ZeroAmount();
         // Fee tiers are hundredths of a bip, so /100 puts `fee` in bps alongside the tolerance.
         uint256 afterPoolFee = Math.mulDiv(quote, DIVISOR - uint256(fee) / 100, DIVISOR);
-        return Math.mulDiv(afterPoolFee, DIVISOR - strictStrategySlippageBps, DIVISOR);
+        return Math.mulDiv(afterPoolFee, DIVISOR - slipBps, DIVISOR);
     }
 
     /// @dev Arithmetic-mean-tick TWAP as sqrtPriceX96. Zero if the oracle cannot serve the window.

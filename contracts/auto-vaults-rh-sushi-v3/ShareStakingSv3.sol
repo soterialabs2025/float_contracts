@@ -27,11 +27,13 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
 
     IERC20 public immutable weth;
     ILiquidSharesSv3 public liquidShares;
-    /// @dev Bands handed to the router's TWAP gate. Automatic conversion keeps the tight band because a refusal
-    ///      is soft — the tokens stay here and `retryAssetRewardSwap` picks them up — while that explicit retry
-    ///      gets the wider one so a prolonged volatile stretch cannot strand rewards.
+    /// @dev Bands and haircuts handed to the router's TWAP gate. Automatic conversion keeps the tight pair because a
+    ///      refusal is soft — the tokens stay here and `retryAssetRewardSwap` picks them up — while that explicit
+    ///      retry gets the wider pair so a prolonged volatile stretch cannot strand rewards.
     uint256 private constant SWAP_MAX_DEV_BPS = 300;
     uint256 private constant RETRY_MAX_DEV_BPS = 900;
+    uint256 private constant SWAP_SLIPPAGE_BPS = 100;
+    uint256 private constant RETRY_SLIPPAGE_BPS = 300;
 
     IAutoSwapRouterSv3 public swapRouter;
     address public strategy;
@@ -347,7 +349,7 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
             if (amount > type(uint128).max) revert ZeroAmount();
             IERC20(token).forceApprove(address(swapRouter), amount);
             try swapRouter.swapExactInputSingleStrict(
-                token, address(weth), poolFee, uint128(amount), SWAP_MAX_DEV_BPS, block.timestamp
+                token, address(weth), poolFee, uint128(amount), SWAP_MAX_DEV_BPS, SWAP_SLIPPAGE_BPS, block.timestamp
             ) returns (uint256 out) {
                 wethAdded = out;
             } catch {
@@ -370,7 +372,8 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
     /// @dev Every epoch pot and owner-cut balance is drawn from one pooled WETH balance, so an accounted
     ///      liability that was never funded would let one epoch's claimants spend another's WETH. The WETH
     ///      branch of `notifyReward` takes the strategy's `amount` on trust; this makes a fabricated or
-    ///      replayed notification revert instead. The strategy soft-catches, so a harvest still settles.
+    ///      replayed notification revert instead. Strategies wrap this in try/catch, so a harvest or
+    ///      withdraw still settles; tokens already transferred here stay for rescue/retry.
     function _assertBacked() internal view {
         if (accountedWeth > weth.balanceOf(address(this))) revert UnbackedReward();
     }
@@ -438,7 +441,7 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
         _advanceGlobalTo(block.timestamp);
         IERC20(asset).forceApprove(address(swapRouter), amount);
         uint256 wethAdded = swapRouter.swapExactInputSingleStrict(
-            asset, address(weth), poolFee, uint128(amount), RETRY_MAX_DEV_BPS, block.timestamp
+            asset, address(weth), poolFee, uint128(amount), RETRY_MAX_DEV_BPS, RETRY_SLIPPAGE_BPS, block.timestamp
         );
         IERC20(asset).forceApprove(address(swapRouter), 0);
         if (wethAdded == 0) revert ZeroAmount();
