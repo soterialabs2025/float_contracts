@@ -154,6 +154,10 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         return ownershipLocked;
     }
 
+    function _isOperator() internal view override returns (bool) {
+        return operatorRegistry.isOperator(msg.sender);
+    }
+
     /// @dev Split protocol fee: stakingShareBps → ShareStakingRhV3, rest → feeManager.
     function _routeProtocolFee(address token, uint256 amount) internal {
         if (amount == 0) return;
@@ -286,6 +290,8 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
             return;
         }
 
+        // Fees into idle first so they pay pro-rata. H001 delta is then principal-only.
+        if (liqPos.positionId != 0) _collectAllFees(true);
         uint256 idleAssetBefore = _asset.balanceOf(address(this));
         uint256 idleWethBefore = WETH.balanceOf(address(this));
         // Share of liquidity units — avoids spot-priced LP exit sizing (H001).

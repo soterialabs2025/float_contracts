@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {V4Deployments8453} from "../contracts/v4/V4Deployments8453.sol";
 import {TickMath} from "../contracts/v4/libraries/TickMath.sol";
 import {AutoStrategyBv4} from "../contracts/auto-vault-base-v4/AutoStrategyBv4.sol";
+import {AutoStrategyManagerBv4} from "../contracts/auto-vault-base-v4/AutoStrategyManagerBv4.sol";
 import {LiquidityLibraryV4} from "../contracts/auto-vault-base-v4/libraries/LiquidityLibraryV4.sol";
 import {IAutoSwapRouterBv4} from "../contracts/auto-vault-base-v4/interfaces/IAutoSwapRouterBv4.sol";
 
@@ -23,8 +24,14 @@ contract HarvestPermit2 {
 }
 
 contract HarvestRegistry {
-    function isOperator(address) external pure returns (bool) {
-        return false;
+    mapping(address => bool) public operators;
+
+    function setOperator(address account, bool allowed) external {
+        operators[account] = allowed;
+    }
+
+    function isOperator(address account) external view returns (bool) {
+        return operators[account];
     }
 }
 
@@ -145,6 +152,8 @@ contract HarvestNoSwapBv4Test is Test {
     address internal constant WETH_ADDR = V4Deployments8453.WETH;
 
     address internal constant KEEPER = address(0xC0FFEE);
+    address internal constant OPERATOR = address(0x0B07);
+    address internal constant STRANGER = address(0xBADD);
     address internal constant REGISTRY = address(0xDECAF);
     address internal constant STAKING = address(0xA6);
     address internal constant FEE_MANAGER = address(0xA5);
@@ -364,5 +373,28 @@ contract HarvestNoSwapBv4Test is Test {
 
         assertTrue(acted);
         assertGt(posm.getPositionLiquidity(SECOND_POSITION), 0, "reminted leftover idle");
+    }
+
+    function test_OperatorCanSetBandParams() public {
+        HarvestRegistry(REGISTRY).setOperator(OPERATOR, true);
+        vm.prank(OPERATOR);
+        s.setBandParams(1_200, 1_200, 800, 800);
+        assertEq(s.rangeBelowTicks(), 1_200);
+        assertEq(s.rangeAboveTicks(), 1_200);
+        assertEq(s.innerBelowTicks(), 800);
+        assertEq(s.innerAboveTicks(), 800);
+    }
+
+    function test_OwnerCannotSetBandParamsUnlessOperator() public {
+        vm.expectRevert(AutoStrategyManagerBv4.NotOperator.selector);
+        s.setBandParams(1_200, 1_200, 800, 800);
+        assertEq(s.rangeBelowTicks(), 1_000);
+    }
+
+    function test_StrangerCannotSetBandParams() public {
+        vm.prank(STRANGER);
+        vm.expectRevert(AutoStrategyManagerBv4.NotOperator.selector);
+        s.setBandParams(1_200, 1_200, 800, 800);
+        assertEq(s.rangeBelowTicks(), 1_000);
     }
 }

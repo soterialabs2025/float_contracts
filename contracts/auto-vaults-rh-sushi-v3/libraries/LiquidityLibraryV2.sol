@@ -447,7 +447,7 @@ library LiquidityLibraryV2 {
     }
 
     function decreaseAllLiquidity(PositionState storage ps, DecreaseContext memory ctx)
-        internal
+        public
         returns (uint128 totalRemoved)
     {
         if (ps.positionId == 0) return 0;
@@ -471,7 +471,7 @@ library LiquidityLibraryV2 {
     }
 
     function decreaseLiquidityByAmount(PositionState storage ps, DecreaseContext memory ctx, uint128 liqToRemove)
-        internal
+        public
         returns (uint128 removed)
     {
         if (ps.positionId == 0) return 0;

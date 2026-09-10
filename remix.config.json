@@ -5,18 +5,17 @@
       "viaIR": true,
       "evmVersion": "cancun",
       "metadata": {
-    "bytecodeHash": "none",
-    "appendCBOR": false
-    },
+        "bytecodeHash": "none",
+        "appendCBOR": false
+      },
+      "debug": {
+        "revertStrings": "strip"
+      },
       "optimizer": {
         "enabled": true,
         "runs": 1
       },
-      "libraries": {
-        "contracts/auto-vaults-base-v3/libraries/LiquidityLibraryV2.sol": {
-          "LiquidityLibraryV2": "0x91a83368242726efDc8BB1a85EB9ff9765B7B81C"
-        }
-      },
+      "libraries": {},
       "outputSelection": {
         "*": {
           "": ["ast"],
@@ -44,7 +43,8 @@
         "@uniswap/universal-router/=lib/universal-router/",
         "@uniswap/v3-periphery/=lib/universal-router/lib/v3-periphery/",
         "permit2/=lib/v4-periphery/lib/permit2/",
-        "solmate/=lib/v4-core/lib/solmate/"
+        "solmate/=lib/v4-core/lib/solmate/",
+        "interfaces/=interfaces/"
       ]
     }
   }

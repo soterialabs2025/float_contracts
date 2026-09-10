@@ -12,6 +12,6 @@ library V3Deployments8453 {
     address internal constant QUOTER_V2 = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a;
 
     /// @dev Reused from live Base AutoVault / UFloat infra (ADDRESSES_2.md).
-    address internal constant OPERATOR_REGISTRY = 0xa53f7e8278f3ADCd975B9671b91744BB4CA407d8;
-    address internal constant FEE_MANAGER = 0x9f6e579117BeAd116E25CfeC43e319637DE0bCEe;
+    address internal constant OPERATOR_REGISTRY = 0x3c5069abC3597F498A722e88c2281A03FE0F6eab;
+    address internal constant FEE_MANAGER = 0x7f7Df77862c2f09CF1Be5f08aA14D4c7B8465861;
 }

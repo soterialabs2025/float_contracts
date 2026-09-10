@@ -73,12 +73,14 @@ contract AutoStrategyManagerRhV4 is Ownable {
     }
 
     /// @notice Set reserve peel bps. No cap — `> DIVISOR` peels all deployable (no LP mint).
-    function setReserveBps(uint256 bps) external onlyOwner {
+    function setReserveBps(uint256 bps) external {
+        if (!_isOperator()) revert NotOperator();
         reserveBps = bps;
     }
 
     /// @notice Set ASSET inventory target bps. No cap — `0` = all WETH, `> DIVISOR` = all ASSET.
-    function setTargetAssetBps(uint256 bps) external onlyOwner {
+    function setTargetAssetBps(uint256 bps) external {
+        if (!_isOperator()) revert NotOperator();
         targetAssetBps = bps;
     }
 
@@ -120,6 +122,11 @@ contract AutoStrategyManagerRhV4 is Ownable {
         return false;
     }
 
+    function _isOperator() internal view virtual returns (bool) {
+        return false;
+    }
+
+    error NotOperator();
     error StakingShareBps();
     error SwapSlippageBps();
     error RefConfig();
@@ -172,13 +179,14 @@ contract AutoStrategyManagerRhV4 is Ownable {
     /// @dev One call rather than two because the four values are only meaningful relative to each other. Setting
     ///      them separately required every intermediate state to be valid as well, so widening had to be applied
     ///      outer-first and tightening inner-first or the second call reverted. Validating all four at once
-    ///      removes that ordering constraint, and lets a keeper move a band atomically.
+    ///      removes that ordering constraint, and lets an operator move a band atomically.
     function setBandParams(
         uint256 _rangeBelowTicks,
         uint256 _rangeAboveTicks,
         uint256 _innerBelowTicks,
         uint256 _innerAboveTicks
-    ) external onlyOwner {
+    ) external {
+        if (!_isOperator()) revert NotOperator();
         if (tickSpacing == 0) tickSpacing = _spacing();
         TrailingFloorLib.requireSpacedTicks(_rangeBelowTicks, tickSpacing);
         TrailingFloorLib.requireSpacedTicks(_rangeAboveTicks, tickSpacing);

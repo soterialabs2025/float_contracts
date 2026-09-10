@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "../auto-vaults-base-v3/V3Deployments8453.sol";
+import "./V3Deployments8453.sol";
 
 interface IWETH is IERC20 {
     function deposit() external payable;
@@ -29,7 +29,7 @@ interface ISwapRouterV3 {
 }
 
 /// @dev AutoSwapRouterBv4 layout. Authorize this fee manager on that router after `setV4SwapRouter`.
-interface ISoteriaV4SwapRouter {
+interface IFeeManagerBaseV4SwapRouter {
     struct AutoPoolKey {
         address currency0;
         address currency1;
@@ -48,15 +48,18 @@ interface ISoteriaV4SwapRouter {
     ) external returns (uint256 amountOut);
 }
 
-/// @title SoteriaFeeManager
-/// @notice Float-stack fee manager. AutoVault Bv3/Bv4 prod uses `FeeManagerBase` instead.
-contract SoteriaFeeManager is Ownable, ReentrancyGuard {
+/// @title FeeManagerBase
+/// @notice Shared Base Uni fee manager for Bv3 and Bv4.
+/// @dev V3 uses SwapRouter02 with a per-call fee + minOut. V4 uses AutoSwapRouterBv4 (authorize this contract).
+contract FeeManagerBase is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IWETH public immutable WETH = IWETH(V3Deployments8453.WETH);
 
+    address internal constant DEFAULT_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+
     ISwapRouterV3 public v3SwapRouter;
-    ISoteriaV4SwapRouter public v4SwapRouter;
+    IFeeManagerBaseV4SwapRouter public v4SwapRouter;
     address public soteriaTreasury;
     address public soteriaRewards;
     address public soteriaPartner;
@@ -88,13 +91,13 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
     }
 
     constructor(address initialOperator) Ownable(msg.sender) {
-        usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+        usdc = IERC20(DEFAULT_USDC);
         v3SwapRouter = ISwapRouterV3(V3Deployments8453.SWAP_ROUTER02);
         if (initialOperator != address(0)) {
             operators[initialOperator] = true;
             emit OperatorUpdated(initialOperator, true);
         }
-        emit ConfigUpdated("usdc", address(usdc));
+        emit ConfigUpdated("usdc", DEFAULT_USDC);
         emit ConfigUpdated("v3SwapRouter", V3Deployments8453.SWAP_ROUTER02);
     }
 
@@ -121,7 +124,7 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
 
     function setV4SwapRouter(address router) external onlyOwner {
         if (router == address(0)) revert ZeroAddress();
-        v4SwapRouter = ISoteriaV4SwapRouter(router);
+        v4SwapRouter = IFeeManagerBaseV4SwapRouter(router);
         emit ConfigUpdated("v4SwapRouter", router);
     }
 
@@ -205,7 +208,7 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
         address token,
         uint128 minOut,
         uint256 deadline,
-        ISoteriaV4SwapRouter.AutoPoolKey calldata key,
+        IFeeManagerBaseV4SwapRouter.AutoPoolKey calldata key,
         bytes calldata hookData
     ) external nonReentrant onlyOwnerOrOperator returns (uint256 amountOut) {
         if (token == address(0) || token == address(WETH)) revert InvalidToken();
@@ -260,7 +263,7 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
         emit EthSwappedToUsdc(amountIn, amountOut);
     }
 
-    function _v4ZeroForOne(address token, ISoteriaV4SwapRouter.AutoPoolKey calldata key)
+    function _v4ZeroForOne(address token, IFeeManagerBaseV4SwapRouter.AutoPoolKey calldata key)
         internal
         view
         returns (bool)

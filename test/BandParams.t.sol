@@ -27,6 +27,36 @@ interface IBandParams {
     function innerAboveTicks() external view returns (uint256);
 }
 
+contract OpenBandBv4 is AutoStrategyManagerBv4 {
+    function _isOperator() internal view override returns (bool) {
+        return true;
+    }
+}
+
+contract OpenBandRhV4 is AutoStrategyManagerRhV4 {
+    function _isOperator() internal view override returns (bool) {
+        return true;
+    }
+}
+
+contract OpenBandBv3 is AutoStrategyManagerBv3 {
+    function _isOperator() internal view override returns (bool) {
+        return true;
+    }
+}
+
+contract OpenBandRhV3 is AutoStrategyManagerRhV3 {
+    function _isOperator() internal view override returns (bool) {
+        return true;
+    }
+}
+
+contract OpenBandSv3 is AutoStrategyManagerSv3 {
+    function _isOperator() internal view override returns (bool) {
+        return true;
+    }
+}
+
 /// @notice Cover for `setBandParams`, the single setter that replaced `setRangeParams` + `setInnerBandParams`.
 /// @dev Run against all five managers rather than one, because the band setter is the piece a keeper drives on a
 ///      schedule and the five copies are maintained by hand. A test that only pinned Bv4 would let the other four
@@ -38,11 +68,11 @@ contract BandParamsTest is Test {
     string[5] internal names;
 
     function setUp() public {
-        managers[0] = IBandParams(address(new AutoStrategyManagerBv4()));
-        managers[1] = IBandParams(address(new AutoStrategyManagerRhV4()));
-        managers[2] = IBandParams(address(new AutoStrategyManagerBv3()));
-        managers[3] = IBandParams(address(new AutoStrategyManagerRhV3()));
-        managers[4] = IBandParams(address(new AutoStrategyManagerSv3()));
+        managers[0] = IBandParams(address(new OpenBandBv4()));
+        managers[1] = IBandParams(address(new OpenBandRhV4()));
+        managers[2] = IBandParams(address(new OpenBandBv3()));
+        managers[3] = IBandParams(address(new OpenBandRhV3()));
+        managers[4] = IBandParams(address(new OpenBandSv3()));
         names = ["Bv4", "RhV4", "Bv3", "RhV3", "Sv3"];
     }
 
@@ -160,16 +190,18 @@ contract BandParamsTest is Test {
         }
     }
 
-    function test_RevertsForNonOwner() public {
-        for (uint256 i = 0; i < managers.length; i++) {
-            uint256 sp = _sp(i);
-            _seed(i);
+    function test_RevertsWhenNotOperator() public {
+        IBandParams[5] memory raw;
+        raw[0] = IBandParams(address(new AutoStrategyManagerBv4()));
+        raw[1] = IBandParams(address(new AutoStrategyManagerRhV4()));
+        raw[2] = IBandParams(address(new AutoStrategyManagerBv3()));
+        raw[3] = IBandParams(address(new AutoStrategyManagerRhV3()));
+        raw[4] = IBandParams(address(new AutoStrategyManagerSv3()));
 
-            vm.prank(STRANGER);
-            vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, STRANGER));
-            managers[i].setBandParams(2 * sp, 2 * sp, 1 * sp, 1 * sp);
-
-            _assertBands(i, 4 * sp, 4 * sp, 3 * sp, 3 * sp);
+        for (uint256 i = 0; i < raw.length; i++) {
+            uint256 sp = uint256(uint24(raw[i].tickSpacing()));
+            vm.expectRevert(AutoStrategyManagerBv4.NotOperator.selector);
+            raw[i].setBandParams(4 * sp, 4 * sp, 3 * sp, 3 * sp);
         }
     }
 

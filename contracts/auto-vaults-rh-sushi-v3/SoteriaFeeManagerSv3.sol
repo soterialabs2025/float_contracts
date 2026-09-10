@@ -13,31 +13,42 @@ interface IWETH is IERC20 {
     function withdraw(uint256) external;
 }
 
-/// @dev Uniswap V3 SwapRouter02-style exactInputSingle (no deadline field).
-interface ISwapRouterV3 {
-    struct ExactInputSingleParams {
-        address tokenIn;
-        address tokenOut;
-        uint24 fee;
-        address recipient;
-        uint256 amountIn;
-        uint256 amountOutMinimum;
-        uint160 sqrtPriceLimitX96;
-    }
-
-    function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut);
+/// @dev AutoSwapRouterSv3. Authorize this fee manager after `setV3SwapRouter`.
+interface ISoteriaV3SwapRouter {
+    function swapExactInputSingleStrict(
+        address tokenIn,
+        address tokenOut,
+        uint24 fee,
+        uint128 amountIn,
+        uint256 maxDevBps,
+        uint256 deadline
+    ) external returns (uint256 amountOut);
 }
 
-/// @dev Settable V4 router the fee manager is authorized on (wire separately).
+/// @dev AutoSwapRouterRhV4 layout. Authorize this fee manager on that router after `setV4SwapRouter`.
 interface ISoteriaV4SwapRouter {
-    function swapExactInputSingleStrict(address tokenIn, bool zeroForOne, uint128 amountIn)
-        external
-        returns (uint256 amountOut);
+    struct AutoPoolKey {
+        address currency0;
+        address currency1;
+        uint24 fee;
+        int24 tickSpacing;
+        address hooks;
+    }
+
+    function swapExactInputSingleStrict(
+        bool zeroForOne,
+        uint128 amountIn,
+        uint128 minAmountOut,
+        uint256 deadline,
+        AutoPoolKey calldata key,
+        bytes calldata hookData
+    ) external payable returns (uint256 amountOut);
 }
 
 /// @title SoteriaFeeManagerSv3
-/// @notice Robinhood Chain (4663) fee manager: receives protocol fee tokens/ETH, swaps to WETH/USDG, forwards to treasury or partner.
+/// @notice Robinhood Chain (4663) Sushi fee manager: receives protocol fee tokens/ETH, swaps to WETH/USDG, forwards to treasury or partner.
 /// @dev WETH = aeWETH. The `usdc` slot defaults to USDG (6 decimals) on RH; rename kept for Base API parity.
+///      V3 uses AutoSwapRouterSv3 (no SwapRouter02). V4 uses AutoSwapRouterRhV4. Authorize this contract on each.
 contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -47,18 +58,18 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
     /// @dev Robinhood USDG (6 decimals). Kept as `usdc` for API parity with Base SoteriaFeeManager.
     address internal constant DEFAULT_USDG = 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168;
 
-    ISwapRouterV3 public v3SwapRouter;
+    ISoteriaV3SwapRouter public v3SwapRouter;
     ISoteriaV4SwapRouter public v4SwapRouter;
     address public soteriaTreasury;
     address public soteriaRewards;
     address public soteriaPartner;
     IERC20 public usdc;
-    uint24 public v3DefaultFee = 10000;
 
     mapping(address => bool) public operators;
 
     error ZeroAddress();
     error ZeroAmount();
+    error ZeroMinOut();
     error Unauthorized();
     error InvalidToken();
     error RouterNotSet();
@@ -67,7 +78,6 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
     event OperatorUpdated(address indexed account, bool allowed);
     event ConfigUpdated(bytes32 indexed key, address value);
-    event V3FeeUpdated(uint24 fee);
     event EthSaved(uint256 amount);
     event TokenSwappedToWeth(address indexed token, bool indexed usedV4, uint256 amountIn, uint256 amountOut);
     event EthSwappedToUsdc(uint256 amountIn, uint256 amountOut);
@@ -82,8 +92,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
     constructor(address initialOperator) Ownable(msg.sender) {
         usdc = IERC20(DEFAULT_USDG);
-        // No Sushi SwapRouter02 on RH — set via setV3SwapRouter (e.g. AutoSwapRouterSv3 + auth) when needed.
-        v3SwapRouter = ISwapRouterV3(address(0));
+        // No Sushi SwapRouter02 on RH — set via setV3SwapRouter(AutoSwapRouterSv3) then authorize this contract.
         if (initialOperator != address(0)) {
             operators[initialOperator] = true;
             emit OperatorUpdated(initialOperator, true);
@@ -109,7 +118,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
     function setV3SwapRouter(address router) external onlyOwner {
         if (router == address(0)) revert ZeroAddress();
-        v3SwapRouter = ISwapRouterV3(router);
+        v3SwapRouter = ISoteriaV3SwapRouter(router);
         emit ConfigUpdated("v3SwapRouter", router);
     }
 
@@ -144,12 +153,6 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
         emit ConfigUpdated("usdc", usdc_);
     }
 
-    function setV3DefaultFee(uint24 fee) external onlyOwner {
-        if (fee == 0) revert ZeroAmount();
-        v3DefaultFee = fee;
-        emit V3FeeUpdated(fee);
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // ETH
     // ─────────────────────────────────────────────────────────────────────────
@@ -168,51 +171,66 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
     // Swaps (full balances)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Swap this contract's full `token` balance to WETH via the V3 router.
-    function swapTokenToWethV3(address token) external nonReentrant onlyOwnerOrOperator returns (uint256 amountOut) {
+    /// @notice Swap this contract's full `token` balance to WETH via AutoSwapRouterSv3.
+    /// @param fee The Sushi V3 pool fee tier that actually exists for `token`/WETH.
+    /// @param maxDevBps How far spot may sit from the pool TWAP (router-derived minOut).
+    function swapTokenToWethV3(address token, uint24 fee, uint256 maxDevBps)
+        external
+        nonReentrant
+        onlyOwnerOrOperator
+        returns (uint256 amountOut)
+    {
         if (token == address(0) || token == address(WETH)) revert InvalidToken();
         if (address(v3SwapRouter) == address(0)) revert RouterNotSet();
-
-        uint256 amountIn = IERC20(token).balanceOf(address(this));
-        if (amountIn == 0) revert ZeroAmount();
-
-        IERC20(token).forceApprove(address(v3SwapRouter), amountIn);
-        amountOut = v3SwapRouter.exactInputSingle(
-            ISwapRouterV3.ExactInputSingleParams({
-                tokenIn: token,
-                tokenOut: address(WETH),
-                fee: v3DefaultFee,
-                recipient: address(this),
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            })
-        );
-        emit TokenSwappedToWeth(token, false, amountIn, amountOut);
-    }
-
-    /// @notice Swap this contract's full `token` balance to WETH via the settable V4 router.
-    function swapTokenToWethV4(address token) external nonReentrant onlyOwnerOrOperator returns (uint256 amountOut) {
-        if (token == address(0) || token == address(WETH)) revert InvalidToken();
-        if (address(v4SwapRouter) == address(0)) revert RouterNotSet();
+        if (fee == 0) revert ZeroAmount();
 
         uint256 amountIn = IERC20(token).balanceOf(address(this));
         if (amountIn == 0) revert ZeroAmount();
         if (amountIn > type(uint128).max) revert AmountTooLarge();
 
-        // Pool ordering: currency0 < currency1. Selling token for WETH:
-        // token < WETH ⇒ token is currency0 ⇒ zeroForOne = true.
-        bool zeroForOne = uint160(token) < uint160(address(WETH));
+        IERC20(token).forceApprove(address(v3SwapRouter), amountIn);
+        amountOut = v3SwapRouter.swapExactInputSingleStrict(
+            token, address(WETH), fee, uint128(amountIn), maxDevBps, 0
+        );
+        emit TokenSwappedToWeth(token, false, amountIn, amountOut);
+    }
+
+    /// @notice Swap this contract's full `token` balance to WETH via AutoSwapRouterRhV4.
+    /// @dev `key` must be the token/WETH pool. Authorize this contract on the router first.
+    function swapTokenToWethV4(
+        address token,
+        uint128 minOut,
+        uint256 deadline,
+        ISoteriaV4SwapRouter.AutoPoolKey calldata key,
+        bytes calldata hookData
+    ) external nonReentrant onlyOwnerOrOperator returns (uint256 amountOut) {
+        if (token == address(0) || token == address(WETH)) revert InvalidToken();
+        if (address(v4SwapRouter) == address(0)) revert RouterNotSet();
+        if (minOut == 0) revert ZeroMinOut();
+
+        uint256 amountIn = IERC20(token).balanceOf(address(this));
+        if (amountIn == 0) revert ZeroAmount();
+        if (amountIn > type(uint128).max) revert AmountTooLarge();
+
+        bool zeroForOne = _v4ZeroForOne(token, key);
 
         IERC20(token).forceApprove(address(v4SwapRouter), amountIn);
-        amountOut = v4SwapRouter.swapExactInputSingleStrict(token, zeroForOne, uint128(amountIn));
+        amountOut = v4SwapRouter.swapExactInputSingleStrict(
+            zeroForOne, uint128(amountIn), minOut, deadline, key, hookData
+        );
         emit TokenSwappedToWeth(token, true, amountIn, amountOut);
     }
 
-    /// @notice Wrap any ETH, then swap this contract's full WETH balance to USDG (or configured stable) via V3.
-    function swapEthToUsdcV3() external nonReentrant onlyOwnerOrOperator returns (uint256 amountOut) {
+    /// @notice Wrap any ETH, then swap this contract's full WETH balance to USDG via AutoSwapRouterSv3.
+    function swapEthToUsdcV3(uint24 fee, uint256 maxDevBps)
+        external
+        nonReentrant
+        onlyOwnerOrOperator
+        returns (uint256 amountOut)
+    {
         if (address(v3SwapRouter) == address(0)) revert RouterNotSet();
         if (address(usdc) == address(0)) revert ZeroAddress();
+        if (fee == 0) revert ZeroAmount();
 
         uint256 ethBal = address(this).balance;
         if (ethBal > 0) {
@@ -221,20 +239,24 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
         uint256 amountIn = WETH.balanceOf(address(this));
         if (amountIn == 0) revert ZeroAmount();
+        if (amountIn > type(uint128).max) revert AmountTooLarge();
 
         IERC20(address(WETH)).forceApprove(address(v3SwapRouter), amountIn);
-        amountOut = v3SwapRouter.exactInputSingle(
-            ISwapRouterV3.ExactInputSingleParams({
-                tokenIn: address(WETH),
-                tokenOut: address(usdc),
-                fee: v3DefaultFee,
-                recipient: address(this),
-                amountIn: amountIn,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            })
+        amountOut = v3SwapRouter.swapExactInputSingleStrict(
+            address(WETH), address(usdc), fee, uint128(amountIn), maxDevBps, 0
         );
         emit EthSwappedToUsdc(amountIn, amountOut);
+    }
+
+    function _v4ZeroForOne(address token, ISoteriaV4SwapRouter.AutoPoolKey calldata key)
+        internal
+        view
+        returns (bool)
+    {
+        address weth = address(WETH);
+        if (key.currency0 == token && key.currency1 == weth) return true;
+        if (key.currency0 == weth && key.currency1 == token) return false;
+        revert InvalidToken();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
