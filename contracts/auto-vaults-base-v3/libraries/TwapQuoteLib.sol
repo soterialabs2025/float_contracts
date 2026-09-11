@@ -36,8 +36,8 @@ library TwapQuoteLib {
         return price1e18FromSqrt(sqrtP, pool.token0() == weth);
     }
 
-    /// @dev Arithmetic mean tick TWAP via pool `observe`. Returns 0 if disabled or cardinality insufficient.
-    function twapPrice1e18(IUniswapV3PoolMinimal pool, address weth, uint32 period) public view returns (uint256) {
+    /// @dev Arithmetic-mean tick TWAP via pool `observe`. Returns 0 if disabled or cardinality insufficient.
+    function twapSqrtX96(IUniswapV3PoolMinimal pool, uint32 period) public view returns (uint160) {
         if (period == 0) return 0;
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = period;
@@ -47,21 +47,29 @@ library TwapQuoteLib {
             int56 periodI = int56(uint56(period));
             int24 meanTick = int24(delta / periodI);
             if (delta < 0 && (delta % periodI != 0)) meanTick--;
-            return price1e18FromSqrt(TickMath.getSqrtRatioAtTick(meanTick), pool.token0() == weth);
+            return TickMath.getSqrtRatioAtTick(meanTick);
         } catch {
             return 0;
         }
     }
 
-    /// @dev TWAP and spot, or `(0, 0)` if unreadable or spot is outside `maxDevBps` of TWAP.
+    /// @dev ASSET per WETH in 1e18 at the TWAP tick.
+    function twapPrice1e18(IUniswapV3PoolMinimal pool, address weth, uint32 period) public view returns (uint256) {
+        uint160 sqrtP = twapSqrtX96(pool, period);
+        if (sqrtP == 0) return 0;
+        return price1e18FromSqrt(sqrtP, pool.token0() == weth);
+    }
+
+    /// @dev TWAP price and TWAP sqrt, or `(0, 0)` if unreadable or spot is outside `maxDevBps` of TWAP.
     function bandPrices(IUniswapV3PoolMinimal pool, address weth, uint32 period, uint256 maxDevBps)
         public
         view
-        returns (uint256 twap, uint160 spotSqrt)
+        returns (uint256 twap, uint160 twapSqrt)
     {
-        twap = twapPrice1e18(pool, weth, period);
-        if (twap == 0) return (0, 0);
-        (spotSqrt,,,,,,) = pool.slot0();
+        twapSqrt = twapSqrtX96(pool, period);
+        if (twapSqrt == 0) return (0, 0);
+        twap = price1e18FromSqrt(twapSqrt, pool.token0() == weth);
+        (uint160 spotSqrt,,,,,,) = pool.slot0();
         uint256 spot = quoteAtSqrt(spotSqrt, 1e18, pool.token0() == weth);
         if (spot == 0) return (0, 0);
         uint256 hi = spot > twap ? spot : twap;
@@ -69,7 +77,7 @@ library TwapQuoteLib {
         if (Math.mulDiv(hi - lo, DIVISOR, twap) > maxDevBps) return (0, 0);
     }
 
-    /// @dev `0` if the oracle is unusable or spot is outside `maxDevBps`. Floor is quote after `poolFee`, then `slipBps`.
+    /// @dev `0` if the oracle is unusable or spot is outside `maxDevBps`. Floor is TWAP quote after `poolFee`, then `slipBps`.
     function minOutAtBand(
         IUniswapV3PoolMinimal pool,
         address weth,
@@ -80,9 +88,9 @@ library TwapQuoteLib {
         uint256 slipBps,
         uint32 period
     ) public view returns (uint256) {
-        (, uint160 spotSqrt) = bandPrices(pool, weth, period, maxDevBps);
-        if (spotSqrt == 0) return 0;
-        uint256 quote = quoteAtSqrt(spotSqrt, amount, tokenIn == pool.token0());
+        (, uint160 twapSqrt) = bandPrices(pool, weth, period, maxDevBps);
+        if (twapSqrt == 0) return 0;
+        uint256 quote = quoteAtSqrt(twapSqrt, amount, tokenIn == pool.token0());
         if (quote == 0) return 0;
         // Fee tiers are hundredths of a bip, so /100 puts `poolFee` in bps alongside the tolerance.
         uint256 afterPoolFee = Math.mulDiv(quote, DIVISOR - uint256(poolFee) / 100, DIVISOR);

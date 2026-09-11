@@ -25,11 +25,12 @@ library SwapGateLib {
     }
 
     /// @notice Ticks the pool may sit from the anchor before swaps are refused, widening with the anchor's age.
-    /// @dev The widening is what stops a deadlock. On a large sustained move a fixed bound refuses the
-    ///      rebalancing swap, the one-sided mint that follows yields no liquidity, and since the anchor is only
-    ///      rewritten by a successful mint the refusal repeats indefinitely.
+    /// @dev Widens up to `2 * maxDeviation` (the 1-day value). A neglected feed stays bounded; `refreshPriceRef`
+    ///      is how a large genuine move is absorbed rather than opening the gate without limit.
     function allowedTickDeviation(uint256 maxDeviation, uint256 anchorAge) public pure returns (uint256) {
-        return maxDeviation + (maxDeviation * anchorAge) / 1 days;
+        uint256 allowed = maxDeviation + (maxDeviation * anchorAge) / 1 days;
+        uint256 cap = maxDeviation * 2;
+        return allowed > cap ? cap : allowed;
     }
 
     /// @notice Amount of the opposite currency for `amount` of the base side at `sqrtRatioX96`.
@@ -150,6 +151,8 @@ library SwapGateLib {
             int256 dev = int256(poolTick) - int256(anchor.tick);
             if (dev < 0) dev = -dev;
             if (uint256(dev) > allowedTickDeviation(maxDeviation, block.timestamp - anchor.time)) return 0;
+            // Floor at the last keeper write, not slot0. Spot is what a sandwich just moved.
+            sqrtPriceX96 = TickMath.getSqrtRatioAtTick(anchor.tick);
         }
         // `tokenIn` is currency0 exactly when its WETH-ness matches WETH's position in the pair.
         uint256 quote = quoteAtSqrt(sqrtPriceX96, amount, tokenInIsWeth == wethIsCurrency0);
