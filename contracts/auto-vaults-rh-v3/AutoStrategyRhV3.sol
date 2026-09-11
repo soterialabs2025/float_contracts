@@ -255,11 +255,14 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
     function harvestBoolean(bool skipIncreaseLiquidity) external override nonReentrant returns (uint256) {
         _onlyKeeper();
         if (liqPos.positionId == 0) return poolValue();
+        if (
+            !skipIncreaseLiquidity
+                && minHarvestDelay > 0
+                && lastHarvest != 0
+                && block.timestamp - lastHarvest < minHarvestDelay
+        ) return poolValue();
         (,, uint256 valueInWeth) = _collectAllFees(true);
         if (skipIncreaseLiquidity) return poolValue();
-        if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
-            return poolValue();
-        }
         if (valueInWeth == 0) return poolValue();
         // Increase at the band ratio. Do not `_balanceTokens`.
         _increaseLiquidityInternal();

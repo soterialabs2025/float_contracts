@@ -50,6 +50,7 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
     error NotBootstrapped();
     error OwnershipIsLocked();
     error FirstMintOwnerOnly();
+    error TwapUnavailable();
 
     /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
     constructor(address factory_) Ownable(msg.sender) {
@@ -143,8 +144,12 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
         // Collect fees before pricing so they accrue to the pre-mint supply.
         strategy.syncFees();
         uint256 navBefore = balance();
-        // Pre-deposit ungated TWAP. After `strategy.deposit` the TWAP includes `amount`.
-        uint256 navTwap = strategy.poolValueTwapRaw();
+        // Later mints: gated TWAP (same 300 bps band as remint). After `strategy.deposit` the TWAP includes `amount`.
+        uint256 navTwap;
+        if (supply != 0) {
+            navTwap = strategy.poolValueTwap();
+            if (navTwap == 0) revert TwapUnavailable();
+        }
         IERC20(address(weth)).forceApprove(address(strategy), amount);
         strategy.deposit(amount);
         uint256 navAfter = balance();
@@ -159,7 +164,7 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
         emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
-    /// @dev Owner seeds 1:1. Later min(spot, ungated TWAP); high-water only if TWAP is unreadable.
+    /// @dev Owner seeds 1:1. Later min(spot, gated TWAP); high-water only if TWAP is unreadable.
     function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navTwap)
         internal
         view

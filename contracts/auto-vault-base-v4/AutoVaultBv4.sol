@@ -46,6 +46,7 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
     error AlreadyBootstrapped();
     error NotBootstrapped();
     error OwnershipIsLocked();
+    error RefUnavailable();
 
     /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
     constructor(address factory_) Ownable(msg.sender) {
@@ -139,8 +140,12 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
         // Collect fees before pricing so they accrue to the pre-mint supply.
         strategy.syncFees();
         uint256 navBefore = balance();
-        // Pre-deposit NAV. After `strategy.deposit` the reference includes `amount`.
-        uint256 navRef = strategy.poolValueRef();
+        // Later mints: gated reference (same swap-gate band as remint). After `strategy.deposit` the reference includes `amount`.
+        uint256 navRef;
+        if (supply != 0) {
+            navRef = strategy.poolValueRef();
+            if (navRef == 0) revert RefUnavailable();
+        }
         IERC20(address(weth)).forceApprove(address(strategy), amount);
         strategy.deposit(amount);
         uint256 navAfter = balance();
@@ -154,7 +159,7 @@ contract AutoVaultBv4 is Ownable, ReentrancyGuard, IAutoVaultBv4 {
         emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
     }
 
-    /// @dev Owner seeds 1:1. Later min(spot, truncated reference). `navRef` is pre-deposit, or 0 if unseeded.
+    /// @dev Owner seeds 1:1. Later min(spot, gated reference). `navRef` is pre-deposit, or 0 if unseeded.
     function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navRef)
         internal
         pure

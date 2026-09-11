@@ -288,11 +288,14 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     {
         _onlyKeeper();
         if (liqPos.positionId == 0) return poolValue();
+        if (
+            !skipIncreaseLiquidity
+                && minHarvestDelay > 0
+                && lastHarvest != 0
+                && block.timestamp - lastHarvest < minHarvestDelay
+        ) return poolValue();
         (, , uint256 valueInWeth) = _collectAllFees(true);
         if (skipIncreaseLiquidity) return poolValue();
-        if (minHarvestDelay > 0 && lastHarvest != 0 && block.timestamp - lastHarvest < minHarvestDelay) {
-            return poolValue();
-        }
         if (valueInWeth == 0) return poolValue();
         // Increase at the band ratio. Do not `_balanceTokens`.
         _increaseLiquidityInternal();
@@ -631,11 +634,12 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         return true;
     }
 
-    /// @notice NAV valued at the truncated reference instead of raw spot. Zero until the reference is seeded.
+    /// @notice NAV valued at the truncated reference instead of raw spot. Zero until seeded or the swap gate is closed.
     function poolValueRef() external view override returns (uint256) {
         if (refTime == 0) return 0;
         (uint160 sqrtP, int24 tick) = _readSlot0();
         if (sqrtP == 0) return 0;
+        if (!_swapGateOpen()) return 0;
         uint256 p = SwapGateLib.refPrice1e18(
             tick, refTick, refTime, secondsPerRefTick, maxRefDrift, _poolKey.currency0 == address(0)
         );
