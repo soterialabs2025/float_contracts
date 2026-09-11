@@ -72,6 +72,7 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
     error RouterNotSet();
     error EthTransferFailed();
     error AmountTooLarge();
+    error Expired();
 
     event OperatorUpdated(address indexed account, bool allowed);
     event ConfigUpdated(bytes32 indexed key, address value);
@@ -170,7 +171,8 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
     /// @notice Swap this contract's full `token` balance to WETH via Uniswap SwapRouter02.
     /// @param fee The V3 pool fee tier that actually exists for `token`/WETH (e.g. 500, 3000, 10000).
     /// @param minOut Caller-quoted WETH floor. Must be non-zero.
-    function swapTokenToWethV3(address token, uint24 fee, uint256 minOut)
+    /// @param deadline Unix timestamp after which the swap reverts. Must be non-zero; SwapRouter02 does not check one.
+    function swapTokenToWethV3(address token, uint24 fee, uint256 minOut, uint256 deadline)
         external
         nonReentrant
         onlyOwnerOrOperator
@@ -180,6 +182,7 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
         if (address(v3SwapRouter) == address(0)) revert RouterNotSet();
         if (fee == 0) revert ZeroAmount();
         if (minOut == 0) revert ZeroMinOut();
+        if (deadline == 0 || block.timestamp > deadline) revert Expired();
 
         uint256 amountIn = IERC20(token).balanceOf(address(this));
         if (amountIn == 0) revert ZeroAmount();
@@ -226,7 +229,8 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
     }
 
     /// @notice Wrap any ETH, then swap this contract's full WETH balance to USDC via V3.
-    function swapEthToUsdcV3(uint24 fee, uint256 minOut)
+    /// @param deadline Unix timestamp after which the swap reverts. Must be non-zero; SwapRouter02 does not check one.
+    function swapEthToUsdcV3(uint24 fee, uint256 minOut, uint256 deadline)
         external
         nonReentrant
         onlyOwnerOrOperator
@@ -236,6 +240,7 @@ contract SoteriaFeeManager is Ownable, ReentrancyGuard {
         if (address(usdc) == address(0)) revert ZeroAddress();
         if (fee == 0) revert ZeroAmount();
         if (minOut == 0) revert ZeroMinOut();
+        if (deadline == 0 || block.timestamp > deadline) revert Expired();
 
         uint256 ethBal = address(this).balance;
         if (ethBal > 0) {
