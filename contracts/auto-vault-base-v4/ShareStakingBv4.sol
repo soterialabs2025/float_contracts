@@ -480,7 +480,7 @@ contract ShareStakingBv4 is Ownable, ReentrancyGuard, IShareStakingBv4 {
 
         uint256 reserved;
         if (token == asset) reserved = accountedAsset;
-        else if (token == address(liquidShares)) reserved = totalStaked;
+        if (token == address(liquidShares)) reserved += totalStaked;
 
         uint256 bal = IERC20(token).balanceOf(address(this));
         uint256 surplus = bal > reserved ? bal - reserved : 0;

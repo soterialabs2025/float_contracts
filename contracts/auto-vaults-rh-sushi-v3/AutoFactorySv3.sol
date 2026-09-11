@@ -48,6 +48,7 @@ contract AutoFactorySv3 is Ownable, ReentrancyGuard {
     error OwnerMismatch();
     error UnknownPackage();
     error PackageOwnershipLocked();
+    error AssetIsShares();
 
     event VaultRegistryDeployed(
         address indexed strategy,
@@ -118,6 +119,7 @@ contract AutoFactorySv3 is Ownable, ReentrancyGuard {
         vault = vaultImplementation.clone();
         liquidShares = liquidSharesImplementation.clone();
         shareStaking = address(new ShareStakingSv3(address(this)));
+        if (asset == liquidShares) revert AssetIsShares();
 
         LiquidSharesSv3(liquidShares).bootstrap(vault);
         ShareStakingSv3(shareStaking).bootstrap(

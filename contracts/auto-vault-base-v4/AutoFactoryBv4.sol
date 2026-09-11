@@ -49,6 +49,7 @@ contract AutoFactoryBv4 is Ownable, ReentrancyGuard {
     error OwnerMismatch();
     error UnknownPackage();
     error PackageOwnershipLocked();
+    error AssetIsShares();
 
     modifier onlyOperator() {
         if (!IAutoOperatorRegistryBv4(infra.operatorRegistry).isOperator(msg.sender) && msg.sender != owner()) {
@@ -120,6 +121,7 @@ contract AutoFactoryBv4 is Ownable, ReentrancyGuard {
         vault = vaultImplementation.clone();
         liquidShares = liquidSharesImplementation.clone();
         shareStaking = address(new ShareStakingBv4(address(this)));
+        if (asset == liquidShares) revert AssetIsShares();
 
         LiquidSharesBv4(liquidShares).bootstrap(vault);
         ShareStakingBv4(shareStaking).bootstrap(

@@ -36,6 +36,9 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
     uint256 public uniswapFeesCollectedSynced;
     /// @dev Near-full withdraw sweeps leftover shares below this (avoids wei dust blocking empty+HW reset).
     uint256 internal constant MIN_SHARE_DUST = 1e10;
+    /// @dev OZ-style virtual offset so a dust seed + donation cannot floor a later mint to 1 share.
+    uint256 internal constant VIRTUAL_SHARES = 1e3;
+    uint256 internal constant VIRTUAL_ASSETS = 1;
 
     event Deposit(address indexed user, uint256 wethNotional, uint256 shares, uint256 acc);
     event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
@@ -171,10 +174,11 @@ contract AutoVaultRhV3 is Ownable, ReentrancyGuard, IAutoVaultRhV3 {
         returns (uint256)
     {
         if (supply == 0) return credited;
-        uint256 sharesSpot =
-            navBefore == 0 ? type(uint256).max : Math.mulDiv(credited, supply, navBefore);
+        uint256 sharesSpot = navBefore == 0
+            ? type(uint256).max
+            : Math.mulDiv(credited, supply + VIRTUAL_SHARES, navBefore + VIRTUAL_ASSETS);
         if (navTwap > 0) {
-            return Math.min(sharesSpot, Math.mulDiv(credited, supply, navTwap));
+            return Math.min(sharesSpot, Math.mulDiv(credited, supply + VIRTUAL_SHARES, navTwap + VIRTUAL_ASSETS));
         }
         if (lastSharePriceX18 == 0) return sharesSpot;
         return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
