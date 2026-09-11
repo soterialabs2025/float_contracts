@@ -10,6 +10,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "./SushiV3Deployments4663.sol";
 import "./interfaces/IShareStakingSv3.sol";
 import "./interfaces/IAutoSwapRouterSv3.sol";
+import "./interfaces/IAutoStrategySv3.sol";
 import "./interfaces/ILiquidSharesSv3.sol";
 
 /// @title ShareStakingSv3
@@ -27,13 +28,6 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
 
     IERC20 public immutable weth;
     ILiquidSharesSv3 public liquidShares;
-    /// @dev Bands and haircuts handed to the router's TWAP gate. Automatic WETH→ASSET conversion keeps the tight pair
-    ///      because a refusal is soft — the tokens stay here and `retryWethRewardSwap` picks them up — while that
-    ///      explicit retry gets the wider pair so a prolonged volatile stretch cannot strand rewards.
-    uint256 private constant SWAP_MAX_DEV_BPS = 300;
-    uint256 private constant RETRY_MAX_DEV_BPS = 900;
-    uint256 private constant SWAP_SLIPPAGE_BPS = 100;
-    uint256 private constant RETRY_SLIPPAGE_BPS = 300;
 
     IAutoSwapRouterSv3 public swapRouter;
     address public strategy;
@@ -382,9 +376,11 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
     }
 
     function _swapWethToAsset(uint128 amount) internal returns (uint256 assetAdded) {
+        uint256 minOut = IAutoStrategySv3(strategy).minOutForSwap(address(weth), amount);
+        if (minOut == 0) return 0;
         IERC20(weth).forceApprove(address(swapRouter), amount);
         try swapRouter.swapExactInputSingleStrict(
-            address(weth), asset, poolFee, uint128(amount), SWAP_MAX_DEV_BPS, SWAP_SLIPPAGE_BPS, block.timestamp
+            address(weth), asset, poolFee, uint128(amount), minOut, block.timestamp
         ) returns (uint256 out) {
             assetAdded = out;
         } catch {
@@ -463,9 +459,11 @@ contract ShareStakingSv3 is Ownable, ReentrancyGuard, IShareStakingSv3 {
         if (amount == 0) revert ZeroAmount();
         if (amount > type(uint128).max) revert ZeroAmount();
         _advanceGlobalTo(block.timestamp);
+        uint256 minOut = IAutoStrategySv3(strategy).minOutForWithdraw(address(weth), amount);
+        if (minOut == 0) revert ZeroAmount();
         IERC20(weth).forceApprove(address(swapRouter), amount);
         uint256 assetAdded = swapRouter.swapExactInputSingleStrict(
-            address(weth), asset, poolFee, uint128(amount), RETRY_MAX_DEV_BPS, RETRY_SLIPPAGE_BPS, block.timestamp
+            address(weth), asset, poolFee, uint128(amount), minOut, block.timestamp
         );
         IERC20(weth).forceApprove(address(swapRouter), 0);
         if (assetAdded == 0) revert ZeroAmount();

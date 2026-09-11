@@ -12,7 +12,7 @@ import "./AutoStrategyManagerSv3.sol";
 import "./libraries/LiquidityLibraryV2.sol";
 import "./libraries/AutoBandLib.sol";
 import "./libraries/TrailingFloorLib.sol";
-import "./libraries/TickMath.sol";
+import "./libraries/TwapQuoteLib.sol";
 import "./interfaces/IAutoStrategySv3.sol";
 import "./interfaces/IAutoSwapRouterSv3.sol";
 import "./interfaces/IAutoOperatorRegistrySv3.sol";
@@ -476,18 +476,22 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         }
     }
 
-    /// @dev Sole swap chokepoint. Router prices the TWAP-gated floor for `maxDevBps` and `slipBps`.
+    /// @dev Sole swap chokepoint. Floor is TWAP-gated; skips if unpriceable so withdrawals can still pay in kind.
     /// @dev `maxDevBps` and `slipBps` travel together: rebalances pass the tight pair, exits the widened pair.
     function _swap(IERC20 tokenIn, uint256 amount, uint256 maxDevBps, uint256 slipBps) internal {
         amount = _min(amount, _spendable(tokenIn));
         if (amount == 0) return;
         if (amount > type(uint128).max) return;
+        uint256 minOut = TwapQuoteLib.minOutAtBand(
+            _pool, address(WETH), address(tokenIn), amount, poolFee, maxDevBps, slipBps, twapSeconds
+        );
+        if (minOut == 0) return;
         address tokenOut = address(tokenIn) == address(WETH) ? address(_asset) : address(WETH);
         tokenIn.forceApprove(address(swapRouter), amount);
         // A router rejection must not unwind the caller. Withdrawals pay the unswapped leg in kind and
         // rebalances retry, so a rejected swap is treated exactly like a skipped one.
         try swapRouter.swapExactInputSingleStrict(
-            address(tokenIn), tokenOut, poolFee, uint128(amount), maxDevBps, slipBps, block.timestamp
+            address(tokenIn), tokenOut, poolFee, uint128(amount), minOut, block.timestamp
         ) {
         } catch {
             emit SwapFailed(address(tokenIn), amount);
@@ -504,6 +508,20 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     function _withdrawSlippageBps() internal view returns (uint256) {
         uint256 bps = uint256(swapSlippageBps) * WITHDRAW_SLIPPAGE_MULTIPLE;
         return bps > MAX_WITHDRAW_SLIPPAGE_BPS ? MAX_WITHDRAW_SLIPPAGE_BPS : bps;
+    }
+
+    /// @inheritdoc IAutoStrategySv3
+    function minOutForSwap(address tokenIn, uint256 amount) external view override returns (uint256) {
+        return TwapQuoteLib.minOutAtBand(
+            _pool, address(WETH), tokenIn, amount, poolFee, maxTwapDeviationBps, swapSlippageBps, twapSeconds
+        );
+    }
+
+    /// @inheritdoc IAutoStrategySv3
+    function minOutForWithdraw(address tokenIn, uint256 amount) external view override returns (uint256) {
+        return TwapQuoteLib.minOutAtBand(
+            _pool, address(WETH), tokenIn, amount, poolFee, _withdrawBandBps(), _withdrawSlippageBps(), twapSeconds
+        );
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
@@ -599,49 +617,16 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     }
 
     function _spotPrice1e18() internal view returns (uint256) {
-        (uint160 sqrtP,) = _readSlot0();
-        return _price1e18FromSqrt(sqrtP);
+        return TwapQuoteLib.spotPrice1e18(_pool, address(WETH));
     }
 
-    /// @dev ASSET per WETH in 1e18 from a Uniswap V3 sqrtPriceX96.
-    function _price1e18FromSqrt(uint160 sqrtP) internal view returns (uint256) {
-        if (sqrtP == 0) return 0;
-        uint256 price = Math.mulDiv(uint256(sqrtP), uint256(sqrtP), (uint256(1) << 192) / 1e18);
-        if (_pool.token0() == address(WETH)) return price;
-        return price == 0 ? 0 : Math.mulDiv(1e18, 1e18, price);
-    }
-
-    /// @dev Arithmetic mean tick TWAP via pool `observe`. Returns 0 if disabled or cardinality insufficient.
     function _twapPrice1e18() internal view returns (uint256) {
-        uint32 period = twapSeconds;
-        if (period == 0) return 0;
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = period;
-        secondsAgos[1] = 0;
-        try _pool.observe(secondsAgos) returns (int56[] memory tickCumulatives, uint160[] memory) {
-            int56 delta = tickCumulatives[1] - tickCumulatives[0];
-            int56 periodI = int56(uint56(period));
-            int24 meanTick = int24(delta / periodI);
-            if (delta < 0 && (delta % periodI != 0)) meanTick--;
-            return _price1e18FromSqrt(TickMath.getSqrtRatioAtTick(meanTick));
-        } catch {
-            return 0;
-        }
-    }
-
-    function _spotAlignedWithTwap(uint256 spot, uint256 twap) internal view returns (bool) {
-        if (spot == 0 || twap == 0) return false;
-        uint256 hi = spot > twap ? spot : twap;
-        uint256 lo = spot > twap ? twap : spot;
-        return Math.mulDiv(hi - lo, DIVISOR, twap) <= maxTwapDeviationBps;
+        return TwapQuoteLib.twapPrice1e18(_pool, address(WETH), twapSeconds);
     }
 
     /// @notice TWAP price for rebalance if spot is within `maxTwapDeviationBps`; else 0 (caller skips).
-    function _rebalancePrice1e18() internal view returns (uint256) {
-        uint256 twap = _twapPrice1e18();
-        if (twap == 0) return 0;
-        if (!_spotAlignedWithTwap(_spotPrice1e18(), twap)) return 0;
-        return twap;
+    function _rebalancePrice1e18() internal view returns (uint256 twap) {
+        (twap,) = TwapQuoteLib.bandPrices(_pool, address(WETH), twapSeconds, maxTwapDeviationBps);
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256, uint256) {

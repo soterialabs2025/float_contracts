@@ -15,7 +15,7 @@ import "./interfaces/IAutoKeeperRhV4.sol";
 import "./interfaces/IAutoOperatorRegistryRhV4.sol";
 
 /// @title AutoFactoryRhV4
-/// @notice RH (4663) deploys AutoStrategyRhV4 + AutoVaultRhV4 + LiquidSharesRhV4 + ShareStakingRhV4 packages.
+/// @notice RH (4663) deploys AutoStrategyRhV4 + AutoVaultRhV4 + LiquidSharesRhV4 clones and a fresh ShareStakingRhV4 per package.
 contract AutoFactoryRhV4 is Ownable, ReentrancyGuard {
     using Clones for address;
 
@@ -38,7 +38,6 @@ contract AutoFactoryRhV4 is Ownable, ReentrancyGuard {
     address public immutable strategyImplementation;
     address public immutable vaultImplementation;
     address public immutable liquidSharesImplementation;
-    address public immutable shareStakingImplementation;
 
     mapping(address => VaultRegistry) public registry;
     address[] public assets;
@@ -79,7 +78,6 @@ contract AutoFactoryRhV4 is Ownable, ReentrancyGuard {
         strategyImplementation = address(new AutoStrategyRhV4(address(this)));
         vaultImplementation = address(new AutoVaultRhV4(address(this)));
         liquidSharesImplementation = address(new LiquidSharesRhV4(address(this)));
-        shareStakingImplementation = address(new ShareStakingRhV4(address(this)));
     }
 
     function updateInfra(InfraConfig calldata config) external onlyOwner {
@@ -125,7 +123,7 @@ contract AutoFactoryRhV4 is Ownable, ReentrancyGuard {
         strategy = strategyImplementation.clone();
         vault = vaultImplementation.clone();
         liquidShares = liquidSharesImplementation.clone();
-        shareStaking = shareStakingImplementation.clone();
+        shareStaking = address(new ShareStakingRhV4(address(this)));
 
         LiquidSharesRhV4(liquidShares).bootstrap(vault);
         ShareStakingRhV4(payable(shareStaking)).bootstrap(

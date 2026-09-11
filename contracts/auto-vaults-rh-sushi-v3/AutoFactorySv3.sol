@@ -38,7 +38,6 @@ contract AutoFactorySv3 is Ownable, ReentrancyGuard {
     address public immutable strategyImplementation;
     address public immutable vaultImplementation;
     address public immutable liquidSharesImplementation;
-    address public immutable shareStakingImplementation;
     mapping(address => VaultRegistry) public registry;
     address[] public assets;
 
@@ -74,7 +73,6 @@ contract AutoFactorySv3 is Ownable, ReentrancyGuard {
         strategyImplementation = address(new AutoStrategySv3(address(this)));
         vaultImplementation = address(new AutoVaultSv3(address(this)));
         liquidSharesImplementation = address(new LiquidSharesSv3(address(this)));
-        shareStakingImplementation = address(new ShareStakingSv3(address(this)));
     }
 
     modifier onlyOperator() {
@@ -119,7 +117,7 @@ contract AutoFactorySv3 is Ownable, ReentrancyGuard {
         strategy = strategyImplementation.clone();
         vault = vaultImplementation.clone();
         liquidShares = liquidSharesImplementation.clone();
-        shareStaking = shareStakingImplementation.clone();
+        shareStaking = address(new ShareStakingSv3(address(this)));
 
         LiquidSharesSv3(liquidShares).bootstrap(vault);
         ShareStakingSv3(shareStaking).bootstrap(

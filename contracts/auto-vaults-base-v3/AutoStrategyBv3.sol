@@ -12,7 +12,7 @@ import "./AutoStrategyManagerBv3.sol";
 import "./libraries/LiquidityLibraryV2.sol";
 import "./libraries/AutoBandLib.sol";
 import "./libraries/TrailingFloorLib.sol";
-import "./libraries/TickMath.sol";
+import "./libraries/TwapQuoteLib.sol";
 import "./interfaces/IAutoStrategyBv3.sol";
 import "./interfaces/IAutoSwapRouterBv3.sol";
 import "./interfaces/IAutoOperatorRegistryBv3.sol";
@@ -475,7 +475,9 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         amount = _min(amount, _spendable(tokenIn));
         if (amount == 0) return;
         if (amount > type(uint128).max) return;
-        uint256 minOut = _minOutAtBand(address(tokenIn), amount, maxDevBps, slipBps);
+        uint256 minOut = TwapQuoteLib.minOutAtBand(
+            _pool, address(WETH), address(tokenIn), amount, poolFee, maxDevBps, slipBps, twapSeconds
+        );
         if (minOut == 0) return;
         address tokenOut = address(tokenIn) == address(WETH) ? address(_asset) : address(WETH);
         tokenIn.forceApprove(address(swapRouter), amount);
@@ -487,21 +489,6 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         } catch {
             emit SwapFailed(address(tokenIn), amount);
         }
-    }
-
-    /// @dev `0` if the oracle is unusable or spot is outside `maxDevBps`. Floor is quote after `poolFee`, then `slipBps`.
-    function _minOutAtBand(address tokenIn, uint256 amount, uint256 maxDevBps, uint256 slipBps)
-        internal
-        view
-        returns (uint256)
-    {
-        (, uint160 spotSqrt) = _bandPrices(maxDevBps);
-        if (spotSqrt == 0) return 0;
-        uint256 quote = _quoteAtSqrt(spotSqrt, amount, tokenIn == _pool.token0());
-        if (quote == 0) return 0;
-        // Fee tiers are hundredths of a bip, so /100 puts `poolFee` in bps alongside the tolerance.
-        uint256 afterPoolFee = Math.mulDiv(quote, DIVISOR - uint256(poolFee) / 100, DIVISOR);
-        return Math.mulDiv(afterPoolFee, DIVISOR - slipBps, DIVISOR);
     }
 
     /// @dev Exits tolerate more drift than rebalances: a skipped rebalance retries, a blocked exit strands a user.
@@ -518,12 +505,16 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
 
     /// @inheritdoc IAutoStrategyBv3
     function minOutForSwap(address tokenIn, uint256 amount) external view override returns (uint256) {
-        return _minOutAtBand(tokenIn, amount, maxTwapDeviationBps, swapSlippageBps);
+        return TwapQuoteLib.minOutAtBand(
+            _pool, address(WETH), tokenIn, amount, poolFee, maxTwapDeviationBps, swapSlippageBps, twapSeconds
+        );
     }
 
     /// @inheritdoc IAutoStrategyBv3
     function minOutForWithdraw(address tokenIn, uint256 amount) external view override returns (uint256) {
-        return _minOutAtBand(tokenIn, amount, _withdrawBandBps(), _withdrawSlippageBps());
+        return TwapQuoteLib.minOutAtBand(
+            _pool, address(WETH), tokenIn, amount, poolFee, _withdrawBandBps(), _withdrawSlippageBps(), twapSeconds
+        );
     }
 
     function _collectAllFees(bool trackFees) internal returns (uint256 amount0, uint256 amount1, uint256 valueInWeth) {
@@ -619,65 +610,16 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
     }
 
     function _spotPrice1e18() internal view returns (uint256) {
-        (uint160 sqrtP,) = _readSlot0();
-        return _price1e18FromSqrt(sqrtP);
+        return TwapQuoteLib.spotPrice1e18(_pool, address(WETH));
     }
 
-    /// @dev Quote the opposite token at `sqrtRatioX96`. Excludes pool fee and impact.
-    function _quoteAtSqrt(uint160 sqrtRatioX96, uint256 amount, bool baseIsToken0)
-        internal
-        pure
-        returns (uint256)
-    {
-        if (sqrtRatioX96 == 0) return 0;
-        if (sqrtRatioX96 <= type(uint128).max) {
-            uint256 ratioX192 = uint256(sqrtRatioX96) * sqrtRatioX96;
-            return baseIsToken0
-                ? Math.mulDiv(ratioX192, amount, 1 << 192)
-                : Math.mulDiv(1 << 192, amount, ratioX192);
-        }
-        uint256 ratioX128 = Math.mulDiv(sqrtRatioX96, sqrtRatioX96, 1 << 64);
-        return baseIsToken0 ? Math.mulDiv(ratioX128, amount, 1 << 128) : Math.mulDiv(1 << 128, amount, ratioX128);
-    }
-
-    /// @dev ASSET per WETH in 1e18 from a Uniswap V3 sqrtPriceX96.
-    function _price1e18FromSqrt(uint160 sqrtP) internal view returns (uint256) {
-        return _quoteAtSqrt(sqrtP, 1e18, _pool.token0() == address(WETH));
-    }
-
-    /// @dev Arithmetic mean tick TWAP via pool `observe`. Returns 0 if disabled or cardinality insufficient.
     function _twapPrice1e18() internal view returns (uint256) {
-        uint32 period = twapSeconds;
-        if (period == 0) return 0;
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = period;
-        secondsAgos[1] = 0;
-        try _pool.observe(secondsAgos) returns (int56[] memory tickCumulatives, uint160[] memory) {
-            int56 delta = tickCumulatives[1] - tickCumulatives[0];
-            int56 periodI = int56(uint56(period));
-            int24 meanTick = int24(delta / periodI);
-            if (delta < 0 && (delta % periodI != 0)) meanTick--;
-            return _price1e18FromSqrt(TickMath.getSqrtRatioAtTick(meanTick));
-        } catch {
-            return 0;
-        }
-    }
-
-    /// @dev TWAP and spot, or `(0, 0)` if unreadable or spot is outside `maxDevBps` of TWAP.
-    function _bandPrices(uint256 maxDevBps) internal view returns (uint256 twap, uint160 spotSqrt) {
-        twap = _twapPrice1e18();
-        if (twap == 0) return (0, 0);
-        (spotSqrt,) = _readSlot0();
-        uint256 spot = _quoteAtSqrt(spotSqrt, 1e18, _pool.token0() == address(WETH));
-        if (spot == 0) return (0, 0);
-        uint256 hi = spot > twap ? spot : twap;
-        uint256 lo = spot > twap ? twap : spot;
-        if (Math.mulDiv(hi - lo, DIVISOR, twap) > maxDevBps) return (0, 0);
+        return TwapQuoteLib.twapPrice1e18(_pool, address(WETH), twapSeconds);
     }
 
     /// @notice TWAP price for rebalance if spot is within `maxTwapDeviationBps`; else 0 (caller skips).
     function _rebalancePrice1e18() internal view returns (uint256 twap) {
-        (twap,) = _bandPrices(maxTwapDeviationBps);
+        (twap,) = TwapQuoteLib.bandPrices(_pool, address(WETH), twapSeconds, maxTwapDeviationBps);
     }
 
     function _poolBalances(uint256 assetBal, uint256 wethBal) internal view returns (uint256, uint256) {

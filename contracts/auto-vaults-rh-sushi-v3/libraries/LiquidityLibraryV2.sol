@@ -315,6 +315,8 @@ library LiquidityLibraryV2 {
         newLiquidity = liquidity;
     }
 
+    /// @dev `public`, so this deploys once and links by address instead of inlining into every consumer.
+    ///      `AutoStrategySv3` sits against the EIP-170 runtime limit and this is its largest single block.
     function mintNewPositionWithRange(
         PositionState storage ps,
         MintContext memory ctx,
@@ -322,7 +324,7 @@ library LiquidityLibraryV2 {
         uint256 wethBal,
         int24 tickLower,
         int24 tickUpper
-    ) internal returns (uint256 newTokenId, uint128 newLiquidity) {
+    ) public returns (uint256 newTokenId, uint128 newLiquidity) {
         if (tokenBal == 0 && wethBal == 0) return (ps.positionId, 0);
 
         address poolAddr = ctx.factory.getPool(ctx.weth, ctx.tokens, ctx.fee);
@@ -395,7 +397,7 @@ library LiquidityLibraryV2 {
         IERC20 token1,
         uint256 amount0Max,
         uint256 amount1Max
-    ) internal returns (uint128 addedLiquidity) {
+    ) public returns (uint128 addedLiquidity) {
         if (ps.positionId == 0) return 0;
         _validateIncreasePosition(ps, ctx, token0, token1);
         IncreaseRequest memory request = IncreaseRequest(token0, token1, amount0Max, amount1Max);

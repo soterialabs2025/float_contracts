@@ -38,7 +38,6 @@ contract AutoFactoryBv4 is Ownable, ReentrancyGuard {
     address public immutable strategyImplementation;
     address public immutable vaultImplementation;
     address public immutable liquidSharesImplementation;
-    address public immutable shareStakingImplementation;
 
     mapping(address => VaultRegistry) public registry;
     address[] public assets;
@@ -79,7 +78,6 @@ contract AutoFactoryBv4 is Ownable, ReentrancyGuard {
         strategyImplementation = address(new AutoStrategyBv4(address(this)));
         vaultImplementation = address(new AutoVaultBv4(address(this)));
         liquidSharesImplementation = address(new LiquidSharesBv4(address(this)));
-        shareStakingImplementation = address(new ShareStakingBv4(address(this)));
     }
 
     function updateInfra(InfraConfig calldata config) external onlyOwner {
@@ -121,7 +119,7 @@ contract AutoFactoryBv4 is Ownable, ReentrancyGuard {
         strategy = strategyImplementation.clone();
         vault = vaultImplementation.clone();
         liquidShares = liquidSharesImplementation.clone();
-        shareStaking = shareStakingImplementation.clone();
+        shareStaking = address(new ShareStakingBv4(address(this)));
 
         LiquidSharesBv4(liquidShares).bootstrap(vault);
         ShareStakingBv4(shareStaking).bootstrap(

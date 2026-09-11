@@ -20,8 +20,7 @@ interface ISoteriaV3SwapRouter {
         address tokenOut,
         uint24 fee,
         uint128 amountIn,
-        uint256 maxDevBps,
-        uint256 slipBps,
+        uint256 minAmountOut,
         uint256 deadline
     ) external returns (uint256 amountOut);
 }
@@ -174,9 +173,8 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
     /// @notice Swap this contract's full `token` balance to WETH via AutoSwapRouterSv3.
     /// @param fee The Sushi V3 pool fee tier that actually exists for `token`/WETH.
-    /// @param maxDevBps How far spot may sit from the pool TWAP (router-derived minOut).
-    /// @param slipBps Haircut on the TWAP-admitted floor, in bps.
-    function swapTokenToWethV3(address token, uint24 fee, uint256 maxDevBps, uint256 slipBps)
+    /// @param minOut Caller-quoted WETH floor. Must be non-zero; the router does not derive one.
+    function swapTokenToWethV3(address token, uint24 fee, uint256 minOut)
         external
         nonReentrant
         onlyOwnerOrOperator
@@ -185,6 +183,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
         if (token == address(0) || token == address(WETH)) revert InvalidToken();
         if (address(v3SwapRouter) == address(0)) revert RouterNotSet();
         if (fee == 0) revert ZeroAmount();
+        if (minOut == 0) revert ZeroMinOut();
 
         uint256 amountIn = IERC20(token).balanceOf(address(this));
         if (amountIn == 0) revert ZeroAmount();
@@ -192,7 +191,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
         IERC20(token).forceApprove(address(v3SwapRouter), amountIn);
         amountOut = v3SwapRouter.swapExactInputSingleStrict(
-            token, address(WETH), fee, uint128(amountIn), maxDevBps, slipBps, 0
+            token, address(WETH), fee, uint128(amountIn), minOut, 0
         );
         emit TokenSwappedToWeth(token, false, amountIn, amountOut);
     }
@@ -224,7 +223,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
     }
 
     /// @notice Wrap any ETH, then swap this contract's full WETH balance to USDG via AutoSwapRouterSv3.
-    function swapEthToUsdcV3(uint24 fee, uint256 maxDevBps, uint256 slipBps)
+    function swapEthToUsdcV3(uint24 fee, uint256 minOut)
         external
         nonReentrant
         onlyOwnerOrOperator
@@ -233,6 +232,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
         if (address(v3SwapRouter) == address(0)) revert RouterNotSet();
         if (address(usdc) == address(0)) revert ZeroAddress();
         if (fee == 0) revert ZeroAmount();
+        if (minOut == 0) revert ZeroMinOut();
 
         uint256 ethBal = address(this).balance;
         if (ethBal > 0) {
@@ -245,7 +245,7 @@ contract SoteriaFeeManagerSv3 is Ownable, ReentrancyGuard {
 
         IERC20(address(WETH)).forceApprove(address(v3SwapRouter), amountIn);
         amountOut = v3SwapRouter.swapExactInputSingleStrict(
-            address(WETH), address(usdc), fee, uint128(amountIn), maxDevBps, slipBps, 0
+            address(WETH), address(usdc), fee, uint128(amountIn), minOut, 0
         );
         emit EthSwappedToUsdc(amountIn, amountOut);
     }
