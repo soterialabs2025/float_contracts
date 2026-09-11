@@ -86,7 +86,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
         address asset_,
         uint24 poolFee_
     ) external onlyFactory {
-        if (_bootstrapped) revert E();
+        if (_bootstrapped || ownershipLocked) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0) || operatorRegistry_ == address(0)
                 || keeper_ == address(0) || feeManager_ == address(0) || shareStaking_ == address(0)
@@ -117,6 +117,7 @@ contract AutoStrategyBv3 is AutoStrategyManagerBv3, ReentrancyGuard, IERC721Rece
 
     /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
     function transferOwnershipFromFactory(address newOwner) external onlyFactory {
+        if (!_bootstrapped) revert E();
         if (newOwner == address(0)) revert E();
         if (ownershipLocked) revert E();
         _transferOwnership(newOwner);

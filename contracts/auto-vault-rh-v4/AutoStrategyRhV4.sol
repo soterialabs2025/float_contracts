@@ -107,7 +107,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         bytes calldata hookData_,
         BandConfig calldata bands
     ) external onlyFactory {
-        if (_bootstrapped) revert E();
+        if (_bootstrapped || ownershipLocked) revert E();
         if (
             owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0)
                 || operatorRegistry_ == address(0) || keeper_ == address(0) || feeManager_ == address(0)
@@ -135,6 +135,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
     function transferOwnershipFromFactory(address newOwner) external onlyFactory {
+        if (!_bootstrapped) revert E();
         if (newOwner == address(0)) revert E();
         if (ownershipLocked) revert E();
         _transferOwnership(newOwner);

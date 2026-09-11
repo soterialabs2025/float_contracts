@@ -71,6 +71,7 @@ contract AutoVaultBv3 is Ownable, ReentrancyGuard, IAutoVaultBv3 {
         address asset_
     ) external {
         if (bootstrapped) revert AlreadyBootstrapped();
+        if (ownershipLocked) revert OwnershipIsLocked();
         if (msg.sender != factory) revert Unauthorized();
         if (
             owner_ == address(0) || strategy_ == address(0) || liquidShares_ == address(0)
@@ -90,6 +91,7 @@ contract AutoVaultBv3 is Ownable, ReentrancyGuard, IAutoVaultBv3 {
     /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
     function transferOwnershipFromFactory(address newOwner) external {
         if (msg.sender != factory) revert Unauthorized();
+        if (!bootstrapped) revert NotBootstrapped();
         if (newOwner == address(0)) revert ZeroAddress();
         if (ownershipLocked) revert OwnershipIsLocked();
         _transferOwnership(newOwner);
