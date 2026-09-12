@@ -1,11 +1,10 @@
 {
   "name": "LiquidSharesBv4",
-  "address": null,
+  "address": "0x394a0ed93be084F52861c03859Ad0ed329d1Fa9C",
   "chainId": 8453,
-  "product": "auto-vault-v4",
+  "product": "bv4",
   "profile": "base-v4",
-  "package": "contracts/auto-vault-base-v4",
-  "timestamp": 1787528684306,
+  "timestamp": 1789191369657,
   "abi": [
     {
       "type": "constructor",

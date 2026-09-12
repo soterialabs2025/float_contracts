@@ -1,10 +1,10 @@
 {
   "name": "AutoVaultRhV3",
-  "address": "0x536be0f29Dd417A6948f4EA789698E381b1Fb1d9",
+  "address": "0x0D8193c9387E61a5E76C25112815004f2631dA94",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1788496154989,
+  "timestamp": 1789191120857,
   "abi": [
     {
       "type": "constructor",
@@ -527,6 +527,11 @@
           "internalType": "address"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "TwapUnavailable",
+      "inputs": []
     },
     {
       "type": "error",

@@ -523,6 +523,11 @@
   },
   {
     "type": "error",
+    "name": "TwapUnavailable",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "Unauthorized",
     "inputs": []
   },

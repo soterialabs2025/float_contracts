@@ -50,7 +50,7 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IAutoOperatorRegistryBv4"
+        "internalType": "contract IAutoOperatorRegistryRhV4"
       }
     ],
     "stateMutability": "view"

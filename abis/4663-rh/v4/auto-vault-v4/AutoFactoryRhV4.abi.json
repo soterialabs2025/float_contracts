@@ -28,6 +28,21 @@
             "internalType": "address"
           }
         ]
+      },
+      {
+        "name": "strategyImpl_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "vaultImpl_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "liquidSharesImpl_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -287,19 +302,6 @@
   },
   {
     "type": "function",
-    "name": "shareStakingImplementation",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "strategyImplementation",
     "inputs": [],
     "outputs": [
@@ -548,6 +550,11 @@
   {
     "type": "error",
     "name": "AlreadyDeployed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AssetIsShares",
     "inputs": []
   },
   {

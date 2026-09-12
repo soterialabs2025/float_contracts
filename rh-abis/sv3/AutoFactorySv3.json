@@ -1,10 +1,10 @@
 {
   "name": "AutoFactorySv3",
-  "address": "0x77177AedC8a8B93EF675b612DAF2F8Ff39be66ed",
+  "address": "0x5C04D0223B2Ae85CA0f3A348F9328A1Ed7B04767",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1788497796896,
+  "timestamp": 1789190740557,
   "abi": [
     {
       "type": "constructor",
@@ -35,6 +35,21 @@
               "internalType": "address"
             }
           ]
+        },
+        {
+          "name": "strategyImpl_",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "vaultImpl_",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "liquidSharesImpl_",
+          "type": "address",
+          "internalType": "address"
         }
       ],
       "stateMutability": "nonpayable"
@@ -237,19 +252,6 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "shareStakingImplementation",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -507,6 +509,11 @@
     {
       "type": "error",
       "name": "AlreadyDeployed",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "AssetIsShares",
       "inputs": []
     },
     {

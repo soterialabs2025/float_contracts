@@ -1,11 +1,10 @@
 {
   "name": "AutoVaultSv3",
-  "address": null,
+  "address": "0x0AA023493EC320eB681fFCEF9489963d4923D052",
   "chainId": 4663,
-  "product": "auto-vault-sushi",
+  "product": "sv3",
   "profile": "rh-sushi",
-  "package": "contracts/auto-vaults-rh-sushi-v3",
-  "timestamp": 1787530451924,
+  "timestamp": 1789190740577,
   "abi": [
     {
       "type": "constructor",
@@ -21,6 +20,19 @@
     {
       "type": "receive",
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "accUniswapFeesPerShare",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -272,6 +284,19 @@
     },
     {
       "type": "function",
+      "name": "uniswapFeesCollectedSynced",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "weth",
       "inputs": [],
       "outputs": [
@@ -325,6 +350,12 @@
         },
         {
           "name": "shares",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "acc",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
@@ -429,6 +460,12 @@
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
+        },
+        {
+          "name": "acc",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
         }
       ],
       "anonymous": false
@@ -490,6 +527,11 @@
           "internalType": "address"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "TwapUnavailable",
+      "inputs": []
     },
     {
       "type": "error",

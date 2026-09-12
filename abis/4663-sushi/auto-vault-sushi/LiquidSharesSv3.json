@@ -1,11 +1,10 @@
 {
   "name": "LiquidSharesSv3",
-  "address": null,
+  "address": "0xADb3e91286748D3e25B0DbB203aDD8FD04325958",
   "chainId": 4663,
-  "product": "auto-vault-sushi",
+  "product": "sv3",
   "profile": "rh-sushi",
-  "package": "contracts/auto-vaults-rh-sushi-v3",
-  "timestamp": 1787530493632,
+  "timestamp": 1789190740587,
   "abi": [
     {
       "type": "constructor",

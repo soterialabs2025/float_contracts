@@ -51,7 +51,7 @@
   },
   {
     "type": "function",
-    "name": "accountedWeth",
+    "name": "accountedAsset",
     "inputs": [],
     "outputs": [
       {
@@ -84,6 +84,13 @@
   },
   {
     "type": "function",
+    "name": "advance",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "asset",
     "inputs": [],
     "outputs": [
@@ -94,6 +101,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "boostReward",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -180,6 +200,13 @@
   },
   {
     "type": "function",
+    "name": "checkpoint",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "claim",
     "inputs": [
       {
@@ -190,7 +217,26 @@
     ],
     "outputs": [
       {
-        "name": "wethOut",
+        "name": "assetOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "claimMany",
+    "inputs": [
+      {
+        "name": "epochs",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "assetOut",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -319,7 +365,7 @@
   },
   {
     "type": "function",
-    "name": "epochRewardWeth",
+    "name": "epochRewardAsset",
     "inputs": [
       {
         "name": "",
@@ -576,7 +622,30 @@
   },
   {
     "type": "function",
-    "name": "retryAssetRewardSwap",
+    "name": "rescueToken",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "retryWethRewardSwap",
     "inputs": [
       {
         "name": "amount",
@@ -828,7 +897,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "wethAmount",
+        "name": "assetAmount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -847,13 +916,13 @@
         "internalType": "uint256"
       },
       {
-        "name": "stakerRewardWeth",
+        "name": "stakerRewardAsset",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "ownerRewardWeth",
+        "name": "ownerRewardAsset",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -888,6 +957,31 @@
   },
   {
     "type": "event",
+    "name": "Rescued",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RewardNotified",
     "inputs": [
       {
@@ -903,13 +997,38 @@
         "internalType": "uint256"
       },
       {
-        "name": "wethAdded",
+        "name": "assetAdded",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
         "name": "epoch",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RewardRolledForward",
+    "inputs": [
+      {
+        "name": "fromEpoch",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "toEpoch",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "assetAmount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1007,6 +1126,11 @@
   },
   {
     "type": "error",
+    "name": "NothingToRescue",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OwnableInvalidOwner",
     "inputs": [
       {
@@ -1056,6 +1180,11 @@
   {
     "type": "error",
     "name": "Unauthorized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnbackedReward",
     "inputs": []
   },
   {

@@ -233,19 +233,6 @@
   },
   {
     "type": "function",
-    "name": "shareStakingImplementation",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "strategyImplementation",
     "inputs": [],
     "outputs": [
@@ -500,6 +487,11 @@
   {
     "type": "error",
     "name": "AlreadyDeployed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AssetIsShares",
     "inputs": []
   },
   {

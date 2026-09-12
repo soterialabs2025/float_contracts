@@ -123,6 +123,19 @@
   },
   {
     "type": "function",
+    "name": "protocolFeeOn",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rangeAboveTicks",
     "inputs": [],
     "outputs": [
@@ -242,6 +255,19 @@
         "name": "interval",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setProtocolFeeOn",
+    "inputs": [
+      {
+        "name": "on",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -443,6 +469,11 @@
   {
     "type": "error",
     "name": "InnerWiderThanOuter",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOperator",
     "inputs": []
   },
   {

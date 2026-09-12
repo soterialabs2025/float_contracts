@@ -1,10 +1,10 @@
 {
   "name": "AutoSwapRouterBv4",
-  "address": "0xAc0513037Aab238Be14C0358652da6c8F7046b04",
+  "address": "0xa58fd964D7c634732fFEb49c0d5fAe8241764b4C",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1788410273099,
+  "timestamp": 1789191369620,
   "abi": [
     {
       "type": "constructor",

@@ -570,6 +570,19 @@
   },
   {
     "type": "function",
+    "name": "protocolFeeOn",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rangeAboveTicks",
     "inputs": [],
     "outputs": [
@@ -707,8 +720,18 @@
   },
   {
     "type": "function",
-    "name": "setInnerBandParams",
+    "name": "setBandParams",
     "inputs": [
+      {
+        "name": "_rangeBelowTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_rangeAboveTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "_innerBelowTicks",
         "type": "uint256",
@@ -764,17 +787,12 @@
   },
   {
     "type": "function",
-    "name": "setRangeParams",
+    "name": "setProtocolFeeOn",
     "inputs": [
       {
-        "name": "_rangeBelowTicks",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_rangeAboveTicks",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "on",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -912,6 +930,13 @@
   },
   {
     "type": "function",
+    "name": "syncFees",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "targetAssetBps",
     "inputs": [],
     "outputs": [
@@ -1044,6 +1069,44 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "RewardNotifyFailed",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SwapFailed",
+    "inputs": [
+      {
+        "name": "tokenIn",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amountIn",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "E",
     "inputs": []
@@ -1056,6 +1119,11 @@
   {
     "type": "error",
     "name": "InnerWiderThanOuter",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOperator",
     "inputs": []
   },
   {

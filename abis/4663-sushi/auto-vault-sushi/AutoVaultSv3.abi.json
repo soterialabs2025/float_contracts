@@ -16,6 +16,19 @@
   },
   {
     "type": "function",
+    "name": "accUniswapFeesPerShare",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "asset",
     "inputs": [],
     "outputs": [
@@ -264,6 +277,19 @@
   },
   {
     "type": "function",
+    "name": "uniswapFeesCollectedSynced",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "weth",
     "inputs": [],
     "outputs": [
@@ -317,6 +343,12 @@
       },
       {
         "name": "shares",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "acc",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -421,6 +453,12 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      },
+      {
+        "name": "acc",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -482,6 +520,11 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "TwapUnavailable",
+    "inputs": []
   },
   {
     "type": "error",

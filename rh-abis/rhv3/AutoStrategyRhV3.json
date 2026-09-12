@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyRhV3",
-  "address": "0xD73a0305673920eA2f60bEA914226F0f31E1d684",
+  "address": "0x824820f61b09d746Bee79D2a5e3b77C3BE51De93",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1788496154989,
+  "timestamp": 1789191120820,
   "abi": [
     {
       "type": "constructor",
@@ -330,6 +330,54 @@
     },
     {
       "type": "function",
+      "name": "minOutForSwap",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "minOutForWithdraw",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "onERC721Received",
       "inputs": [
         {
@@ -494,6 +542,19 @@
     },
     {
       "type": "function",
+      "name": "protocolFeeOn",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "rangeAboveTicks",
       "inputs": [],
       "outputs": [
@@ -607,6 +668,19 @@
     },
     {
       "type": "function",
+      "name": "setProtocolFeeOn",
+      "inputs": [
+        {
+          "name": "on",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "setReserveBps",
       "inputs": [
         {
@@ -639,6 +713,19 @@
           "name": "router_",
           "type": "address",
           "internalType": "address"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setSwapSlippageBps",
+      "inputs": [
+        {
+          "name": "bps",
+          "type": "uint16",
+          "internalType": "uint16"
         }
       ],
       "outputs": [],
@@ -731,6 +818,19 @@
           "name": "",
           "type": "address",
           "internalType": "contract IAutoSwapRouterRhV3"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "swapSlippageBps",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint16",
+          "internalType": "uint16"
         }
       ],
       "stateMutability": "view"
@@ -902,6 +1002,44 @@
       "anonymous": false
     },
     {
+      "type": "event",
+      "name": "RewardNotifyFailed",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "SwapFailed",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
       "type": "error",
       "name": "E",
       "inputs": []
@@ -914,6 +1052,11 @@
     {
       "type": "error",
       "name": "InnerWiderThanOuter",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NotOperator",
       "inputs": []
     },
     {

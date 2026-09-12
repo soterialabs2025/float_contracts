@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryRhV3",
-  "address": "0x5A503B68B612354Aa854F485FB2B79022265f7a9",
+  "address": "0x391C84d903f4d002B7EEbDf4a41e285dEc46198C",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1788496154989,
+  "timestamp": 1789191120742,
   "abi": [
     {
       "type": "constructor",
@@ -237,19 +237,6 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "shareStakingImplementation",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -507,6 +494,11 @@
     {
       "type": "error",
       "name": "AlreadyDeployed",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "AssetIsShares",
       "inputs": []
     },
     {

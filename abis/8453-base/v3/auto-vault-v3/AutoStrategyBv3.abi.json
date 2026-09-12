@@ -323,6 +323,54 @@
   },
   {
     "type": "function",
+    "name": "minOutForSwap",
+    "inputs": [
+      {
+        "name": "tokenIn",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minOutForWithdraw",
+    "inputs": [
+      {
+        "name": "tokenIn",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "onERC721Received",
     "inputs": [
       {
@@ -448,6 +496,19 @@
   },
   {
     "type": "function",
+    "name": "poolValueTwapRaw",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "positionManager",
     "inputs": [],
     "outputs": [
@@ -468,6 +529,19 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "protocolFeeOn",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -546,8 +620,18 @@
   },
   {
     "type": "function",
-    "name": "setInnerBandParams",
+    "name": "setBandParams",
     "inputs": [
+      {
+        "name": "_rangeBelowTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_rangeAboveTicks",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "_innerBelowTicks",
         "type": "uint256",
@@ -577,17 +661,12 @@
   },
   {
     "type": "function",
-    "name": "setRangeParams",
+    "name": "setProtocolFeeOn",
     "inputs": [
       {
-        "name": "_rangeBelowTicks",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "_rangeAboveTicks",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "on",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -614,6 +693,19 @@
         "name": "bps",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSwapSlippageBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -709,6 +801,26 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "swapSlippageBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "syncFees",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -870,6 +982,44 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "RewardNotifyFailed",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SwapFailed",
+    "inputs": [
+      {
+        "name": "tokenIn",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amountIn",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "E",
     "inputs": []
@@ -882,6 +1032,11 @@
   {
     "type": "error",
     "name": "InnerWiderThanOuter",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOperator",
     "inputs": []
   },
   {

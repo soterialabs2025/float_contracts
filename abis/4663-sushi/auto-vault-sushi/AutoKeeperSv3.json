@@ -1,11 +1,10 @@
 {
   "name": "AutoKeeperSv3",
-  "address": null,
+  "address": "0x3d1eea48CC1081D0C6222FEB5F6864F0269356Dd",
   "chainId": 4663,
-  "product": "auto-vault-sushi",
+  "product": "sv3",
   "profile": "rh-sushi",
-  "package": "contracts/auto-vaults-rh-sushi-v3",
-  "timestamp": 1787530546167,
+  "timestamp": 1789190740565,
   "abi": [
     {
       "type": "constructor",

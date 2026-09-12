@@ -1,11 +1,10 @@
 {
   "name": "LiquidSharesRhV4",
-  "address": null,
+  "address": "0x91C3Cff802fa42f0A11aF03ab6867160757C9a09",
   "chainId": 4663,
-  "product": "auto-vault-v4",
+  "product": "rhv4",
   "profile": "rh-v4",
-  "package": "contracts/auto-vault-rh-v4",
-  "timestamp": 1787529040533,
+  "timestamp": 1789190907914,
   "abi": [
     {
       "type": "constructor",

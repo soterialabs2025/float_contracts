@@ -1,11 +1,10 @@
 {
   "name": "AutoFactoryBv3",
-  "address": null,
+  "address": "0x3FdBb0f76C26e83b5c41ef5983B4faF319b86d30",
   "chainId": 8453,
-  "product": "auto-vault-v3",
+  "product": "bv3",
   "profile": "base-v3",
-  "package": "contracts/auto-vaults-base-v3",
-  "timestamp": 1787529806190,
+  "timestamp": 1789191631703,
   "abi": [
     {
       "type": "constructor",
@@ -238,19 +237,6 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "shareStakingImplementation",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -508,6 +494,11 @@
     {
       "type": "error",
       "name": "AlreadyDeployed",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "AssetIsShares",
       "inputs": []
     },
     {

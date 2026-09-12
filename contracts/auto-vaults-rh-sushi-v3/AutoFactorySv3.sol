@@ -68,12 +68,20 @@ contract AutoFactorySv3 is Ownable, ReentrancyGuard {
         address indexed swapRouter, address indexed operatorRegistry, address indexed keeper, address feeManager
     );
 
-    constructor(InfraConfig memory config) Ownable(msg.sender) {
+    constructor(
+        InfraConfig memory config,
+        address strategyImpl_,
+        address vaultImpl_,
+        address liquidSharesImpl_
+    ) Ownable(msg.sender) {
         _validateInfra(config);
+        if (strategyImpl_ == address(0) || vaultImpl_ == address(0) || liquidSharesImpl_ == address(0)) {
+            revert ZeroAddress();
+        }
         infra = config;
-        strategyImplementation = address(new AutoStrategySv3(address(this)));
-        vaultImplementation = address(new AutoVaultSv3(address(this)));
-        liquidSharesImplementation = address(new LiquidSharesSv3(address(this)));
+        strategyImplementation = strategyImpl_;
+        vaultImplementation = vaultImpl_;
+        liquidSharesImplementation = liquidSharesImpl_;
     }
 
     modifier onlyOperator() {

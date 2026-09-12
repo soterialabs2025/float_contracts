@@ -1,11 +1,10 @@
 {
   "name": "AutoFactoryBv4",
-  "address": null,
+  "address": "0x0BCeE17063731EEd8f5636c29003AbD037fCCE4c",
   "chainId": 8453,
-  "product": "auto-vault-v4",
+  "product": "bv4",
   "profile": "base-v4",
-  "package": "contracts/auto-vault-base-v4",
-  "timestamp": 1787528572163,
+  "timestamp": 1789191369607,
   "abi": [
     {
       "type": "constructor",
@@ -36,6 +35,21 @@
               "internalType": "address"
             }
           ]
+        },
+        {
+          "name": "strategyImpl_",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "vaultImpl_",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "liquidSharesImpl_",
+          "type": "address",
+          "internalType": "address"
         }
       ],
       "stateMutability": "nonpayable"
@@ -265,19 +279,6 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "shareStakingImplementation",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -529,6 +530,11 @@
     {
       "type": "error",
       "name": "AlreadyDeployed",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "AssetIsShares",
       "inputs": []
     },
     {

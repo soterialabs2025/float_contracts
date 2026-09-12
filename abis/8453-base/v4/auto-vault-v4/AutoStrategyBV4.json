@@ -1,11 +1,10 @@
 {
   "name": "AutoStrategyBv4",
-  "address": null,
+  "address": "0x4822DE0823C06fae316941855cb4770E56500421",
   "chainId": 8453,
-  "product": "auto-vault-v4",
+  "product": "bv4",
   "profile": "base-v4",
-  "package": "contracts/auto-vault-base-v4",
-  "timestamp": 1787528621856,
+  "timestamp": 1789191369635,
   "abi": [
     {
       "type": "constructor",
@@ -47,19 +46,6 @@
     {
       "type": "function",
       "name": "UniswapFeesCollected",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "balance",
       "inputs": [],
       "outputs": [
         {
@@ -350,7 +336,70 @@
     },
     {
       "type": "function",
+      "name": "maxRefDrift",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "maxSwapTickDeviation",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "minHarvestDelay",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "minOutForSwap",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "minRefUpdateInterval",
       "inputs": [],
       "outputs": [
         {
@@ -394,6 +443,19 @@
         }
       ],
       "stateMutability": "pure"
+    },
+    {
+      "type": "function",
+      "name": "operatorRegistry",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract IAutoOperatorRegistryBv4"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -476,6 +538,19 @@
     },
     {
       "type": "function",
+      "name": "poolValueRef",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "positionManager",
       "inputs": [],
       "outputs": [
@@ -496,6 +571,19 @@
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "protocolFeeOn",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
         }
       ],
       "stateMutability": "view"
@@ -525,6 +613,58 @@
         }
       ],
       "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "refBlock",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "refTick",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "int24",
+          "internalType": "int24"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "refTime",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "refreshPriceRef",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
@@ -574,8 +714,31 @@
     },
     {
       "type": "function",
-      "name": "setInnerBandParams",
+      "name": "secondsPerRefTick",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "setBandParams",
       "inputs": [
+        {
+          "name": "_rangeBelowTicks",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_rangeAboveTicks",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
         {
           "name": "_innerBelowTicks",
           "type": "uint256",
@@ -592,17 +755,51 @@
     },
     {
       "type": "function",
-      "name": "setRangeParams",
+      "name": "setMaxRefDrift",
       "inputs": [
         {
-          "name": "_rangeBelowTicks",
+          "name": "ticks",
           "type": "uint256",
           "internalType": "uint256"
-        },
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setMaxSwapTickDeviation",
+      "inputs": [
         {
-          "name": "_rangeAboveTicks",
+          "name": "ticks",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setMinRefUpdateInterval",
+      "inputs": [
+        {
+          "name": "interval",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setProtocolFeeOn",
+      "inputs": [
+        {
+          "name": "on",
+          "type": "bool",
+          "internalType": "bool"
         }
       ],
       "outputs": [],
@@ -623,12 +820,38 @@
     },
     {
       "type": "function",
+      "name": "setSecondsPerRefTick",
+      "inputs": [
+        {
+          "name": "seconds_",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "setStakingShareBps",
       "inputs": [
         {
           "name": "bps",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setSwapSlippageBps",
+      "inputs": [
+        {
+          "name": "bps",
+          "type": "uint16",
+          "internalType": "uint16"
         }
       ],
       "outputs": [],
@@ -698,6 +921,26 @@
         }
       ],
       "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "swapSlippageBps",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint16",
+          "internalType": "uint16"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "syncFees",
+      "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
@@ -833,9 +1076,42 @@
       "anonymous": false
     },
     {
-      "type": "error",
-      "name": "BadTicks",
-      "inputs": []
+      "type": "event",
+      "name": "RewardNotifyFailed",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "SwapFailed",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
     },
     {
       "type": "error",
@@ -854,7 +1130,7 @@
     },
     {
       "type": "error",
-      "name": "NoLiquidity",
+      "name": "NotOperator",
       "inputs": []
     },
     {
@@ -881,17 +1157,17 @@
     },
     {
       "type": "error",
-      "name": "PoolNotInitialized",
-      "inputs": []
-    },
-    {
-      "type": "error",
       "name": "RangeNotAlignedToSpacing",
       "inputs": []
     },
     {
       "type": "error",
       "name": "ReentrancyGuardReentrantCall",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "RefConfig",
       "inputs": []
     },
     {
@@ -912,7 +1188,7 @@
     },
     {
       "type": "error",
-      "name": "Uint128Overflow",
+      "name": "SwapSlippageBps",
       "inputs": []
     }
   ]

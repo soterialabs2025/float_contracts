@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyRhV4",
-  "address": "0x0d60930178CEFbcc3bC306C5137AAad07fdD68a8",
+  "address": "0xeF462A466E96d5F92f12096630378BbE5299c7Ea",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1788497330559,
+  "timestamp": 1789190907892,
   "abi": [
     {
       "type": "constructor",
@@ -615,6 +615,19 @@
     },
     {
       "type": "function",
+      "name": "protocolFeeOn",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "rangeAboveTicks",
       "inputs": [],
       "outputs": [
@@ -812,6 +825,19 @@
           "name": "interval",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setProtocolFeeOn",
+      "inputs": [
+        {
+          "name": "on",
+          "type": "bool",
+          "internalType": "bool"
         }
       ],
       "outputs": [],
@@ -1101,6 +1127,44 @@
       "anonymous": false
     },
     {
+      "type": "event",
+      "name": "RewardNotifyFailed",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "SwapFailed",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
       "type": "error",
       "name": "E",
       "inputs": []
@@ -1113,6 +1177,11 @@
     {
       "type": "error",
       "name": "InnerWiderThanOuter",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NotOperator",
       "inputs": []
     },
     {

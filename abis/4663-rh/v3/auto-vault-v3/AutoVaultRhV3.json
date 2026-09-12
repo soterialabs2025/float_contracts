@@ -1,11 +1,10 @@
 {
   "name": "AutoVaultRhV3",
-  "address": null,
+  "address": "0x0D8193c9387E61a5E76C25112815004f2631dA94",
   "chainId": 4663,
-  "product": "auto-vault-v3",
+  "product": "rhv3",
   "profile": "rh-v3",
-  "package": "contracts/auto-vaults-rh-v3",
-  "timestamp": 1787527403567,
+  "timestamp": 1789191120857,
   "abi": [
     {
       "type": "constructor",
@@ -21,6 +20,19 @@
     {
       "type": "receive",
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "accUniswapFeesPerShare",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -272,6 +284,19 @@
     },
     {
       "type": "function",
+      "name": "uniswapFeesCollectedSynced",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "weth",
       "inputs": [],
       "outputs": [
@@ -325,6 +350,12 @@
         },
         {
           "name": "shares",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "acc",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
@@ -429,6 +460,12 @@
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
+        },
+        {
+          "name": "acc",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
         }
       ],
       "anonymous": false
@@ -490,6 +527,11 @@
           "internalType": "address"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "TwapUnavailable",
+      "inputs": []
     },
     {
       "type": "error",

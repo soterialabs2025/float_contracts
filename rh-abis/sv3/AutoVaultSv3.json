@@ -1,10 +1,10 @@
 {
   "name": "AutoVaultSv3",
-  "address": "0xae2B57AFb7F40F95f12fCa28D7DfF9Ade08334fe",
+  "address": "0x0AA023493EC320eB681fFCEF9489963d4923D052",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1788497796896,
+  "timestamp": 1789190740577,
   "abi": [
     {
       "type": "constructor",
@@ -527,6 +527,11 @@
           "internalType": "address"
         }
       ]
+    },
+    {
+      "type": "error",
+      "name": "TwapUnavailable",
+      "inputs": []
     },
     {
       "type": "error",

@@ -3,11 +3,12 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {AutoFactoryRhV4} from "../contracts/auto-vault-rh-v4/AutoFactoryRhV4.sol";
+import {AutoStrategyRhV4} from "../contracts/auto-vault-rh-v4/AutoStrategyRhV4.sol";
+import {AutoVaultRhV4} from "../contracts/auto-vault-rh-v4/AutoVaultRhV4.sol";
+import {LiquidSharesRhV4} from "../contracts/auto-vault-rh-v4/LiquidSharesRhV4.sol";
 
-/// @dev The factory builds strategy/vault/liquid implementations in its constructor (cloned per package) and
-///      CREATE's ShareStakingRhV4 per package, so factory runtime carries ShareStaking create bytecode.
-///      These also cover the library linking: the strategy initcode embedded in the factory holds placeholders for
-///      LiquidityLibraryV4 and SwapGateLib, so an unlinked build fails here rather than at broadcast time.
+/// @dev Clone implementations are deployed first (so factory initcode stays under EIP-3860), then passed
+///      into the factory constructor. ShareStakingRhV4 is still CREATE'd per package from factory runtime.
 contract AutoFactoryRhV4DeployTest is Test {
     uint256 internal constant EIP170_RUNTIME_LIMIT = 24_576;
     uint256 internal constant EIP3860_INITCODE_LIMIT = 49_152;
@@ -15,14 +16,22 @@ contract AutoFactoryRhV4DeployTest is Test {
     AutoFactoryRhV4 internal factory;
 
     function setUp() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 3);
+        address strategyImpl = address(new AutoStrategyRhV4(predicted));
+        address vaultImpl = address(new AutoVaultRhV4(predicted));
+        address liquidSharesImpl = address(new LiquidSharesRhV4(predicted));
         factory = new AutoFactoryRhV4(
             AutoFactoryRhV4.InfraConfig({
                 swapRouter: address(0xA11CE),
                 operatorRegistry: address(0xB0B),
                 keeper: address(0xC0FFEE),
                 feeManager: address(0xDECAF)
-            })
+            }),
+            strategyImpl,
+            vaultImpl,
+            liquidSharesImpl
         );
+        assertEq(address(factory), predicted, "factory CREATE address");
     }
 
     function test_ConstructorDeploysCloneImplementations() public view {
@@ -50,7 +59,10 @@ contract AutoFactoryRhV4DeployTest is Test {
                 operatorRegistry: address(0xB0B),
                 keeper: address(0xC0FFEE),
                 feeManager: address(0xDECAF)
-            })
+            }),
+            address(1),
+            address(1),
+            address(1)
         );
     }
 }

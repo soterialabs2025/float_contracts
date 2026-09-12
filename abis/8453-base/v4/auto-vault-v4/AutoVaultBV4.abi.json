@@ -16,6 +16,19 @@
   },
   {
     "type": "function",
+    "name": "accUniswapFeesPerShare",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "asset",
     "inputs": [],
     "outputs": [
@@ -127,19 +140,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "lastSharePriceX18",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -264,6 +264,19 @@
   },
   {
     "type": "function",
+    "name": "uniswapFeesCollectedSynced",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "weth",
     "inputs": [],
     "outputs": [
@@ -317,6 +330,12 @@
       },
       {
         "name": "shares",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "acc",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -383,19 +402,6 @@
   },
   {
     "type": "event",
-    "name": "SharePriceHighWater",
-    "inputs": [
-      {
-        "name": "priceX18",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Withdraw",
     "inputs": [
       {
@@ -418,6 +424,12 @@
       },
       {
         "name": "outAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "acc",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -465,6 +477,11 @@
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RefUnavailable",
     "inputs": []
   },
   {

@@ -5,6 +5,10 @@
     "stateMutability": "nonpayable"
   },
   {
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+  {
     "type": "function",
     "name": "addAuthorizedStrategy",
     "inputs": [
@@ -16,19 +20,6 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "factory",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IUniswapV3Factory"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -51,6 +42,19 @@
   },
   {
     "type": "function",
+    "name": "maxPriceImpactBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -58,6 +62,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "poolManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IPoolManager"
       }
     ],
     "stateMutability": "view"
@@ -107,10 +124,23 @@
   },
   {
     "type": "function",
+    "name": "setMaxPriceImpactBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setStrategyFactory",
     "inputs": [
       {
-        "name": "factory_",
+        "name": "factory",
         "type": "address",
         "internalType": "address"
       }
@@ -136,19 +166,9 @@
     "name": "swapExactInputSingleStrict",
     "inputs": [
       {
-        "name": "tokenIn",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenOut",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "fee",
-        "type": "uint24",
-        "internalType": "uint24"
+        "name": "zeroForOne",
+        "type": "bool",
+        "internalType": "bool"
       },
       {
         "name": "amountIn",
@@ -157,13 +177,50 @@
       },
       {
         "name": "minAmountOut",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "uint128",
+        "internalType": "uint128"
       },
       {
         "name": "deadline",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "libKey",
+        "type": "tuple",
+        "internalType": "struct IAutoSwapRouterRhV4.AutoPoolKey",
+        "components": [
+          {
+            "name": "currency0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "currency1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
+          },
+          {
+            "name": "tickSpacing",
+            "type": "int24",
+            "internalType": "int24"
+          },
+          {
+            "name": "hooks",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "hookData",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [
@@ -173,7 +230,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -190,26 +247,35 @@
   },
   {
     "type": "function",
-    "name": "uniswapV3SwapCallback",
+    "name": "unlockCallback",
     "inputs": [
-      {
-        "name": "amount0Delta",
-        "type": "int256",
-        "internalType": "int256"
-      },
-      {
-        "name": "amount1Delta",
-        "type": "int256",
-        "internalType": "int256"
-      },
       {
         "name": "data",
         "type": "bytes",
         "internalType": "bytes"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "MaxPriceImpactUpdated",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -299,7 +365,13 @@
     "name": "SwapExecuted",
     "inputs": [
       {
-        "name": "strategy",
+        "name": "caller",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -338,17 +410,17 @@
   },
   {
     "type": "error",
+    "name": "BadSlippage",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "Expired",
     "inputs": []
   },
   {
     "type": "error",
     "name": "InsufficientOutput",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidPool",
     "inputs": []
   },
   {
