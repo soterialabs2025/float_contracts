@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperBv3",
-  "address": "0xEAf00355264CCCa4b947F84573B41d3bf64A3C70",
+  "address": "0x15920D40B56b7DC9ac918F615C4b601b5c78c4f8",
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1789191631720,
+  "timestamp": 1789232758699,
   "abi": [
     {
       "type": "constructor",
@@ -331,6 +331,31 @@
           "type": "address",
           "indexed": true,
           "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "UpkeepFailed",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "stratAddr",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "reason",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
         }
       ],
       "anonymous": false

@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperRhV4",
-  "address": "0xD149A5B08fb67cfaD8B5DC9346710f7DbBc4a0c9",
+  "address": "0xa06536A209c4a482341372D579cF650969C469F9",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1789190907884,
+  "timestamp": 1789233669512,
   "abi": [
     {
       "type": "constructor",
@@ -357,6 +357,31 @@
           "type": "address",
           "indexed": true,
           "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "UpkeepFailed",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "stratAddr",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "reason",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
         }
       ],
       "anonymous": false

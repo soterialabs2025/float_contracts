@@ -4,7 +4,7 @@
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1789190740581,
+  "timestamp": 1789232466479,
   "abi": [
     {
       "type": "constructor",

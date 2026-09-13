@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryRhV4",
-  "address": "0x9Da670cf4385faf81e4F8745aeA27f779442366C",
+  "address": "0x41347B0C40d143573637B77F4575411bA300Ee64",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1789190907869,
+  "timestamp": 1789233669501,
   "abi": [
     {
       "type": "constructor",

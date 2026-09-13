@@ -68,6 +68,11 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
 
     uint256 public lastHarvest;
     uint256 public lastRebalanceTime;
+    /// @notice Deployable idle, in WETH terms, left behind by a remint that failed to shrink it.
+    /// @dev Zero means no such remint is outstanding. While set, idle at or below it is inventory a remint has
+    ///      already declined to absorb, so retrying costs gas and changes nothing until a deposit or a harvest
+    ///      pushes idle past it.
+    uint256 public idleRemintFloor;
     uint256 public UniswapFeesCollected;
     uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
@@ -246,6 +251,19 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     /// @dev Unreserved idle ≥ 5% of NAV. Reserved inventory does not count.
     uint256 private constant IDLE_DEPLOY_BPS = 500;
 
+    /// @dev Deployable idle valued in WETH. Reserved inventory is already excluded. An unreadable price leaves
+    ///      only the WETH leg countable, which understates idle rather than inventing a value for it.
+    function _idleValue() internal view returns (uint256) {
+        (uint256 a, uint256 w) = _getDeployableBalances();
+        if (a == 0) return w;
+        uint256 p = _spotPrice1e18();
+        if (p == 0) return w;
+        return w + Math.mulDiv(a, 1e18, p);
+    }
+
+    /// @dev Materiality only: is unreserved idle worth a pass at all, measured against NAV. Whether it can mint
+    ///      anything is not asked here. One-sided idle that prices to zero liquidity gets an increase that adds
+    ///      nothing, and the cooldown and latch below bound how often that is paid for.
     function _idleDeployableMaterial() internal view returns (bool) {
         (uint256 a, uint256 w) = _getDeployableBalances();
         if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) return false;
@@ -256,6 +274,14 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         return w + Math.mulDiv(a, 1e18, p) >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
     }
 
+    /// @dev Record idle a remint left behind, so the next pass can tell a remint that worked from one that only
+    ///      churned. Only a remint that actually ran latches: a gate refusal deserves another attempt later.
+    function _latchIdleProgress(uint256 idleBefore, bool reminted) internal {
+        if (!reminted) return;
+        uint256 idleAfter = _idleValue();
+        idleRemintFloor = idleAfter >= idleBefore ? idleAfter : 0;
+    }
+
     /// @dev Remint if OOR, tick left inner comfort, or unreserved idle is still material after increase.
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
@@ -264,20 +290,35 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) {
                 if (reservedAsset <= LIQUIDITY_DUST && reservedWeth <= LIQUIDITY_DUST) return false;
             }
-            _remintAtTarget();
-            return liqPos.positionId != 0;
+            // Known gap: an open that cannot mint reverts inside the library, and a revert erases any latch or
+            // timestamp this branch might write, so the keeper retries it every tick until a deposit changes the
+            // inventory. Bounding it needs the mint to decline rather than revert, which does not fit under
+            // EIP-170 here. Idle small enough to hit this is dust the dust checks above mostly catch.
+            return _remintAtTarget();
         }
         if (_inOuterRange() && _inInnerComfort()) {
             if (!_idleDeployableMaterial()) return false;
-            _increaseLiquidityInternal();
-            if (!_idleDeployableMaterial()) return true;
-            if (
-                minHarvestDelay > 0 && lastRebalanceTime != 0
-                    && block.timestamp - lastRebalanceTime < minHarvestDelay
-            ) return true;
-            return _remintAtTarget();
+            // An in-range add needs both legs at the pool ratio, and this one can only use what is already
+            // unreserved. Releasing reserve to balance it belongs to `_remintAtTarget`, which does it below.
+            uint128 added = _increaseLiquidityInternal();
+            if (!_idleDeployableMaterial()) return added > 0;
+            // Idle still material, so the only remaining route is a swap and a remint. Both are gated: the
+            // cooldown bounds how often, and the latch refuses to repeat a remint that already failed to
+            // absorb this same inventory. Report `added`, not `true`, so a pass that deployed nothing says so.
+            if (minHarvestDelay > 0 && lastRebalanceTime != 0 && block.timestamp - lastRebalanceTime < minHarvestDelay)
+            {
+                return added > 0;
+            }
+            uint256 idleBefore = _idleValue();
+            if (idleRemintFloor != 0 && idleBefore <= idleRemintFloor) return added > 0;
+            bool reminted = _remintAtTarget();
+            _latchIdleProgress(idleBefore, reminted);
+            return reminted;
         }
-        return _remintAtTarget();
+        // Out of range. The band has to move whatever idle does, so the latch must not hold it back.
+        bool moved = _remintAtTarget();
+        if (moved) idleRemintFloor = 0;
+        return moved;
     }
 
     function harvestBoolean(bool skipIncreaseLiquidity)
@@ -528,8 +569,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
         (, int24 currentTick) = _readSlot0();
-        (int24 lower, int24 upper) =
-            AutoBandLib.outerTicks(currentTick, _spacing(), rangeBelowTicks, rangeAboveTicks);
+        (int24 lower, int24 upper) = AutoBandLib.outerTicks(currentTick, _spacing(), rangeBelowTicks, rangeAboveTicks);
         (uint256 bal0, uint256 bal1) = _poolBalances(assetBal, wethBal);
         LiquidityLibraryV4.MintContext memory ctx = LiquidityLibraryV4.MintContext({
             posm: positionManager,
@@ -565,13 +605,25 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         uint256 target = Math.mulDiv(totalValue, _bps(targetAssetBps), DIVISOR);
         if (assetBal > target) {
             uint256 toSell = assetBal - target;
-            if (toSell > 0) _swap(false, toSell, swapSlippageBps);
+            if (toSell > 0) _swap(false, _impactCapped(false, toSell), swapSlippageBps);
         } else if (assetBal < target) {
             uint256 deficit = target - assetBal;
             uint256 wethToSell = Math.mulDiv(deficit, 1e18, p);
             if (wethToSell > wethBal) wethToSell = wethBal;
-            if (wethToSell > 0) _swap(true, wethToSell, swapSlippageBps);
+            if (wethToSell > 0) _swap(true, _impactCapped(true, wethToSell), swapSlippageBps);
         }
+    }
+
+    /// @dev Trim a rebalance swap to what this pool can absorb inside half of `swapSlippageBps`, leaving the rest
+    ///      of the tolerance for the fee and for liquidity thinner than the active tick advertises. `minOut`
+    ///      prices at the anchor and knows nothing of trade size, so an untrimmed swap large against pool depth
+    ///      walks past its own floor and reverts every single time. Half a loaf now, the rest next pass.
+    /// @dev Rebalances only. An exit swap that came up short would pay the withdrawer in the wrong token.
+    function _impactCapped(bool sellEth, uint256 amount) internal view returns (uint256) {
+        uint256 cap = LiquidityLibraryV4.swapInputCap(
+            poolManager, _poolKey, sellEth == (_poolKey.currency0 == address(0)), uint256(swapSlippageBps) / 2, DIVISOR
+        );
+        return amount > cap ? cap : amount;
     }
 
     /// @dev Caps to deployable. Skips if unpriceable so withdrawals can still pay the unswapped token.

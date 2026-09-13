@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategySv3",
-  "address": "0x1b584A43833C8dE5fA0FC4a490aB774E5F2Ae52d",
+  "address": "0xc61f23E460C126057e8ebEaBb6FD931F8EceD8f1",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1789190740571,
+  "timestamp": 1789232466466,
   "abi": [
     {
       "type": "constructor",

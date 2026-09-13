@@ -181,8 +181,10 @@ contract SwapTickGateBv4Test is Test {
 
     // --- swap tolerance is separate from mint tolerance ---
 
-    function test_SwapSlippageDefaultsToOnePercent() public view {
-        assertEq(m.swapSlippageBps(), 100);
+    /// @dev Half of this is the price impact a rebalance swap may cause, so the default has to cover both a
+    ///      realistic fill and a trade sized against a shallow pool's depth.
+    function test_SwapSlippageDefaultsToTwoPercent() public view {
+        assertEq(m.swapSlippageBps(), 200);
     }
 
     function test_SwapSlippageIsCapped() public {
@@ -190,6 +192,19 @@ contract SwapTickGateBv4Test is Test {
         assertEq(m.swapSlippageBps(), 1_000);
         vm.expectRevert(AutoStrategyManagerBv4.SwapSlippageBps.selector);
         m.setSwapSlippageBps(1_001);
+    }
+
+    /// @dev Half this value is the price impact a rebalance swap may cause. A tolerance under 2 bps divides to a
+    ///      zero budget, which trims every rebalance swap to nothing and stops rebalancing with no revert and no
+    ///      event. The floor exists so that setting is refused rather than accepted and silently honoured.
+    function test_SwapSlippageHasAFloorSoTheImpactBudgetCannotRoundToZero() public {
+        vm.expectRevert(AutoStrategyManagerBv4.SwapSlippageBps.selector);
+        m.setSwapSlippageBps(1);
+        vm.expectRevert(AutoStrategyManagerBv4.SwapSlippageBps.selector);
+        m.setSwapSlippageBps(24);
+
+        m.setSwapSlippageBps(25);
+        assertEq(m.swapSlippageBps(), 25);
     }
 
     /// @dev Widening what a swap will accept must not quietly loosen LP minting, which is why these are two

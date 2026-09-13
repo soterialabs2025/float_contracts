@@ -32,7 +32,10 @@ contract AutoStrategyManagerRhV4 is Ownable {
     uint16 public slippageBps = 100;
     /// @notice Tolerance applied to the swap output floor, on top of the pool's own fee.
     /// @dev Separate from `slippageBps` so widening what a swap will accept does not also loosen LP minting.
-    uint16 public swapSlippageBps = 100;
+    /// @dev Half of this is the price impact a rebalance swap is allowed to cause, and the rest covers the pool
+    ///      fee and liquidity thinner than the active tick advertises. At 100 the fee alone ate most of what was
+    ///      left, so swaps that were correctly priced still could not settle.
+    uint16 public swapSlippageBps = 200;
     /// @notice Withdrawals widen the floor haircut by this multiple, because a skipped rebalance retries whereas a
     ///         skipped exit swap pays the user in the token they did not ask for.
     /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
@@ -43,6 +46,9 @@ contract AutoStrategyManagerRhV4 is Ownable {
     /// @dev Ceiling on the widened haircut. `setSwapSlippageBps` allows up to 1_000, and an unclamped multiple
     ///      would reach 30% — past which a floor no longer bounds execution in any useful way.
     uint256 internal constant MAX_WITHDRAW_SLIPPAGE_BPS = 1_000;
+    /// @notice Floor on `swapSlippageBps`. Half of it is the impact budget, so anything smaller leaves a budget
+    ///         too thin for a trade of any size to settle against real pool depth.
+    uint16 internal constant MIN_SWAP_SLIPPAGE_BPS = 25;
     uint256 public minHarvestDelay = 2 hours;
     uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to protocol peel (default 600 = 6%).
@@ -64,7 +70,7 @@ contract AutoStrategyManagerRhV4 is Ownable {
 
     /// @notice Seconds the price reference needs to earn one tick of movement. Default 2, i.e. half a tick a
     ///         second: a genuine 10% move is tracked inside twenty minutes, one block of manipulation buys a tick.
-    uint256 public secondsPerRefTick = 4;
+    uint256 public secondsPerRefTick = 2;
     /// @notice Ceiling on the reference's drift allowance, so a neglected feed still bounds something.
     /// @dev At the default rate this only starts binding after about 67 minutes of keeper silence, and is
     ///      therefore invisible while the feed is healthy.
@@ -72,7 +78,7 @@ contract AutoStrategyManagerRhV4 is Ownable {
     /// @notice Minimum spacing between keeper-driven `refreshPriceRef` writes.
     /// @dev Shorter is safer, not just fresher: movement is capped per unit time, so a denser cadence bounds
     ///      each individual write more tightly and limits what one poisoned write can do.
-    uint256 public minRefUpdateInterval = 10 minutes;
+    uint256 public minRefUpdateInterval = 5 minutes;
 
     function setProtocolFeeOn(bool on) external onlyOwner {
         protocolFeeOn = on;
@@ -99,8 +105,12 @@ contract AutoStrategyManagerRhV4 is Ownable {
     }
 
     /// @notice Capped: past 10% a floor stops bounding execution in any useful way.
+    /// @dev The lower bound is not cosmetic. Half of this value is the price impact a rebalance swap is allowed to
+    ///      cause, so a tolerance under 2 would integer-divide to a zero budget, the swap would be trimmed to zero
+    ///      and skipped, and rebalancing would stop with no revert and no event to say so. Reject the setting
+    ///      rather than accept one that silently disables the thing.
     function setSwapSlippageBps(uint16 bps) external onlyOwner {
-        if (bps > 1_000) revert SwapSlippageBps();
+        if (bps > 1_000 || bps < MIN_SWAP_SLIPPAGE_BPS) revert SwapSlippageBps();
         swapSlippageBps = bps;
     }
 
@@ -168,7 +178,7 @@ contract AutoStrategyManagerRhV4 is Ownable {
         innerBelowTicks = 960;
         innerAboveTicks = 960;
         slippageBps = 100;
-        swapSlippageBps = 100;
+        swapSlippageBps = 200;
         minHarvestDelay = 2 hours;
         withdrawalFeeBps = 100;
         protocolFeeBps = 600;

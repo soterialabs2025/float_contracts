@@ -1,10 +1,10 @@
 {
   "name": "AutoKeeperSv3",
-  "address": "0x3d1eea48CC1081D0C6222FEB5F6864F0269356Dd",
+  "address": "0xE526e6976B112a1B7537d223E79066f3096ff50c",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1789190740565,
+  "timestamp": 1789232466461,
   "abi": [
     {
       "type": "constructor",
@@ -331,6 +331,31 @@
           "type": "address",
           "indexed": true,
           "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "UpkeepFailed",
+      "inputs": [
+        {
+          "name": "id",
+          "type": "uint256",
+          "indexed": true,
+          "internalType": "uint256"
+        },
+        {
+          "name": "stratAddr",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "reason",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
         }
       ],
       "anonymous": false

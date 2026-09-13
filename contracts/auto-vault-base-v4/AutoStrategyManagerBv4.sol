@@ -24,7 +24,7 @@ contract AutoStrategyManagerBv4 is Ownable {
     uint16 public slippageBps = 100;
     /// @notice Tolerance applied to the swap output floor, on top of the pool's own fee.
     /// @dev Separate from `slippageBps` so widening what a swap will accept does not also loosen LP minting.
-    uint16 public swapSlippageBps = 100;
+    uint16 public swapSlippageBps = 200;
     /// @notice Withdrawals widen the floor haircut by this multiple, because a skipped rebalance retries whereas a
     ///         skipped exit swap pays the user in the token they did not ask for.
     /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
@@ -35,6 +35,9 @@ contract AutoStrategyManagerBv4 is Ownable {
     /// @dev Ceiling on the widened haircut. `setSwapSlippageBps` allows up to 1_000, and an unclamped multiple
     ///      would reach 30% — past which a floor no longer bounds execution in any useful way.
     uint256 internal constant MAX_WITHDRAW_SLIPPAGE_BPS = 1_000;
+    /// @notice Floor on `swapSlippageBps`. Half of it is the impact budget, so anything smaller leaves a budget
+    ///         too thin for a trade of any size to settle against real pool depth.
+    uint16 internal constant MIN_SWAP_SLIPPAGE_BPS = 25;
     uint256 public minHarvestDelay = 2 hours;
     uint256 public withdrawalFeeBps = 100;
     /// @notice Share of fee-only collects sent to protocol peel (default 600 = 6%).
@@ -91,8 +94,12 @@ contract AutoStrategyManagerBv4 is Ownable {
     }
 
     /// @notice Capped: past 10% a floor stops bounding execution in any useful way.
+    /// @dev The lower bound is not cosmetic. Half of this value is the price impact a rebalance swap is allowed to
+    ///      cause, so a tolerance under 2 would integer-divide to a zero budget, the swap would be trimmed to zero
+    ///      and skipped, and rebalancing would stop with no revert and no event to say so. Reject the setting
+    ///      rather than accept one that silently disables the thing.
     function setSwapSlippageBps(uint16 bps) external onlyOwner {
-        if (bps > 1_000) revert SwapSlippageBps();
+        if (bps > 1_000 || bps < MIN_SWAP_SLIPPAGE_BPS) revert SwapSlippageBps();
         swapSlippageBps = bps;
     }
 
@@ -160,7 +167,7 @@ contract AutoStrategyManagerBv4 is Ownable {
         innerBelowTicks = 800;
         innerAboveTicks = 800;
         slippageBps = 100;
-        swapSlippageBps = 100;
+        swapSlippageBps = 200;
         minHarvestDelay = 2 hours;
         withdrawalFeeBps = 100;
         protocolFeeBps = 600;

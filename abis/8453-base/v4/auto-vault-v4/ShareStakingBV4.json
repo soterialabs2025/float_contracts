@@ -4,7 +4,7 @@
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1789191369662,
+  "timestamp": 1789233059873,
   "abi": [
     {
       "type": "constructor",

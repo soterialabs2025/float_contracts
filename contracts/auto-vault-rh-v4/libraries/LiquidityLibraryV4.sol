@@ -246,6 +246,51 @@ library LiquidityLibraryV4 {
         return getSlot0(poolManager, key);
     }
 
+    /// @notice Liquidity active at the pool's current tick, which is the depth a swap trades against first.
+    function getPoolLiquidity(IPoolManagerV4 poolManager, PoolKey memory key) internal view returns (uint128) {
+        return StateLibrary.getLiquidity(IPoolManager(address(poolManager)), PoolId.wrap(poolId(key)));
+    }
+
+    /// @notice Largest input this pool absorbs while moving its price no further than `budgetBps`.
+    /// @dev The term a swap output floor cannot supply. A floor prices the trade at a reference and deducts the
+    ///      fee and a flat tolerance; it never sees trade size. So a trade large against this pool's own depth
+    ///      walks the curve past its own floor and reverts every time, however honest the reference price is.
+    ///      Bounding the input instead keeps the floor tight and lets successive passes move the inventory.
+    /// @dev Reads the pool here rather than taking price and liquidity as arguments, because the callers are
+    ///      strategies with no runtime-size headroom to spend on two more reads. The arithmetic itself is in
+    ///      `maxInputForImpact`, where it can be tested without standing up a pool.
+    /// @return Zero when the pool is unreadable or the budget rounds away, which callers must treat as "no swap".
+    function swapInputCap(
+        IPoolManagerV4 poolManager,
+        PoolKey memory key,
+        bool tokenInIsCurrency0,
+        uint256 budgetBps,
+        uint256 divisor
+    ) public view returns (uint256) {
+        if (budgetBps == 0 || divisor == 0) return 0;
+        (uint160 sqrtPriceX96,) = getSlot0(poolManager, key);
+        return maxInputForImpact(sqrtPriceX96, getPoolLiquidity(poolManager, key), tokenInIsCurrency0, budgetBps, divisor);
+    }
+
+    /// @notice The arithmetic behind `swapInputCap`, for a pool at `sqrtPriceX96` with `liquidity` active.
+    /// @dev `L / sqrtP` and `L * sqrtP` are the virtual reserves of currency0 and currency1. Trading `x` of one
+    ///      moves sqrtPrice by `x / reserve`, and sqrtPrice moves half as far as price, hence half the budget.
+    ///      Liquidity is assumed constant across the move: crossing an initialised tick into thinner liquidity
+    ///      moves price further than this predicts, which is why callers keep tolerance beyond this budget.
+    function maxInputForImpact(
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        bool tokenInIsCurrency0,
+        uint256 budgetBps,
+        uint256 divisor
+    ) public pure returns (uint256) {
+        if (sqrtPriceX96 == 0 || liquidity == 0 || budgetBps == 0 || divisor == 0) return 0;
+        uint256 reserve = tokenInIsCurrency0
+            ? Math.mulDiv(liquidity, Q96, sqrtPriceX96)
+            : Math.mulDiv(liquidity, sqrtPriceX96, Q96);
+        return Math.mulDiv(reserve, budgetBps, divisor * 2);
+    }
+
     /// @notice Slot0 including the fee fields `getSlot0` discards.
     /// @dev `lpFee` here is the pool's live fee, so it is correct for dynamic-fee pools too, where `key.fee`
     ///      holds only the `LPFeeLibrary.DYNAMIC_FEE_FLAG` sentinel rather than a usable rate.

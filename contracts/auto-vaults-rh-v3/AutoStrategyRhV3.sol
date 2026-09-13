@@ -241,10 +241,16 @@ contract AutoStrategyRhV3 is AutoStrategyManagerRhV3, ReentrancyGuard, IERC721Re
         (, int24 tick) = _readSlot0();
         if (_inOuterRange(tick) && _inInnerComfort(tick)) {
             if (!_idleDeployableMaterial()) return false;
-            _increaseLiquidityInternal();
-            if (!_idleDeployableMaterial()) return true;
+            // An in-range add needs both legs at the pool ratio. Release the short leg from reserve
+            // first: one-sided idle otherwise prices to zero liquidity and the add adds nothing.
+            (uint256 dA, uint256 dW) = _getDeployableBalances();
+            _fundDeficitFromReserve(dA, dW);
+            uint128 added = _increaseLiquidityInternal();
+            if (!_idleDeployableMaterial()) return added > 0;
+            // Idle still material. Defer to the rebalance cooldown only when the add worked; otherwise
+            // the position cannot absorb this inventory and waiting just spins the keeper.
             if (
-                minHarvestDelay > 0 && lastRebalanceTime != 0
+                added > 0 && minHarvestDelay > 0 && lastRebalanceTime != 0
                     && block.timestamp - lastRebalanceTime < minHarvestDelay
             ) return true;
             return _remintAtTarget();

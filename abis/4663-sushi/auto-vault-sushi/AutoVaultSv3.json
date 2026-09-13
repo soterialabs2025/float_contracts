@@ -1,10 +1,10 @@
 {
   "name": "AutoVaultSv3",
-  "address": "0x0AA023493EC320eB681fFCEF9489963d4923D052",
+  "address": "0xA4dac23aD2Ada0E55Cab1891BD3860eb09Fd6b80",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1789190740577,
+  "timestamp": 1789232466473,
   "abi": [
     {
       "type": "constructor",

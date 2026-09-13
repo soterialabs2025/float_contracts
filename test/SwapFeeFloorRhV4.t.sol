@@ -83,8 +83,10 @@ contract SwapFeeFloorRhV4Test is Test {
         assertEq(SwapGateLib.spotPrice1e18(SQRT_ONE, false), 1e18);
     }
 
-    function test_SwapSlippageDefaultsToOnePercent() public view {
-        assertEq(m.swapSlippageBps(), 100);
+    /// @dev Half of this is the price impact a rebalance swap may cause, so the default has to cover both a
+    ///      realistic fill and a trade sized against a shallow pool's depth.
+    function test_SwapSlippageDefaultsToTwoPercent() public view {
+        assertEq(m.swapSlippageBps(), 200);
     }
 
     function test_SwapSlippageIsCapped() public {
@@ -92,6 +94,19 @@ contract SwapFeeFloorRhV4Test is Test {
         assertEq(m.swapSlippageBps(), 1_000);
         vm.expectRevert(AutoStrategyManagerRhV4.SwapSlippageBps.selector);
         m.setSwapSlippageBps(1_001);
+    }
+
+    /// @dev Half this value is the price impact a rebalance swap may cause. A tolerance under 2 bps divides to a
+    ///      zero budget, which trims every rebalance swap to nothing and stops rebalancing with no revert and no
+    ///      event. The floor exists so that setting is refused rather than accepted and silently honoured.
+    function test_SwapSlippageHasAFloorSoTheImpactBudgetCannotRoundToZero() public {
+        vm.expectRevert(AutoStrategyManagerRhV4.SwapSlippageBps.selector);
+        m.setSwapSlippageBps(1);
+        vm.expectRevert(AutoStrategyManagerRhV4.SwapSlippageBps.selector);
+        m.setSwapSlippageBps(24);
+
+        m.setSwapSlippageBps(25);
+        assertEq(m.swapSlippageBps(), 25);
     }
 
     function test_SwapSlippageDoesNotMoveMintSlippage() public {

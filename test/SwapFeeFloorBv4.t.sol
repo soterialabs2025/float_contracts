@@ -99,15 +99,15 @@ contract SwapFeeFloorBv4Test is Test {
 
     // --- the regression ---
 
-    /// @dev On a 1% pool the fee alone equals the whole 100 bps default tolerance. Before this fix the floor
-    ///      landed exactly on the post-fee output, so any price impact at all made the swap revert.
+    /// @dev On a 1% pool the fee alone once equalled the whole default tolerance. Before this fix the floor landed
+    ///      exactly on the post-fee output, so any price impact at all made the swap revert.
     function test_FloorSitsBelowPostFeeOutputOnOnePercentPool() public {
         AutoStrategyBv4 s = _strategy(FEE_ONE_PCT);
         pm.setSlot0(SQRT_ONE, 0, 0, FEE_ONE_PCT);
 
         uint256 floor_ = s.minOutForSwap(WETH_ADDR, ONE);
         assertLt(floor_, _payable(FEE_ONE_PCT), "floor must leave room below the post-fee output");
-        assertEq(floor_, 0.9801e18, "quote, less 1% fee, less 1% tolerance");
+        assertEq(floor_, 0.9702e18, "quote, less 1% fee, less 2% tolerance");
     }
 
     function test_FloorSitsBelowPostFeeOutputOnThirtyBipPool() public {
@@ -116,7 +116,7 @@ contract SwapFeeFloorBv4Test is Test {
 
         uint256 floor_ = s.minOutForSwap(WETH_ADDR, ONE);
         assertLt(floor_, _payable(FEE_THIRTY_BIP));
-        assertEq(floor_, 0.98703e18);
+        assertEq(floor_, 0.97706e18);
     }
 
     // --- fee comes from slot0, not the pool key ---
@@ -129,7 +129,7 @@ contract SwapFeeFloorBv4Test is Test {
 
         uint256 floor_ = s.minOutForSwap(WETH_ADDR, ONE);
         assertGt(floor_, 0, "sentinel must not brick the pool");
-        assertEq(floor_, 0.98703e18, "priced off the live 0.3% fee in slot0");
+        assertEq(floor_, 0.97706e18, "priced off the live 0.3% fee in slot0");
     }
 
     /// @dev A hook moving a dynamic pool's fee is picked up on the next quote with no strategy change.

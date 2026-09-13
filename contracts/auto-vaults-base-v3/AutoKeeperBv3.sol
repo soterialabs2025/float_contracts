@@ -31,6 +31,7 @@ contract AutoKeeperBv3 is IAutoKeeperBv3, Ownable, ReentrancyGuard {
 
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
     event StrategyFactoryUpdated(address indexed factory);
+    event UpkeepFailed(uint256 indexed id, address indexed stratAddr, bytes reason);
     event VaultPoolValueSnapshot(uint256 indexed id, address indexed vault, address indexed strat, address caller);
 
     constructor(address operatorRegistry_) Ownable(msg.sender) {
@@ -77,7 +78,7 @@ contract AutoKeeperBv3 is IAutoKeeperBv3, Ownable, ReentrancyGuard {
     }
 
     function performUpkeep(uint256 id) external override nonReentrant onlyOperator {
-        _performUpkeep(id);
+        _performUpkeep(id, false);
     }
 
     function performUpkeepBatch(uint256[] calldata ids) external nonReentrant onlyOperator {
@@ -85,11 +86,13 @@ contract AutoKeeperBv3 is IAutoKeeperBv3, Ownable, ReentrancyGuard {
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
             if (ids[i] >= maxId) continue;
-            _performUpkeep(ids[i]);
+            _performUpkeep(ids[i], true);
         }
     }
 
-    function _performUpkeep(uint256 id) internal {
+    /// @dev `isolate` is set by the batch path so one failing strategy cannot block the others. The
+    /// revert reason is emitted, never discarded; the single-id entrypoint propagates it instead.
+    function _performUpkeep(uint256 id, bool isolate) internal {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
@@ -97,8 +100,14 @@ contract AutoKeeperBv3 is IAutoKeeperBv3, Ownable, ReentrancyGuard {
             return;
         }
         IAutoStrategyBv3 strat = IAutoStrategyBv3(ws.stratAddr);
-        if (strat.keeperCheck()) {
-            ws.lastUpkeep = uint32(block.timestamp);
+        if (!isolate) {
+            if (strat.keeperCheck()) ws.lastUpkeep = uint32(block.timestamp);
+            return;
+        }
+        try strat.keeperCheck() returns (bool worked) {
+            if (worked) ws.lastUpkeep = uint32(block.timestamp);
+        } catch (bytes memory reason) {
+            emit UpkeepFailed(id, ws.stratAddr, reason);
         }
     }
 

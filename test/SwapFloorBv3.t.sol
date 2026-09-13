@@ -136,15 +136,17 @@ contract SwapFloorBv3Test is Test {
         );
     }
 
-    function test_DefaultSwapSlippageIsOnePercent() public view {
-        assertEq(strategy.swapSlippageBps(), 100);
+    /// @dev Half of this is the price impact a rebalance swap may cause, so the default has to cover both a
+    ///      realistic fill and a trade sized against a shallow pool's depth.
+    function test_DefaultSwapSlippageIsTwoPercent() public view {
+        assertEq(strategy.swapSlippageBps(), 200);
     }
 
-    /// @dev 1:1 spot, then the pool's own 0.3% fee, then 1% operator tolerance. Both directions quote the same
+    /// @dev 1:1 spot, then the pool's own 0.3% fee, then 2% operator tolerance. Both directions quote the same
     ///      at parity, which also pins the token-ordering branch in `_quoteAtSqrt`.
     function test_FloorIsQuoteMinusPoolFeeAndSlippage() public view {
-        assertEq(strategy.minOutForSwap(WETH_ADDR, AMOUNT), 987.03 ether);
-        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 987.03 ether);
+        assertEq(strategy.minOutForSwap(WETH_ADDR, AMOUNT), 977.06 ether);
+        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 977.06 ether);
     }
 
     /// @dev The regression behind "Too little received" on the live 1% pools. Uniswap deducts the fee before
@@ -154,8 +156,8 @@ contract SwapFloorBv3Test is Test {
         AutoStrategyBv3 s = _bootstrapWithFee(10_000);
         uint256 floor = s.minOutForSwap(address(asset), AMOUNT);
 
-        // 1% pool fee, then 1% tolerance.
-        assertEq(floor, 980.1 ether);
+        // 1% pool fee, then 2% tolerance.
+        assertEq(floor, 970.2 ether);
         // What the pool pays at spot before price impact. The old floor was 990, i.e. no room at all.
         assertLt(floor, 990 ether);
     }
@@ -235,9 +237,9 @@ contract SwapFloorBv3Test is Test {
     ///      skipped exit swap pays the user in the token they did not ask for. The concession is charged to the
     ///      withdrawer, whose own pro-rata tokens are the ones being sold.
     function test_WithdrawFloorConcedesThreeTimesTheRebalanceHaircut() public view {
-        // 1,000 ASSET less the 30 bps pool fee, then the haircut: 1% for rebalances, 3% for exits.
-        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 987.03 ether);
-        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 967.09 ether);
+        // 1,000 ASSET less the 30 bps pool fee, then the haircut: 2% for rebalances, 6% for exits.
+        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), 977.06 ether);
+        assertEq(strategy.minOutForWithdraw(address(asset), AMOUNT), 937.18 ether);
     }
 
     /// @dev The multiple is clamped rather than applied without bound. `swapSlippageBps` caps at 1,000, so an
@@ -292,5 +294,18 @@ contract SwapFloorBv3Test is Test {
 
         vm.expectRevert(AutoStrategyManagerBv3.TwapConfig.selector);
         strategy.setSwapSlippageBps(1_001);
+    }
+
+    /// @dev Half this value is the price impact a rebalance swap may cause. A tolerance under 2 bps divides to a
+    ///      zero budget, which trims every rebalance swap to nothing and stops rebalancing with no revert and no
+    ///      event. The floor exists so that setting is refused rather than accepted and silently honoured.
+    function test_SwapSlippageHasAFloorSoTheImpactBudgetCannotRoundToZero() public {
+        vm.expectRevert(AutoStrategyManagerBv3.TwapConfig.selector);
+        strategy.setSwapSlippageBps(1);
+        vm.expectRevert(AutoStrategyManagerBv3.TwapConfig.selector);
+        strategy.setSwapSlippageBps(24);
+
+        strategy.setSwapSlippageBps(25);
+        assertEq(strategy.swapSlippageBps(), 25);
     }
 }

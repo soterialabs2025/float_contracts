@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryBv4",
-  "address": "0x0BCeE17063731EEd8f5636c29003AbD037fCCE4c",
+  "address": "0x0Ff43720ACd125eA037BcEbF2e638b512029a844",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1789191369607,
+  "timestamp": 1789233059817,
   "abi": [
     {
       "type": "constructor",

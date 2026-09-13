@@ -44,7 +44,7 @@ contract AutoStrategyManagerBv3 is Ownable {
     uint256 internal constant WITHDRAW_DEVIATION_MULTIPLE = 3;
     /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 1%).
     /// @dev Distinct from `slippageBps`, which bounds LP mint amounts.
-    uint16 public swapSlippageBps = 100;
+    uint16 public swapSlippageBps = 200;
     /// @notice Withdrawals widen the floor haircut by this multiple, for the same reason they widen the deviation
     ///         band: a skipped rebalance retries, a blocked exit strands a user.
     /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
@@ -55,6 +55,9 @@ contract AutoStrategyManagerBv3 is Ownable {
     /// @dev Ceiling on the widened haircut. `setSwapSlippageBps` allows up to 1_000, and an unclamped multiple
     ///      would reach 30% — past which a floor no longer bounds execution in any useful way.
     uint256 internal constant MAX_WITHDRAW_SLIPPAGE_BPS = 1_000;
+    /// @notice Floor on `swapSlippageBps`. Half of it is the impact budget, so anything smaller leaves a budget
+    ///         too thin for a trade of any size to settle against real pool depth.
+    uint16 internal constant MIN_SWAP_SLIPPAGE_BPS = 25;
 
     function setProtocolFeeOn(bool on) external onlyOwner {
         protocolFeeOn = on;
@@ -100,8 +103,12 @@ contract AutoStrategyManagerBv3 is Ownable {
     }
 
     /// @notice Set the haircut on TWAP-derived swap floors. Capped so a floor can never be driven to zero.
+    /// @dev The lower bound is not cosmetic. Half of this value is the price impact a rebalance swap is allowed to
+    ///      cause, so a tolerance under 2 would integer-divide to a zero budget, the swap would be trimmed to zero
+    ///      and skipped, and rebalancing would stop with no revert and no event to say so. Reject the setting
+    ///      rather than accept one that silently disables the thing.
     function setSwapSlippageBps(uint16 bps) external onlyOwner {
-        if (bps > 1_000) revert TwapConfig();
+        if (bps > 1_000 || bps < MIN_SWAP_SLIPPAGE_BPS) revert TwapConfig();
         swapSlippageBps = bps;
     }
 
@@ -155,7 +162,7 @@ contract AutoStrategyManagerBv3 is Ownable {
         stakingShareBpsLocked = false;
         twapSeconds = 30 minutes;
         maxTwapDeviationBps = 300;
-        swapSlippageBps = 100;
+        swapSlippageBps = 200;
     }
 
     /// @notice Set the outer mint band and the inner comfort band together.

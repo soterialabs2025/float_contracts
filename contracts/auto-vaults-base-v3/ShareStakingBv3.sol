@@ -22,7 +22,7 @@ contract ShareStakingBv3 is Ownable, ReentrancyGuard, IShareStakingBv3 {
     using SafeERC20 for IERC20;
 
     uint256 public constant DIVISOR = 10_000;
-    uint256 public constant EPOCH_DURATION = 14 days;
+    uint256 public constant EPOCH_DURATION = 1 days;
     /// @notice Hard cap on owner cut of epoch ASSET rewards (30%).
     uint256 public constant MAX_OWNER_REWARD_BPS = 3_000;
 
