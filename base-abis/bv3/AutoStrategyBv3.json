@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyBv3",
-  "address": "0xCc259C47e59255675cb1C45dd759aCc5D763a662",
+  "address": "0xFcf534b07BFcB0b05b381238ABEAbB81E641564C",
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1789324644075,
+  "timestamp": 1789327900218,
   "abi": [
     {
       "type": "constructor",
