@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryRhV3",
-  "address": "0xe30C50fdc6cfB25C810F1BCc730173696B310c14",
+  "address": "0xa4688AB8F75E8Bf9D815d2D0b2d7Ade8b1A51B4A",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1789283011541,
+  "timestamp": 1789340109525,
   "abi": [
     {
       "type": "constructor",
@@ -35,6 +35,21 @@
               "internalType": "address"
             }
           ]
+        },
+        {
+          "name": "strategyImpl_",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "vaultImpl_",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "liquidSharesImpl_",
+          "type": "address",
+          "internalType": "address"
         }
       ],
       "stateMutability": "nonpayable"

@@ -4,7 +4,7 @@
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1789233669540,
+  "timestamp": 1789340109525,
   "abi": [
     {
       "type": "constructor",
@@ -334,19 +334,6 @@
     },
     {
       "type": "function",
-      "name": "setTargetAssetBps",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "slippageBps",
       "inputs": [],
       "outputs": [
@@ -393,19 +380,6 @@
           "name": "",
           "type": "uint16",
           "internalType": "uint16"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "targetAssetBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
         }
       ],
       "stateMutability": "view"

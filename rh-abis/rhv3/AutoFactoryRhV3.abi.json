@@ -28,6 +28,21 @@
             "internalType": "address"
           }
         ]
+      },
+      {
+        "name": "strategyImpl_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "vaultImpl_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "liquidSharesImpl_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"

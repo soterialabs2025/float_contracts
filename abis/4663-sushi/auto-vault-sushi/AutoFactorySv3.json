@@ -1,10 +1,10 @@
 {
   "name": "AutoFactorySv3",
-  "address": "0x89A14F716b538585A43Ad6e40021f8560E93C464",
+  "address": "0xcEEA94d47Fd0f81F1dBBD6b8c5D18e3129D21e5B",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1789232466454,
+  "timestamp": 1789340109525,
   "abi": [
     {
       "type": "constructor",

@@ -1,10 +1,10 @@
 {
   "name": "LiquidSharesSv3",
-  "address": "0x5Cd8eeEa82DAC8571f778Aae14BA7ecbEe0EEF11",
+  "address": "0xE157e799D0DD83CFb90741c91f1A6B3a33CDC9ac",
   "chainId": 4663,
   "product": "sv3",
   "profile": "rh-sushi",
-  "timestamp": 1789232466484,
+  "timestamp": 1789340109525,
   "abi": [
     {
       "type": "constructor",

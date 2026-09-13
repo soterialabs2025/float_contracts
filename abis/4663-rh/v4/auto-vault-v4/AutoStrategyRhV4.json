@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyRhV4",
-  "address": "0x02DB8aDE2396Ad5321B1f57D3ea7CCFB21E319C7",
+  "address": "0x9BB156Eb7602B607127E68113281626f7111d09F",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1789283011541,
+  "timestamp": 1789340109525,
   "abi": [
     {
       "type": "constructor",
@@ -910,19 +910,6 @@
     },
     {
       "type": "function",
-      "name": "setTargetAssetBps",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "setWatched",
       "inputs": [
         {
@@ -1005,19 +992,6 @@
       "inputs": [],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "targetAssetBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
