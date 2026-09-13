@@ -13,8 +13,9 @@ contract AutoStrategyManagerBv3 is Ownable {
     uint256 public constant DIVISOR = 10_000;
     /// @notice Balances at or below this are ignored as dust rather than swapped or deployed.
     uint256 internal constant LIQUIDITY_DUST = 1_000_000_000_000;
-    /// @notice ASSET share target for balance / reserve deficit pull (default 5000 = 50/50).
-    uint256 public targetAssetBps = 5000;
+    // No inventory target lives here. The mix a mint needs is fixed by the band's ticks at the current price, and
+    // the strategy derives it from them (`LiquidityLibraryV2.mintShare`); a hand-set target could only agree with
+    // that by coincidence, and when it did not the difference sat idle for the keeper to chase.
 
     int24 public tickSpacing = 200;
     uint256 public rangeBelowTicks = 1000;
@@ -71,12 +72,6 @@ contract AutoStrategyManagerBv3 is Ownable {
     function setReserveBps(uint256 bps) external {
         if (!_isOperator()) revert NotOperator();
         reserveBps = bps;
-    }
-
-    /// @notice Set ASSET inventory target bps. No cap — `0` = all WETH, `> DIVISOR` = all ASSET.
-    function setTargetAssetBps(uint256 bps) external {
-        if (!_isOperator()) revert NotOperator();
-        targetAssetBps = bps;
     }
 
     /// @notice One-time set of staking/feeManager split. Only after package → TBA ownership lock.
@@ -157,7 +152,6 @@ contract AutoStrategyManagerBv3 is Ownable {
         protocolFeeBps = 600;
         protocolFeeOn = true;
         reserveBps = 5000;
-        targetAssetBps = 5000;
         stakingShareBps = 5000;
         stakingShareBpsLocked = false;
         twapSeconds = 30 minutes;

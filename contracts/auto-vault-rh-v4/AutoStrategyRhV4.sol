@@ -470,7 +470,7 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         }
     }
 
-    /// @dev Drain LP, fund `targetAssetBps` deficit from reserve then swap, mint deployable only. Does not refill reserve.
+    /// @dev Drain LP, fund the band's short leg from reserve then swap, mint deployable only. Does not refill reserve.
     function _remintAtTarget() internal returns (bool) {
         // Do not exit the old range when the swap gate would refuse: that is the sandwich (dump, remint at
         // the fake tick or sit idle, reverse without our liquidity).
@@ -488,11 +488,16 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             (assetBal, wethBal) = _getDeployableBalances();
         }
 
-        _fundDeficitFromReserve(assetBal, wethBal);
+        // Pick the band first and aim the swap at its ratio, then mint into that same band. The swap moves the
+        // tick a little, so the ratio the mint actually takes differs from the one balanced for by an amount the
+        // impact cap bounds — well inside the idle threshold, and the same either way round.
+        (int24 tick, int24 lower, int24 upper) = _newBand();
+        uint256 share = _bandShare(lower, upper, tick);
+        _fundDeficitFromReserve(assetBal, wethBal, share);
         (assetBal, wethBal) = _getDeployableBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return false;
-        _balanceTokens(assetBal, wethBal);
-        _mintPosition();
+        _balanceTokens(assetBal, wethBal, share);
+        _mintPosition(lower, upper, tick);
         if (liqPos.positionId != 0) {
             lastRebalanceTime = block.timestamp;
             return true;
@@ -500,14 +505,27 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         return false;
     }
 
-    /// @dev Pull the short side from reserve toward `targetAssetBps` of current deployable value.
-    function _fundDeficitFromReserve(uint256 assetBal, uint256 wethBal) internal {
+    /// @dev The band a mint at the current tick would open, spacing-aligned, with the tick it was built from.
+    function _newBand() internal view returns (int24 tick, int24 lower, int24 upper) {
+        (, tick) = _readSlot0();
+        (lower, upper) = AutoBandLib.outerTicks(tick, _spacing(), rangeBelowTicks, rangeAboveTicks);
+    }
+
+    /// @dev Asset value share a position `[lower, upper]` takes at `tick`. Asset is currency1 when ETH is native.
+    function _bandShare(int24 lower, int24 upper, int24 tick) internal view returns (uint256) {
+        return LiquidityLibraryV4.mintShare(lower, upper, tick, _poolKey.currency0 != address(0));
+    }
+
+    /// @dev Pull the short side from reserve toward `assetShare1e18` of current deployable value.
+    /// @dev Reserve is a balancing source first. It is drawn one leg at a time and is not refilled here, so it
+    ///      drifts one-sided across rotations and is rebuilt by the next deposit's peel. Accepted.
+    function _fundDeficitFromReserve(uint256 assetBal, uint256 wethBal, uint256 assetShare1e18) internal {
         uint256 p = _spotPrice1e18();
         if (p == 0) return;
         uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
         uint256 totalValue = assetBal + wethAsTokens;
         if (totalValue == 0) return;
-        uint256 targetAsset = Math.mulDiv(totalValue, _bps(targetAssetBps), DIVISOR);
+        uint256 targetAsset = Math.mulDiv(totalValue, assetShare1e18, 1e18);
 
         if (assetBal > targetAsset) {
             uint256 surplusAsset = assetBal - targetAsset;
@@ -528,13 +546,18 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     function _deposit(uint256 newCapital) internal {
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
-        _balanceTokens(assetBal, wethBal);
+        // An in-range add joins the existing position, so it wants that position's ratio at today's tick;
+        // anything else mints or remints and wants the fresh band's.
+        (int24 tick, int24 lower, int24 upper) = _newBand();
+        bool inRange = liqPos.positionId != 0 && _inOuterRange();
+        uint256 share = inRange ? _bandShare(liqPos.tickLower, liqPos.tickUpper, tick) : _bandShare(lower, upper, tick);
+        _balanceTokens(assetBal, wethBal, share);
         _peelReserveForCapital(newCapital);
         (assetBal, wethBal) = _getDeployableBalances();
         if (assetBal == 0 && wethBal == 0) return;
         if (liqPos.positionId == 0) {
-            _mintPosition();
-        } else if (_inOuterRange()) {
+            _mintPosition(lower, upper, tick);
+        } else if (inRange) {
             _increaseLiquidityInternal();
         } else {
             _remintAtTarget();
@@ -565,12 +588,12 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         _setReserved(reservedAsset + ra, reservedWeth + rw);
     }
 
-    function _mintPosition() internal {
+    /// @dev Mints into the band the caller balanced for, built by `_newBand` before any swap; `currentTick` is the
+    ///      tick that band was centred on and becomes the comfort base.
+    function _mintPosition(int24 lower, int24 upper, int24 currentTick) internal {
         if (!_swapGateOpen()) return;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
         if (assetBal <= LIQUIDITY_DUST && wethBal <= LIQUIDITY_DUST) return;
-        (, int24 currentTick) = _readSlot0();
-        (int24 lower, int24 upper) = AutoBandLib.outerTicks(currentTick, _spacing(), rangeBelowTicks, rangeAboveTicks);
         (uint256 bal0, uint256 bal1) = _poolBalances(assetBal, wethBal);
         LiquidityLibraryV4.MintContext memory ctx = LiquidityLibraryV4.MintContext({
             posm: positionManager,
@@ -596,14 +619,17 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
         bal1 = p0 == address(0) ? assetBal : wethBal;
     }
 
-    function _balanceTokens(uint256 assetBal, uint256 wethBal) internal {
+    /// @dev Swap deployable inventory toward `assetShare1e18` of its value, which callers derive from the band
+    ///      the inventory is about to enter. A policy-set target here is what stranded a third of NAV: the swap
+    ///      produced one mix and the mint took another, and the difference sat idle for the keeper to chase.
+    function _balanceTokens(uint256 assetBal, uint256 wethBal, uint256 assetShare1e18) internal {
         if (assetBal == 0 && wethBal == 0) return;
         uint256 p = _spotPrice1e18();
         if (p == 0) return;
         uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
         uint256 totalValue = assetBal + wethAsTokens;
         if (totalValue == 0) return;
-        uint256 target = Math.mulDiv(totalValue, _bps(targetAssetBps), DIVISOR);
+        uint256 target = Math.mulDiv(totalValue, assetShare1e18, 1e18);
         if (assetBal > target) {
             uint256 toSell = assetBal - target;
             if (toSell > 0) _swap(false, _impactCapped(false, toSell), swapSlippageBps);

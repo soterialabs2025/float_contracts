@@ -110,6 +110,33 @@ library LiquidityLibraryV2 {
         sqrtU = TickMath.getSqrtRatioAtTick(upperTick);
     }
 
+    /// @notice Value share of the asset leg that a position `[lower, upper]` takes at `current`, in 1e18.
+    /// @dev The mint ratio is fixed by band geometry, not by policy. Per unit liquidity the position holds
+    ///      `amount0 = (√Pu − √P) / (√P·√Pu)` and `amount1 = √P − √Pl`; valued in token1 those weigh
+    ///      `w0 = (√Pu − √P)·√P / √Pu` and `w1 = √P − √Pl`. Balancing inventory to any other split, however
+    ///      chosen, strands the difference as idle the mint cannot use. Symmetric bands come out 50/50; an
+    ///      asymmetric band, or a band snapped off-centre by tick spacing, does not, and this is what tells the
+    ///      pre-mint swap where to aim instead of a hand-set number.
+    /// @dev Outside the band the position is single-sided: at or below `lower` it is all token0, at or above
+    ///      `upper` all token1. Callers pass the ticks the mint will actually use (already spacing-aligned).
+    function mintShare(int24 lower, int24 upper, int24 current, bool assetIsToken0)
+        public pure returns (uint256 assetShare1e18)
+    {
+        uint256 share0;
+        if (current <= lower) {
+            share0 = 1e18;
+        } else if (current >= upper) {
+            share0 = 0;
+        } else {
+            uint160 sqrtP = TickMath.getSqrtRatioAtTick(current);
+            (uint160 sqrtL, uint160 sqrtU) = getSqrtRatios(lower, upper);
+            uint256 w0 = Math.mulDiv(uint256(sqrtU) - sqrtP, sqrtP, sqrtU);
+            uint256 w1 = uint256(sqrtP) - sqrtL;
+            share0 = Math.mulDiv(w0, 1e18, w0 + w1);
+        }
+        return assetIsToken0 ? share0 : 1e18 - share0;
+    }
+
     function calculateMinAmounts(uint256 amount0, uint256 amount1, uint16 slippageBps)
         internal
         pure

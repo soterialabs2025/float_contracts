@@ -11,8 +11,9 @@ contract AutoStrategyManagerSv3 is Ownable {
     constructor() Ownable(msg.sender) {}
 
     uint256 public constant DIVISOR = 10_000;
-    /// @notice ASSET share target for balance / reserve deficit pull (default 5000 = 50/50).
-    uint256 public targetAssetBps = 5000;
+    // No inventory target lives here. The mix a mint needs is fixed by the band's ticks at the current price, and
+    // the strategy derives it from them (`LiquidityLibraryV2.mintShare`); a hand-set target could only agree with
+    // that by coincidence, and when it did not the difference sat idle for the keeper to chase.
 
     int24 public tickSpacing = 200;
     uint256 public rangeBelowTicks = 1000;
@@ -40,9 +41,10 @@ contract AutoStrategyManagerSv3 is Ownable {
     /// @notice Withdrawals price against this multiple of `maxTwapDeviationBps` so ordinary volatility cannot
     ///         trap users. Rebalances keep the tighter band because skipping one costs nothing.
     uint256 internal constant WITHDRAW_DEVIATION_MULTIPLE = 3;
-    /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 1%).
+    /// @notice Haircut applied to the TWAP-derived swap floor passed to the router (default 2%, in line with the
+    ///         other stacks; at 1% the pool fee alone ate most of the tolerance on thin pools).
     /// @dev Distinct from `slippageBps`, which bounds LP mint amounts.
-    uint16 public swapSlippageBps = 100;
+    uint16 public swapSlippageBps = 200;
     /// @notice Withdrawals widen the floor haircut by this multiple, for the same reason they widen the deviation
     ///         band: a skipped rebalance retries, a blocked exit strands a user.
     /// @dev Safe to loosen only on the exit path. That swap sells the withdrawer's own pro-rata tokens and credits
@@ -66,12 +68,6 @@ contract AutoStrategyManagerSv3 is Ownable {
     function setReserveBps(uint256 bps) external {
         if (!_isOperator()) revert NotOperator();
         reserveBps = bps;
-    }
-
-    /// @notice Set ASSET inventory target bps. No cap — `0` = all WETH, `> DIVISOR` = all ASSET.
-    function setTargetAssetBps(uint256 bps) external {
-        if (!_isOperator()) revert NotOperator();
-        targetAssetBps = bps;
     }
 
     /// @notice One-time set of staking/feeManager split. Only after package → TBA ownership lock.
@@ -145,12 +141,11 @@ contract AutoStrategyManagerSv3 is Ownable {
         protocolFeeBps = 600;
         protocolFeeOn = true;
         reserveBps = 5000;
-        targetAssetBps = 5000;
         stakingShareBps = 5000;
         stakingShareBpsLocked = false;
         twapSeconds = 30 minutes;
         maxTwapDeviationBps = 300;
-        swapSlippageBps = 100;
+        swapSlippageBps = 200;
     }
 
     /// @notice Set the outer mint band and the inner comfort band together.
