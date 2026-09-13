@@ -55,6 +55,10 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
     uint256 public UniswapFeesCollected;
     uint256 public reservedAsset;
     uint256 public reservedWeth;
+    /// @notice Idle (in WETH) left behind by the last in-range remint. While idle stays at or below this, the
+    ///         in-range path will not remint again: the position already declined to absorb it, and repeating the
+    ///         rotation churns the position without changing the inventory. Cleared by an out-of-range move.
+    uint256 internal idleRemintFloor;
     uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
     /// @notice Router rejected the swap. The caller continued and the unswapped token stayed put.
@@ -227,6 +231,16 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
         return w + Math.mulDiv(a, 1e18, p) >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
     }
 
+    /// @dev Deployable idle valued in WETH. An unreadable price leaves only the WETH leg countable, which
+    ///      understates idle rather than inventing a value for it.
+    function _idleValue() internal view returns (uint256) {
+        (uint256 a, uint256 w) = _getDeployableBalances();
+        if (a == 0) return w;
+        uint256 p = _rebalancePrice1e18();
+        if (p == 0) return w;
+        return w + Math.mulDiv(a, 1e18, p);
+    }
+
     function keeperCheck() external override nonReentrant returns (bool) {
         _onlyKeeper();
         if (liqPos.positionId == 0) {
@@ -247,15 +261,30 @@ contract AutoStrategySv3 is AutoStrategyManagerSv3, ReentrancyGuard, IERC721Rece
             _fundDeficitFromReserve(dA, dW);
             uint128 added = _increaseLiquidityInternal();
             if (!_idleDeployableMaterial()) return added > 0;
-            // Idle still material. Defer to the rebalance cooldown only when the add worked; otherwise
-            // the position cannot absorb this inventory and waiting just spins the keeper.
-            if (
-                added > 0 && minHarvestDelay > 0 && lastRebalanceTime != 0
-                    && block.timestamp - lastRebalanceTime < minHarvestDelay
-            ) return true;
-            return _remintAtTarget();
+            // Idle still material, so the only remaining route is a swap and a remint. Both are bounded: the
+            // cooldown says how often, whether or not the add worked, and the latch refuses to repeat a remint
+            // that already failed to absorb this same inventory. A rotation whose swap keeps getting rejected
+            // would otherwise burn and remint the position on every pass. Report `added`, not `true`, so a
+            // pass that deployed nothing says so.
+            if (minHarvestDelay > 0 && lastRebalanceTime != 0 && block.timestamp - lastRebalanceTime < minHarvestDelay)
+            {
+                return added > 0;
+            }
+            uint256 idleBefore = _idleValue();
+            if (idleRemintFloor != 0 && idleBefore <= idleRemintFloor) return added > 0;
+            bool reminted = _remintAtTarget();
+            // Only a remint that ran latches: a gate refusal deserves another attempt later. Less than 1%
+            // absorbed is no progress; rounding alone moves idle a few wei across a rotation.
+            if (reminted) {
+                uint256 idleAfter = _idleValue();
+                idleRemintFloor = idleAfter + idleBefore / 100 >= idleBefore ? idleAfter : 0;
+            }
+            return reminted;
         }
-        return _remintAtTarget();
+        // Out of range. The band has to move whatever idle does, so the latch must not hold it back.
+        bool moved = _remintAtTarget();
+        if (moved) idleRemintFloor = 0;
+        return moved;
     }
 
     function harvestBoolean(bool skipIncreaseLiquidity) external override nonReentrant returns (uint256) {

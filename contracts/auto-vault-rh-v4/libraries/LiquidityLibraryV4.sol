@@ -364,13 +364,18 @@ library LiquidityLibraryV4 {
         (uint160 sqrtL, uint160 sqrtU) = getSqrtRatios(lower, upper);
 
         uint128 liq = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
-        if (liq == 0) revert NoLiquidity();
+        // One-sided in-range inventory prices to zero liquidity. Decline rather than revert: every caller
+        // already treats a zero id as "did not mint", and a revert here is what turned a skipped rebalance
+        // swap into a keeper that failed on every pass. The strategy has no bytes to spare for this check;
+        // the library does.
+        if (liq == 0) return (0, 0);
 
         (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
         if (need0 > bal0) need0 = bal0;
         if (need1 > bal1) need1 = bal1;
-        uint256 max0 = need0 + Math.mulDiv(need0, ctx.slippageBps, 10_000);
-        uint256 max1 = need1 + Math.mulDiv(need1, ctx.slippageBps, 10_000);
+        // See `increaseLiquidityInternal`: the pool rounds up what `need` rounded down.
+        uint256 max0 = need0 + Math.mulDiv(need0, ctx.slippageBps, 10_000) + 1;
+        uint256 max1 = need1 + Math.mulDiv(need1, ctx.slippageBps, 10_000) + 1;
 
         uint256 expectedTokenId = ctx.posm.nextTokenId();
 
@@ -444,8 +449,11 @@ library LiquidityLibraryV4 {
         }
         if (liq == 0 || need0 > bal0 || need1 > bal1) return 0;
 
-        uint256 max0 = need0 + Math.mulDiv(need0, ctx.slippageBps, 10_000);
-        uint256 max1 = need1 + Math.mulDiv(need1, ctx.slippageBps, 10_000);
+        // `need` is rounded down; the pool rounds the amount it takes for an add up. The slippage allowance
+        // covers that difference only once `need` is at least 100 wei, so a leg smaller than that reverts
+        // `MaximumAmountExceeded` on a one-wei shortfall. Grant the wei outright.
+        uint256 max0 = need0 + Math.mulDiv(need0, ctx.slippageBps, 10_000) + 1;
+        uint256 max1 = need1 + Math.mulDiv(need1, ctx.slippageBps, 10_000) + 1;
 
         uint128 liquidityBefore = getPositionLiquidity(ps, ctx.posm);
 

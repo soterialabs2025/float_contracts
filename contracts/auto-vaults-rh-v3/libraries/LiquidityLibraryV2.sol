@@ -294,6 +294,10 @@ library LiquidityLibraryV2 {
         (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
         if (need0 > bal0) need0 = bal0;
         if (need1 > bal1) need1 = bal1;
+        // Same rounding gap as the increase path: a wei of the short leg prices to non-zero `liq` but a zero
+        // `need`, and the position manager mints zero from zero and reverts bare. Ask its question first.
+        if (getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, need0, need1) == 0) return (ps.positionId, 0);
+        if (_dustLeg(need0, ctx.dust) || _dustLeg(need1, ctx.dust)) return (ps.positionId, 0);
         (uint256 min0, uint256 min1) = calculateMinAmounts(need0, need1, ctx.slippageBps);
         INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
             token0: token0,
@@ -367,6 +371,10 @@ library LiquidityLibraryV2 {
         (uint256 need0, uint256 need1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, liq);
         if (need0 > bal0) need0 = bal0;
         if (need1 > bal1) need1 = bal1;
+        // Same rounding gap as the increase path: a wei of the short leg prices to non-zero `liq` but a zero
+        // `need`, and the position manager mints zero from zero and reverts bare. Ask its question first.
+        if (getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, need0, need1) == 0) return (ps.positionId, 0);
+        if (_dustLeg(need0, ctx.dust) || _dustLeg(need1, ctx.dust)) return (ps.positionId, 0);
         (uint256 min0, uint256 min1) = calculateMinAmounts(need0, need1, ctx.slippageBps);
         INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
             token0: token0,
@@ -441,11 +449,25 @@ library LiquidityLibraryV2 {
         if (request.amount0Max < bal0) bal0 = request.amount0Max;
         if (request.amount1Max < bal1) bal1 = request.amount1Max;
         if (bal0 < ctx.dust && bal1 < ctx.dust) return amounts;
-        amounts.liquidity = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
-        if (amounts.liquidity == 0) return amounts;
-        (amounts.amount0, amounts.amount1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, amounts.liquidity);
+        uint128 fromBalances = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
+        if (fromBalances == 0) return amounts;
+        (amounts.amount0, amounts.amount1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, fromBalances);
         if (amounts.amount0 > bal0) amounts.amount0 = bal0;
         if (amounts.amount1 > bal1) amounts.amount1 = bal1;
+        // Price the amounts that will actually be sent, not the balances they were derived from. The two differ
+        // by rounding, and the difference is not academic: a single wei of the short leg prices to non-zero
+        // liquidity here, then rounds to a zero amount, and the position manager recomputes zero liquidity from
+        // that amount and hits `require(amount > 0)` in the pool — a revert with no data, on every keeper pass.
+        // Asking the manager's own question before calling it is what turns that into a zero return.
+        amounts.liquidity = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, amounts.amount0, amounts.amount1);
+        // A leg that is needed but below dust is not worth an add and cannot survive one: at wei scale the
+        // slippage floor rounds to the amount itself, and the pool's own rounding then misses it by a wei.
+        if (_dustLeg(amounts.amount0, ctx.dust) || _dustLeg(amounts.amount1, ctx.dust)) amounts.liquidity = 0;
+    }
+
+    /// @dev Non-zero and below `dust`. Zero is a leg the range does not need, and is fine.
+    function _dustLeg(uint256 amount, uint256 dust) private pure returns (bool) {
+        return amount != 0 && amount < dust;
     }
 
     function decreaseAllLiquidity(PositionState storage ps, DecreaseContext memory ctx)

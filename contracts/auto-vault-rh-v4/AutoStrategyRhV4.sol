@@ -279,7 +279,9 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
     function _latchIdleProgress(uint256 idleBefore, bool reminted) internal {
         if (!reminted) return;
         uint256 idleAfter = _idleValue();
-        idleRemintFloor = idleAfter >= idleBefore ? idleAfter : 0;
+        // Less than 1% absorbed is no progress. Rounding alone can move idle a few wei either way across a
+        // rotation, and an exact comparison would let that wei unlatch a remint that changed nothing.
+        idleRemintFloor = idleAfter + idleBefore / 100 >= idleBefore ? idleAfter : 0;
     }
 
     /// @dev Remint if OOR, tick left inner comfort, or unreserved idle is still material after increase.
@@ -290,10 +292,9 @@ contract AutoStrategyRhV4 is AutoStrategyManagerRhV4, ReentrancyGuard, IERC721Re
             if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) {
                 if (reservedAsset <= LIQUIDITY_DUST && reservedWeth <= LIQUIDITY_DUST) return false;
             }
-            // Known gap: an open that cannot mint reverts inside the library, and a revert erases any latch or
-            // timestamp this branch might write, so the keeper retries it every tick until a deposit changes the
-            // inventory. Bounding it needs the mint to decline rather than revert, which does not fit under
-            // EIP-170 here. Idle small enough to hit this is dust the dust checks above mostly catch.
+            // An open that cannot mint — one-sided idle in range after a skipped swap — declines inside the
+            // library and surfaces here as `false`. The keeper simulates first, so a `false` costs nothing
+            // on-chain; it simply re-asks each pass until a deposit or a price move changes the inventory.
             return _remintAtTarget();
         }
         if (_inOuterRange() && _inInnerComfort()) {

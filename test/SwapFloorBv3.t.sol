@@ -164,16 +164,14 @@ contract SwapFloorBv3Test is Test {
 
     /// @dev The floor now tracks spot, because only spot bounds what this transaction executes at. That is safe
     ///      because the TWAP gate caps how far spot may stray, so manipulation is bounded by the band.
-    function test_FloorTracksSpotWithinBand() public {
+    function test_FloorIgnoresSpotWithinBand() public {
         uint256 atRest = strategy.minOutForSwap(address(asset), AMOUNT);
 
         // Spot is ASSET per WETH, so raising it means selling ASSET buys less WETH. ~2.01% move (sqrt scaled
-        // by 1.01), inside the 300 bps band.
+        // by 1.01), inside the 300 bps band. The floor is quoted at the oracle, so a same-block spot move —
+        // the sandwich case — cannot lower the strategy's own minOut.
         pool.setSpotSqrt(_scaledSqrt(101, 100));
-        uint256 lower = strategy.minOutForSwap(address(asset), AMOUNT);
-        assertLt(lower, atRest);
-        // Bounded by the band: the floor cannot fall more than ~3% below the at-rest value.
-        assertGt(lower, (atRest * 9_700) / 10_000);
+        assertEq(strategy.minOutForSwap(address(asset), AMOUNT), atRest);
     }
 
     function test_FloorIsZeroWhenSpotLeavesTwapBand() public {
