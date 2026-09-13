@@ -1,10 +1,10 @@
 {
   "name": "LiquidSharesBv4",
-  "address": "0x99D1eA32C97a9d83f98a421C2341c40861bB4F19",
+  "address": "0x8346CC126802A8A4A12e474E668c2E21E4d5136a",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1789233059865,
+  "timestamp": 1789324644075,
   "abi": [
     {
       "type": "constructor",

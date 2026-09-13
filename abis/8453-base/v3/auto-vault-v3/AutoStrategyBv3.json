@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyBv3",
-  "address": "0xf0b15C8C30FA5A8cA021003845358dA1B491523F",
+  "address": "0xCc259C47e59255675cb1C45dd759aCc5D763a662",
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1789232758708,
+  "timestamp": 1789324644075,
   "abi": [
     {
       "type": "constructor",
@@ -720,19 +720,6 @@
     },
     {
       "type": "function",
-      "name": "setTargetAssetBps",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "setTwapSeconds",
       "inputs": [
         {
@@ -828,19 +815,6 @@
       "inputs": [],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "targetAssetBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",

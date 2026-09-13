@@ -1,10 +1,10 @@
 {
   "name": "AutoVaultBv3",
-  "address": "0xc496C5957eBE8aF94a82a45eeB670775aD9b83DB",
+  "address": "0x87aCDd806e53b1fc55dA8aeFDc91CacAA4Fd6172",
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1789232758722,
+  "timestamp": 1789324644075,
   "abi": [
     {
       "type": "constructor",

@@ -1,10 +1,10 @@
 {
   "name": "AutoVaultBv4",
-  "address": "0x7c249615078561cf926F8fB3528bC34b8cdBdd8b",
+  "address": "0x618141454FA2d2b6cAE880d478BbC1406F2DB5d7",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1789233059851,
+  "timestamp": 1789324644075,
   "abi": [
     {
       "type": "constructor",

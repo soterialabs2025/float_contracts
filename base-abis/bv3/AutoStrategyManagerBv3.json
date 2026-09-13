@@ -4,7 +4,7 @@
   "chainId": 8453,
   "product": "bv3",
   "profile": "base-v3",
-  "timestamp": 1789232758730,
+  "timestamp": 1789324644075,
   "abi": [
     {
       "type": "constructor",
@@ -256,19 +256,6 @@
     },
     {
       "type": "function",
-      "name": "setTargetAssetBps",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "setTwapSeconds",
       "inputs": [
         {
@@ -328,19 +315,6 @@
           "name": "",
           "type": "uint16",
           "internalType": "uint16"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "targetAssetBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
         }
       ],
       "stateMutability": "view"

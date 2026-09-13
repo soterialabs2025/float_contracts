@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyBv4",
-  "address": "0x7Ccb5e7CFBb12a672e60141437990F5c6FDaB712",
+  "address": "0xA172c45fA6f9f8eb57dc2e9DB9872015dFe5a3be",
   "chainId": 8453,
   "product": "bv4",
   "profile": "base-v4",
-  "timestamp": 1789233059839,
+  "timestamp": 1789324644075,
   "abi": [
     {
       "type": "constructor",
@@ -859,19 +859,6 @@
     },
     {
       "type": "function",
-      "name": "setTargetAssetBps",
-      "inputs": [
-        {
-          "name": "bps",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "setWatched",
       "inputs": [
         {
@@ -941,19 +928,6 @@
       "inputs": [],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "targetAssetBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",

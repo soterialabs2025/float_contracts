@@ -68,12 +68,24 @@ contract AutoFactoryBv3 is Ownable, ReentrancyGuard {
         address indexed swapRouter, address indexed operatorRegistry, address indexed keeper, address feeManager
     );
 
-    constructor(InfraConfig memory config) Ownable(msg.sender) {
+    /// @dev Implementations are deployed first and passed in, as Sv3 and the V4 factories do. Creating them here
+    ///      put all three runtimes into this contract's initcode, which Base rejects past EIP-3860's 49,152
+    ///      bytes once the strategy grew. Each implementation is constructed with this factory's address, which
+    ///      the deployer predicts from its nonce.
+    constructor(
+        InfraConfig memory config,
+        address strategyImpl_,
+        address vaultImpl_,
+        address liquidSharesImpl_
+    ) Ownable(msg.sender) {
         _validateInfra(config);
+        if (strategyImpl_ == address(0) || vaultImpl_ == address(0) || liquidSharesImpl_ == address(0)) {
+            revert ZeroAddress();
+        }
         infra = config;
-        strategyImplementation = address(new AutoStrategyBv3(address(this)));
-        vaultImplementation = address(new AutoVaultBv3(address(this)));
-        liquidSharesImplementation = address(new LiquidSharesBv3(address(this)));
+        strategyImplementation = strategyImpl_;
+        vaultImplementation = vaultImpl_;
+        liquidSharesImplementation = liquidSharesImpl_;
     }
 
     modifier onlyOperator() {

@@ -9,7 +9,7 @@
       "abiEntries": 14
     },
     "AutoFactoryBv4": {
-      "address": "0x0Ff43720ACd125eA037BcEbF2e638b512029a844",
+      "address": "0x184009bcbA7d6bc9f543a948Ed610dAf2CD606a2",
       "artifact": "artifacts/AutoFactoryBv4.sol/AutoFactoryBv4.json",
       "abiEntries": 33
     },
@@ -24,22 +24,22 @@
       "abiEntries": 31
     },
     "AutoStrategyBv4": {
-      "address": "0x7Ccb5e7CFBb12a672e60141437990F5c6FDaB712",
+      "address": "0xA172c45fA6f9f8eb57dc2e9DB9872015dFe5a3be",
       "artifact": "artifacts/AutoStrategyBv4.sol/AutoStrategyBv4.json",
-      "abiEntries": 84
+      "abiEntries": 82
     },
     "AutoVaultBv4": {
-      "address": "0x7c249615078561cf926F8fB3528bC34b8cdBdd8b",
+      "address": "0x618141454FA2d2b6cAE880d478BbC1406F2DB5d7",
       "artifact": "artifacts/AutoVaultBv4.sol/AutoVaultBv4.json",
       "abiEntries": 39
     },
     "AutoStrategyManagerBv4": {
       "address": null,
       "artifact": "artifacts/AutoStrategyManagerBv4.sol/AutoStrategyManagerBv4.json",
-      "abiEntries": 44
+      "abiEntries": 42
     },
     "LiquidSharesBv4": {
-      "address": "0x99D1eA32C97a9d83f98a421C2341c40861bB4F19",
+      "address": "0x8346CC126802A8A4A12e474E668c2E21E4d5136a",
       "artifact": "artifacts/LiquidSharesBv4.sol/LiquidSharesBv4.json",
       "abiEntries": 30
     },
