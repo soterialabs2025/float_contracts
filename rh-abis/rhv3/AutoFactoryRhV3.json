@@ -1,10 +1,10 @@
 {
   "name": "AutoFactoryRhV3",
-  "address": "0x0E1f1eC8F5c2069793F7C4deDB0972605707604D",
+  "address": "0xe30C50fdc6cfB25C810F1BCc730173696B310c14",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1789233368707,
+  "timestamp": 1789283011541,
   "abi": [
     {
       "type": "constructor",

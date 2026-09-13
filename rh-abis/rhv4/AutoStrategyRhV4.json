@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyRhV4",
-  "address": "0xC8AaCa2efA8a90764dC570a815373dFBF4303131",
+  "address": "0x02DB8aDE2396Ad5321B1f57D3ea7CCFB21E319C7",
   "chainId": 4663,
   "product": "rhv4",
   "profile": "rh-v4",
-  "timestamp": 1789233669520,
+  "timestamp": 1789283011541,
   "abi": [
     {
       "type": "constructor",
@@ -277,6 +277,19 @@
           "name": "",
           "type": "bytes",
           "internalType": "bytes"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "idleRemintFloor",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
       "stateMutability": "view"

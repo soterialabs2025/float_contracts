@@ -1,10 +1,10 @@
 {
   "name": "AutoSwapRouterRhV3",
-  "address": "0x7312D86cAb731CaA6B7d53AF19F96E57d8f4c510",
+  "address": "0x4053CCAd744B7630A272abb85b721Efec518229f",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1789233368712,
+  "timestamp": 1789283011541,
   "abi": [
     {
       "type": "constructor",

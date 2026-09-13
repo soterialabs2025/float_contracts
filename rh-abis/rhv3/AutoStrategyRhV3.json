@@ -1,10 +1,10 @@
 {
   "name": "AutoStrategyRhV3",
-  "address": "0xf6439d5B140Bf8233C5aa1D2a2A4A78C0e4D0Ebf",
+  "address": "0x585eeE88A2BA956Ffc2e436BBEfFE7FD5288Eb18",
   "chainId": 4663,
   "product": "rhv3",
   "profile": "rh-v3",
-  "timestamp": 1789233368749,
+  "timestamp": 1789283011541,
   "abi": [
     {
       "type": "constructor",
