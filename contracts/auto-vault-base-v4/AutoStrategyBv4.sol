@@ -69,6 +69,10 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
 
     uint256 public lastHarvest;
     uint256 public lastRebalanceTime;
+    /// @dev Idle value after the last in-range remint that absorbed nothing. While idle stays at or below it,
+    ///      another remint would only repeat that result, so the keeper declines. Zeroed by a remint that made
+    ///      progress and by any out-of-range remint. Internal: the getter is bytes this contract cannot spare.
+    uint256 internal idleRemintFloor;
     uint256 public UniswapFeesCollected;
     uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
@@ -232,14 +236,22 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     /// @dev Unreserved idle ≥ 5% of NAV. Reserved inventory does not count.
     uint256 private constant IDLE_DEPLOY_BPS = 500;
 
+    /// @dev Deployable idle valued in WETH. Reserved inventory is already excluded. An unreadable price leaves
+    ///      only the WETH leg countable, which understates idle rather than inventing a value for it.
+    function _idleValue() internal view returns (uint256) {
+        (uint256 a, uint256 w) = _getDeployableBalances();
+        if (a == 0) return w;
+        uint256 p = _spotPrice1e18();
+        if (p == 0) return w;
+        return w + Math.mulDiv(a, 1e18, p);
+    }
+
     function _idleDeployableMaterial() internal view returns (bool) {
         (uint256 a, uint256 w) = _getDeployableBalances();
         if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) return false;
-        uint256 p = _spotPrice1e18();
-        if (p == 0) return false;
         uint256 nav = poolValue();
         if (nav == 0) return true;
-        return w + Math.mulDiv(a, 1e18, p) >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
+        return _idleValue() >= Math.mulDiv(nav, IDLE_DEPLOY_BPS, DIVISOR);
     }
 
     /// @dev Remint if OOR, tick left inner comfort, or unreserved idle is still material after increase.
@@ -250,8 +262,7 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
             if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) {
                 if (reservedAsset <= LIQUIDITY_DUST && reservedWeth <= LIQUIDITY_DUST) return false;
             }
-            _remintAtTarget();
-            return liqPos.positionId != 0;
+            return _remintAtTarget();
         }
         if (_inOuterRange() && _inInnerComfort()) {
             if (!_idleDeployableMaterial()) return false;
@@ -262,15 +273,30 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
             _fundDeficitFromReserve(dA, dW, _bandShare(liqPos.tickLower, liqPos.tickUpper, tick));
             uint128 added = _increaseLiquidityInternal();
             if (!_idleDeployableMaterial()) return added > 0;
-            // Idle still material. Defer to the rebalance cooldown only when the add worked; otherwise
-            // the position cannot absorb this inventory and waiting just spins the keeper.
-            if (
-                added > 0 && minHarvestDelay > 0 && lastRebalanceTime != 0
-                    && block.timestamp - lastRebalanceTime < minHarvestDelay
-            ) return true;
-            return _remintAtTarget();
+            // Idle still material, so the only remaining route is a swap and a remint. Both are bounded: the
+            // cooldown says how often, whether or not the add worked, and the latch refuses to repeat a remint
+            // that already failed to absorb this same inventory. Without both, a rotation whose swap keeps being
+            // rejected burns and remints the position on every pass. Report `added`, not `true`, so a pass that
+            // deployed nothing says so.
+            if (minHarvestDelay > 0 && lastRebalanceTime != 0 && block.timestamp - lastRebalanceTime < minHarvestDelay)
+            {
+                return added > 0;
+            }
+            uint256 idleBefore = _idleValue();
+            if (idleRemintFloor != 0 && idleBefore <= idleRemintFloor) return added > 0;
+            bool reminted = _remintAtTarget();
+            // Only a remint that ran latches: a gate refusal deserves another attempt later. Less than 1%
+            // absorbed is no progress; rounding alone moves idle a few wei across a rotation.
+            if (reminted) {
+                uint256 idleAfter = _idleValue();
+                idleRemintFloor = idleAfter + idleBefore / 100 >= idleBefore ? idleAfter : 0;
+            }
+            return reminted;
         }
-        return _remintAtTarget();
+        // Out of range. The band has to move whatever idle does, so the latch must not hold it back.
+        bool moved = _remintAtTarget();
+        if (moved) idleRemintFloor = 0;
+        return moved;
     }
 
     function harvestBoolean(bool skipIncreaseLiquidity)
@@ -472,27 +498,11 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     /// @dev Reserve is a balancing source first. It is drawn one leg at a time and is not refilled here, so it
     ///      drifts one-sided across rotations and is rebuilt by the next deposit's peel. Accepted.
     function _fundDeficitFromReserve(uint256 assetBal, uint256 wethBal, uint256 assetShare1e18) internal {
-        uint256 p = _spotPrice1e18();
-        if (p == 0) return;
-        uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
-        uint256 totalValue = assetBal + wethAsTokens;
-        if (totalValue == 0) return;
-        uint256 targetAsset = Math.mulDiv(totalValue, assetShare1e18, 1e18);
-
-        if (assetBal > targetAsset) {
-            uint256 surplusAsset = assetBal - targetAsset;
-            uint256 deficitWeth = Math.mulDiv(surplusAsset, 1e18, p);
-            if (deficitWeth > 0 && reservedWeth > 0) {
-                uint256 pull = deficitWeth > reservedWeth ? reservedWeth : deficitWeth;
-                _setReserved(reservedAsset, reservedWeth - pull);
-            }
-        } else if (assetBal < targetAsset) {
-            uint256 deficitAsset = targetAsset - assetBal;
-            if (deficitAsset > 0 && reservedAsset > 0) {
-                uint256 pull = deficitAsset > reservedAsset ? reservedAsset : deficitAsset;
-                _setReserved(reservedAsset - pull, reservedWeth);
-            }
-        }
+        (,, uint256 pullAsset, uint256 pullWeth) =
+            LiquidityLibraryV4.rebalanceLegs(assetBal, wethBal, _spotPrice1e18(), assetShare1e18);
+        if (pullWeth > reservedWeth) pullWeth = reservedWeth;
+        if (pullAsset > reservedAsset) pullAsset = reservedAsset;
+        if (pullAsset > 0 || pullWeth > 0) _setReserved(reservedAsset - pullAsset, reservedWeth - pullWeth);
     }
 
     function _deposit(uint256 newCapital) internal {
@@ -520,22 +530,9 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     function _peelReserveForCapital(uint256 newCapital) internal {
         if (reserveBps == 0) return;
         (uint256 assetBal, uint256 wethBal) = _getDeployableBalances();
-        uint256 p = _spotPrice1e18();
-        uint256 ra;
-        uint256 rw;
-        if (p == 0) {
-            ra = Math.mulDiv(assetBal, _bps(reserveBps), DIVISOR);
-            rw = Math.mulDiv(wethBal, _bps(reserveBps), DIVISOR);
-        } else {
-            uint256 deployable = wethBal + Math.mulDiv(assetBal, 1e18, p);
-            if (deployable == 0) return;
-            uint256 want = Math.mulDiv(newCapital, _bps(reserveBps), DIVISOR);
-            if (want > deployable) want = deployable;
-            ra = Math.mulDiv(assetBal, want, deployable);
-            rw = Math.mulDiv(wethBal, want, deployable);
-        }
-        if (ra > assetBal) ra = assetBal;
-        if (rw > wethBal) rw = wethBal;
+        (uint256 ra, uint256 rw) = LiquidityLibraryV4.reservePeel(
+            assetBal, wethBal, _spotPrice1e18(), newCapital, _bps(reserveBps), DIVISOR
+        );
         if (ra == 0 && rw == 0) return;
         _setReserved(reservedAsset + ra, reservedWeth + rw);
     }
@@ -575,22 +572,10 @@ contract AutoStrategyBv4 is AutoStrategyManagerBv4, ReentrancyGuard, IERC721Rece
     ///      the inventory is about to enter. A policy-set target here is what stranded a third of NAV: the swap
     ///      produced one mix and the mint took another, and the difference sat idle for the keeper to chase.
     function _balanceTokens(uint256 assetBal, uint256 wethBal, uint256 assetShare1e18) internal {
-        if (assetBal == 0 && wethBal == 0) return;
-        uint256 p = _spotPrice1e18();
-        if (p == 0) return;
-        uint256 wethAsTokens = Math.mulDiv(wethBal, p, 1e18);
-        uint256 totalValue = assetBal + wethAsTokens;
-        if (totalValue == 0) return;
-        uint256 target = Math.mulDiv(totalValue, assetShare1e18, 1e18);
-        if (assetBal > target) {
-            uint256 toSell = assetBal - target;
-            if (toSell > 0) _swap(_asset, toSell, swapSlippageBps);
-        } else if (assetBal < target) {
-            uint256 deficit = target - assetBal;
-            uint256 wethToSell = Math.mulDiv(deficit, 1e18, p);
-            if (wethToSell > wethBal) wethToSell = wethBal;
-            if (wethToSell > 0) _swap(WETH, wethToSell, swapSlippageBps);
-        }
+        (uint256 sellAsset, uint256 sellWeth,,) =
+            LiquidityLibraryV4.rebalanceLegs(assetBal, wethBal, _spotPrice1e18(), assetShare1e18);
+        if (sellAsset > 0) _swap(_asset, sellAsset, swapSlippageBps);
+        else if (sellWeth > 0) _swap(WETH, sellWeth, swapSlippageBps);
     }
 
     /// @dev Caps to deployable. Skips if unpriceable so withdrawals can still pay the unswapped token.

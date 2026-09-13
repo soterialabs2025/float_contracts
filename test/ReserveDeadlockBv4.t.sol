@@ -182,14 +182,25 @@ contract ReserveDeadlockBv4Test is Test {
         assertTrue(movedSomething || !acted, "keeperCheck must not claim work it did not do");
     }
 
-    /// @dev And it must actually deploy: the cooldown cannot strand inventory the live band can never absorb.
+    /// @dev And it must actually deploy — but on the cooldown's schedule, not the keeper's. Inside the cooldown a
+    ///      one-sided add prices to zero and the pass says so and stops; the bypass that used to remint here is
+    ///      what let a strategy whose swap kept being refused burn and remint the position on every pass. Once
+    ///      the cooldown opens, the remint runs and the idle goes in.
     function test_OneSidedIdleIsDeployedNotStranded() public {
         _oneSidedInRangePosition();
+        uint128 before = posm.getPositionLiquidity(FIRST_POSITION);
 
         vm.prank(KEEPER);
         bool acted = s.keeperCheck();
+        assertFalse(acted, "inside the cooldown a zero add declines");
+        assertEq(posm.getPositionLiquidity(FIRST_POSITION), before, "and moves nothing");
+        assertEq(posm.getPositionLiquidity(SECOND_POSITION), 0, "no remint yet");
 
-        assertTrue(acted, "the pass did real work");
+        _advance(s.minHarvestDelay());
+
+        vm.prank(KEEPER);
+        acted = s.keeperCheck();
+        assertTrue(acted, "cooldown open: the pass did real work");
         assertGt(posm.getPositionLiquidity(SECOND_POSITION), 0, "idle was redeployed through a remint");
     }
 

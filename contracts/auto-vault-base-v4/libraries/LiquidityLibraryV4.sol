@@ -147,6 +147,51 @@ library LiquidityLibraryV4 {
         return assetIsCurrency0 ? share0 : 1e18 - share0;
     }
 
+    /// @notice The slice of deployable inventory to move into reserve for a deposit of `newCapital` WETH-worth,
+    ///         `reserveBps` of it, taken pro-rata from both legs as they sit. Unpriceable: `reserveBps` of each
+    ///         leg instead. Never more than is on hand.
+    /// @dev Same reason as `rebalanceLegs`: arithmetic the strategy has no size headroom to carry itself.
+    function reservePeel(uint256 assetBal, uint256 wethBal, uint256 price1e18, uint256 newCapital, uint256 reserveBps, uint256 divisor)
+        public pure returns (uint256 ra, uint256 rw)
+    {
+        if (price1e18 == 0) {
+            ra = Math.mulDiv(assetBal, reserveBps, divisor);
+            rw = Math.mulDiv(wethBal, reserveBps, divisor);
+        } else {
+            uint256 deployable = wethBal + Math.mulDiv(assetBal, 1e18, price1e18);
+            if (deployable == 0) return (0, 0);
+            uint256 want = Math.mulDiv(newCapital, reserveBps, divisor);
+            if (want > deployable) want = deployable;
+            ra = Math.mulDiv(assetBal, want, deployable);
+            rw = Math.mulDiv(wethBal, want, deployable);
+        }
+        if (ra > assetBal) ra = assetBal;
+        if (rw > wethBal) rw = wethBal;
+    }
+
+    /// @notice What it takes to move deployable inventory to `assetShare1e18` of its value, at `price1e18` asset
+    ///         per WETH. Exactly one side is non-zero: either the asset is in surplus (`sellAsset`, or the WETH
+    ///         it is worth as `pullWeth` if reserve is to supply the short leg instead) or in deficit
+    ///         (`pullAsset`, or the WETH to sell for it as `sellWeth`, capped at what is on hand).
+    /// @dev Lives here rather than in the strategy because two strategy functions need the same arithmetic and
+    ///      the strategy has no runtime-size headroom left to hold it twice. All zero when unpriceable or empty.
+    function rebalanceLegs(uint256 assetBal, uint256 wethBal, uint256 price1e18, uint256 assetShare1e18)
+        public pure returns (uint256 sellAsset, uint256 sellWeth, uint256 pullAsset, uint256 pullWeth)
+    {
+        if (price1e18 == 0) return (0, 0, 0, 0);
+        uint256 totalValue = assetBal + Math.mulDiv(wethBal, price1e18, 1e18);
+        if (totalValue == 0) return (0, 0, 0, 0);
+        uint256 target = Math.mulDiv(totalValue, assetShare1e18, 1e18);
+        if (assetBal > target) {
+            sellAsset = assetBal - target;
+            pullWeth = Math.mulDiv(sellAsset, 1e18, price1e18);
+        } else if (assetBal < target) {
+            pullAsset = target - assetBal;
+            sellWeth = Math.mulDiv(pullAsset, 1e18, price1e18);
+            if (sellWeth > wethBal) sellWeth = wethBal;
+        }
+    }
+
     function calculateMinAmounts(uint256 amount0, uint256 amount1, uint16 slippageBps)
         internal pure returns (uint256 min0, uint256 min1)
     {
