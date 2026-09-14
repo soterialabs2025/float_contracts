@@ -68,6 +68,16 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
     uint256 internal idleRemintFloor;
     uint256 private constant LIQUIDITY_DUST = 1_000_000_000_000;
 
+    /// @dev `LIQUIDITY_DUST` is 1e12 wei of an 18-decimal token. USDG is 6 decimals, so the same raw number is
+    ///      $1,000,000 and would decline every realistic stock mint. Scale with the token.
+    function _dust(IERC20 token) internal view returns (uint256) {
+        return LiquidityLibraryV2.dustOf(address(token), LIQUIDITY_DUST);
+    }
+
+    function _bothDust(uint256 assetBal, uint256 quoteBal) internal view returns (bool) {
+        return assetBal <= _dust(_asset) && quoteBal <= _dust(QUOTE);
+    }
+
     /// @notice `ACTIVE` runs the band; `IDLE` holds QUOTE only, after `exitToQuote`, until the next `changeAsset`.
     ///         The keeper does nothing in IDLE, so it cannot remint an asset the operator is rotating away from.
     enum Mode {
@@ -235,7 +245,7 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
         address previous = address(_asset);
         uint256 quoteBal = _exitToQuoteInternal();
         uint256 left = _asset.balanceOf(address(this));
-        if (left > LIQUIDITY_DUST) revert E();
+        if (left > _dust(_asset)) revert E();
         if (left > 0) _asset.safeTransfer(_feeManager, left);
         if (newAsset != previous) {
             _asset.forceApprove(address(positionManager), 0);
@@ -348,7 +358,7 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
 
     function _idleDeployableMaterial() internal view returns (bool) {
         (uint256 a, uint256 w) = _getDeployableBalances();
-        if (a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST) return false;
+        if (a <= _dust(_asset) && w <= _dust(QUOTE)) return false;
         uint256 p = _rebalancePrice1e18();
         if (p == 0) return false;
         uint256 nav = _quoteNavSpot();
@@ -373,10 +383,7 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
         if (mode == Mode.IDLE) return false;
         if (liqPos.positionId == 0) {
             (uint256 a, uint256 w) = _getDeployableBalances();
-            if (
-                a <= LIQUIDITY_DUST && w <= LIQUIDITY_DUST && reservedAsset <= LIQUIDITY_DUST
-                    && reservedQuote <= LIQUIDITY_DUST
-            ) return false;
+            if (_bothDust(a, w) && _bothDust(reservedAsset, reservedQuote)) return false;
             _remintAtTarget();
             return liqPos.positionId != 0;
         }
@@ -584,8 +591,8 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
             liqPos.positionId = 0;
         }
         (uint256 assetBal, uint256 quoteBal) = _getDeployableBalances();
-        if (assetBal <= LIQUIDITY_DUST && quoteBal <= LIQUIDITY_DUST) {
-            if (reservedAsset <= LIQUIDITY_DUST && reservedQuote <= LIQUIDITY_DUST) return false;
+        if (_bothDust(assetBal, quoteBal)) {
+            if (_bothDust(reservedAsset, reservedQuote)) return false;
             _setReserved(0, 0);
             (assetBal, quoteBal) = _getDeployableBalances();
         }
@@ -596,7 +603,7 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
         uint256 share = _bandShare(lower, upper, tick);
         _fundDeficitFromReserve(assetBal, quoteBal, share);
         (assetBal, quoteBal) = _getDeployableBalances();
-        if (assetBal <= LIQUIDITY_DUST && quoteBal <= LIQUIDITY_DUST) return false;
+        if (_bothDust(assetBal, quoteBal)) return false;
         _balanceTokens(assetBal, quoteBal, share);
         _mintPosition(lower, upper, tick);
         if (liqPos.positionId == 0) return false;
@@ -654,7 +661,7 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
     function _mintPosition(int24 lower, int24 upper, int24 currentTick) internal {
         if (_rebalancePrice1e18() == 0) return;
         (uint256 assetBal, uint256 quoteBal) = _getDeployableBalances();
-        if (assetBal <= LIQUIDITY_DUST && quoteBal <= LIQUIDITY_DUST) return;
+        if (_bothDust(assetBal, quoteBal)) return;
         LiquidityLibraryV2.MintContext memory ctx = LiquidityLibraryV2.MintContext({
             npm: positionManager,
             factory: v3Factory,

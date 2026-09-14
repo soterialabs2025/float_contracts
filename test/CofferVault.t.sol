@@ -29,6 +29,14 @@ contract CofferMockToken is ERC20 {
     }
 }
 
+contract CofferMockToken6 is ERC20 {
+    constructor() ERC20("U6", "U6") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+}
+
 /// @dev Spot and TWAP set independently, both as ticks. 1% fee tier, 200 spacing.
 contract CofferMockPool {
     address public token0;
@@ -563,5 +571,11 @@ contract CofferVaultTest is Test {
         assertFalse(sA.keeperCheck());
         assertFalse(sB.keeperCheck());
         vm.stopPrank();
+    }
+
+    function test_DustOfScalesSixDecimalTokens() public {
+        assertEq(LiquidityLibraryV2.dustOf(WETH, 1e12), 1e12, "18-dec unchanged");
+        CofferMockToken6 d6 = new CofferMockToken6();
+        assertEq(LiquidityLibraryV2.dustOf(address(d6), 1e12), 1, "6-dec USDG-class is 1 raw unit");
     }
 }

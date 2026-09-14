@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/IUniswapV3Factory.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -340,7 +341,7 @@ library LiquidityLibraryV2 {
         // Same rounding gap as the increase path: a wei of the short leg prices to non-zero `liq` but a zero
         // `need`, and the position manager mints zero from zero and reverts bare. Ask its question first.
         if (getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, need0, need1) == 0) return (ps.positionId, 0);
-        if (_dustLeg(need0, ctx.dust) || _dustLeg(need1, ctx.dust)) return (ps.positionId, 0);
+        if (_dustLeg(need0, token0, ctx.dust) || _dustLeg(need1, token1, ctx.dust)) return (ps.positionId, 0);
         (uint256 min0, uint256 min1) = calculateMinAmounts(need0, need1, ctx.slippageBps);
         INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
             token0: token0,
@@ -417,7 +418,7 @@ library LiquidityLibraryV2 {
         // Same rounding gap as the increase path: a wei of the short leg prices to non-zero `liq` but a zero
         // `need`, and the position manager mints zero from zero and reverts bare. Ask its question first.
         if (getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, need0, need1) == 0) return (ps.positionId, 0);
-        if (_dustLeg(need0, ctx.dust) || _dustLeg(need1, ctx.dust)) return (ps.positionId, 0);
+        if (_dustLeg(need0, token0, ctx.dust) || _dustLeg(need1, token1, ctx.dust)) return (ps.positionId, 0);
         (uint256 min0, uint256 min1) = calculateMinAmounts(need0, need1, ctx.slippageBps);
         INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
             token0: token0,
@@ -491,7 +492,9 @@ library LiquidityLibraryV2 {
         uint256 bal1 = request.token1.balanceOf(address(this));
         if (request.amount0Max < bal0) bal0 = request.amount0Max;
         if (request.amount1Max < bal1) bal1 = request.amount1Max;
-        if (bal0 < ctx.dust && bal1 < ctx.dust) return amounts;
+        if (bal0 < dustOf(address(request.token0), ctx.dust) && bal1 < dustOf(address(request.token1), ctx.dust)) {
+            return amounts;
+        }
         uint128 fromBalances = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, bal0, bal1);
         if (fromBalances == 0) return amounts;
         (amounts.amount0, amounts.amount1) = getAmountsForLiquidity(sqrtP, sqrtL, sqrtU, fromBalances);
@@ -505,12 +508,22 @@ library LiquidityLibraryV2 {
         amounts.liquidity = getLiquidityForAmounts(sqrtP, sqrtL, sqrtU, amounts.amount0, amounts.amount1);
         // A leg that is needed but below dust is not worth an add and cannot survive one: at wei scale the
         // slippage floor rounds to the amount itself, and the pool's own rounding then misses it by a wei.
-        if (_dustLeg(amounts.amount0, ctx.dust) || _dustLeg(amounts.amount1, ctx.dust)) amounts.liquidity = 0;
+        if (_dustLeg(amounts.amount0, address(request.token0), ctx.dust)
+            || _dustLeg(amounts.amount1, address(request.token1), ctx.dust)) amounts.liquidity = 0;
     }
 
-    /// @dev Non-zero and below `dust`. Zero is a leg the range does not need, and is fine.
-    function _dustLeg(uint256 amount, uint256 dust) private pure returns (bool) {
-        return amount != 0 && amount < dust;
+    /// @dev `dust18` is the 18-decimal threshold (1e12 wei of WETH). A 6-decimal quote such as USDG must
+    ///      scale with it or every realistic mint looks like dust: 1e12 of USDG is $1,000,000.
+    function dustOf(address token, uint256 dust18) public view returns (uint256) {
+        uint8 d = IERC20Metadata(token).decimals();
+        if (d >= 18) return dust18;
+        uint256 scaled = dust18 / (10 ** (18 - d));
+        return scaled == 0 ? 1 : scaled;
+    }
+
+    /// @dev Non-zero and below the token's scaled dust. Zero is a leg the range does not need, and is fine.
+    function _dustLeg(uint256 amount, address token, uint256 dust18) private view returns (bool) {
+        return amount != 0 && amount < dustOf(token, dust18);
     }
 
     function decreaseAllLiquidity(PositionState storage ps, DecreaseContext memory ctx)
