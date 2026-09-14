@@ -7,8 +7,7 @@ import "./TickMath.sol";
 
 /// @title TwapQuoteLib
 /// @notice TWAP-gated spot quotes and swap floors for CofferStrategy.
-/// @dev Functions are `public` so this deploys once and links by address instead of inlining into the strategy
-///      (and into CofferFactory initcode, which CREATE's ShareStaking and clones the strategy).
+/// @dev Functions are `public` so this deploys once and links by address instead of inlining into the strategy.
 library TwapQuoteLib {
     uint256 internal constant DIVISOR = 10_000;
 

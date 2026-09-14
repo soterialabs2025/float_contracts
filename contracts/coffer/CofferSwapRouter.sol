@@ -11,7 +11,8 @@ import "./interfaces/ICofferSwapRouter.sol";
 import "./interfaces/IUniswapRouter.sol";
 
 /// @title CofferSwapRouter
-/// @notice Robinhood Chain (4663) Uniswap v3 swap router for Auto strategies and ShareStaking.
+/// @notice Robinhood Chain (4663) Uniswap v3 swap router for Coffer strategies. Owner-managed allowlist; there is no
+///         factory, so `strategyFactory` stays unset.
 /// @dev Caller supplies `minAmountOut`; router does not quote.
 contract CofferSwapRouter is ICofferSwapRouter, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;

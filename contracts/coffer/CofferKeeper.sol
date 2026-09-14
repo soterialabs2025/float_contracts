@@ -112,9 +112,11 @@ contract CofferKeeper is ICofferKeeper, Ownable, ReentrancyGuard {
     }
 
     function performHarvest(uint256 id, bool skipIncreaseLiquidity) external override nonReentrant onlyOperator {
-        _performHarvest(id, skipIncreaseLiquidity);
+        _performHarvest(id, skipIncreaseLiquidity, false);
     }
 
+    /// @dev Isolated like the upkeep batch: three strategies share one vault here, and one pair's bad hour must not
+    ///      stop the other two collecting.
     function performHarvestBatch(uint256[] calldata ids, bool skipIncreaseLiquidity)
         external
         nonReentrant
@@ -124,16 +126,24 @@ contract CofferKeeper is ICofferKeeper, Ownable, ReentrancyGuard {
         uint256 maxId = watched.length;
         for (uint256 i = 0; i < len; i++) {
             if (ids[i] >= maxId) continue;
-            _performHarvest(ids[i], skipIncreaseLiquidity);
+            _performHarvest(ids[i], skipIncreaseLiquidity, true);
         }
     }
 
-    function _performHarvest(uint256 id, bool skipIncreaseLiquidity) internal {
+    function _performHarvest(uint256 id, bool skipIncreaseLiquidity, bool isolate) internal {
         if (id >= watched.length) revert BadId();
         WatchedStrategy storage ws = watched[id];
         if (!ws.active || ws.stratAddr == address(0)) return;
         ICofferStrategy strat = ICofferStrategy(ws.stratAddr);
-        strat.harvestBoolean(skipIncreaseLiquidity);
+        if (!isolate) {
+            strat.harvestBoolean(skipIncreaseLiquidity);
+        } else {
+            try strat.harvestBoolean(skipIncreaseLiquidity) {}
+            catch (bytes memory reason) {
+                emit UpkeepFailed(id, ws.stratAddr, reason);
+                return;
+            }
+        }
         ws.lastHarvest = uint32(block.timestamp);
         _recordVaultPoolValueSnapshot(ws.stratAddr);
     }
