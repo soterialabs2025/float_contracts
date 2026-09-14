@@ -57,6 +57,27 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
 ]
 
+# Coffer: multi-strategy allocator vault on Robinhood (4663), built from auto-vaults-rh-v3.
+[profile.coffer]
+src = "contracts/coffer"
+out = "artifacts"
+extra_output_files = ["abi"]
+test = "test"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+revert_strings = "strip"
+skip = ["FloatStrategyKeeperOffensive", "TrailingFloor", "IPositionManagerV4", "auto-vault-rh-v4", "ustrategy-rh-v4", "ShareStaking.t", "DeployUFloat"]
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
 # Base Uniswap V3 AutoVault (RH auto-vaults-rh-v3 twin).
 [profile.base-v3]
 src = "contracts/auto-vaults-base-v3"

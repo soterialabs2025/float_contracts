@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
+import "./V3Deployments4663.sol";
+import "./interfaces/ICofferVault.sol";
+import "./interfaces/ICofferStrategy.sol";
+import "./interfaces/ICofferLiquidShares.sol";
+
+interface IWETHV3Rh is IERC20 {
+    function deposit() external payable;
+}
+
+/// @title CofferVault
+/// @notice RH (4663) Coffer vault: ETH-only deposits (aeWETH wrap), CofferLiquidShares package. No staking.
+contract CofferVault is Ownable, ReentrancyGuard, ICofferVault { 
+    using SafeERC20 for IERC20;
+
+    IWETHV3Rh public immutable weth;
+    ICofferStrategy public strategy;
+    ICofferLiquidShares public liquidShares;
+    IERC20 public asset;
+    address public immutable factory;
+    bool public bootstrapped;
+    /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
+    bool public ownershipLocked;
+    /// @notice High-water WETH-per-share (scaled 1e18). Later mints use min(spot, this).
+    uint256 public lastSharePriceX18;
+    uint256 public accUniswapFeesPerShare;
+    uint256 public uniswapFeesCollectedSynced;
+    /// @dev Near-full withdraw sweeps leftover shares below this (avoids wei dust blocking empty+HW reset).
+    uint256 internal constant MIN_SHARE_DUST = 1e10;
+    /// @dev OZ-style virtual offset so a dust seed + donation cannot floor a later mint to 1 share.
+    uint256 internal constant VIRTUAL_SHARES = 1e3;
+    uint256 internal constant VIRTUAL_ASSETS = 1;
+
+    event Deposit(address indexed user, uint256 wethNotional, uint256 shares, uint256 acc);
+    event Withdraw(address indexed user, uint256 shares, bool indexed asAsset, uint256 outAmount, uint256 acc);
+    event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
+    event OwnershipLocked(address indexed owner);
+    event SharePriceHighWater(uint256 priceX18);
+
+    error Unauthorized();
+    error ZeroAddress();
+    error ZeroValue();
+    error AlreadyBootstrapped();
+    error NotBootstrapped();
+    error OwnershipIsLocked();
+    error FirstMintOwnerOnly();
+    error TwapUnavailable();
+
+    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
+    constructor(address factory_) Ownable(msg.sender) {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factory = factory_;
+        weth = IWETHV3Rh(V3Deployments4663.WETH);
+    }
+
+    modifier onlyAutoKeeper() {
+        if (msg.sender != strategy.keeper()) revert Unauthorized();
+        _;
+    }
+
+    function bootstrap(address owner_, address strategy_, address liquidShares_, address asset_) external {
+        if (bootstrapped) revert AlreadyBootstrapped();
+        if (ownershipLocked) revert OwnershipIsLocked();
+        if (msg.sender != factory) revert Unauthorized();
+        if (owner_ == address(0) || strategy_ == address(0) || liquidShares_ == address(0) || asset_ == address(0)) {
+            revert ZeroAddress();
+        }
+        strategy = ICofferStrategy(strategy_);
+        liquidShares = ICofferLiquidShares(liquidShares_);
+        asset = IERC20(asset_);
+        bootstrapped = true;
+        uniswapFeesCollectedSynced = strategy.UniswapFeesCollected();
+        _transferOwnership(owner_);
+    }
+
+    /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
+    function transferOwnershipFromFactory(address newOwner) external {
+        if (msg.sender != factory) revert Unauthorized();
+        if (!bootstrapped) revert NotBootstrapped();
+        if (newOwner == address(0)) revert ZeroAddress();
+        if (ownershipLocked) revert OwnershipIsLocked();
+        _transferOwnership(newOwner);
+        ownershipLocked = true;
+        emit OwnershipLocked(newOwner);
+    }
+
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if (ownershipLocked) revert OwnershipIsLocked();
+        super.transferOwnership(newOwner);
+    }
+
+    function renounceOwnership() public override onlyOwner {
+        if (ownershipLocked) revert OwnershipIsLocked();
+        super.renounceOwnership();
+    }
+
+    /// @notice Emit NAV + cumulative Uniswap fees for off-chain indexing. Keeper-only.
+    function recordPoolValueSnapshot() external override onlyAutoKeeper {
+        if (!bootstrapped) revert NotBootstrapped();
+        emit PoolValueSnapshotRecorded(
+            strategy.poolValue(), strategy.UniswapFeesCollected(), uint64(block.timestamp)
+        );
+    }
+
+    function balance() public view override returns (uint256) {
+        return strategy.balance();
+    }
+
+    function balanceOf(address account) public view override returns (uint256) {
+        return liquidShares.balanceOf(account);
+    }
+
+    function totalSupply() public view override returns (uint256) {
+        return liquidShares.totalSupply();
+    }
+
+    function depositETH() external payable override nonReentrant returns (uint256 shares) {
+        if (msg.value == 0) revert ZeroValue();
+        weth.deposit{value: msg.value}();
+        return _mintSharesAndDeploy(msg.value);
+    }
+
+    function _mintSharesAndDeploy(uint256 amount) internal returns (uint256 shares) {
+        if (!bootstrapped) revert NotBootstrapped();
+        uint256 supply = totalSupply();
+        if (supply == 0 && msg.sender != owner()) revert FirstMintOwnerOnly();
+
+        // Collect fees before pricing so they accrue to the pre-mint supply.
+        strategy.syncFees();
+        uint256 navBefore = balance();
+        // Later mints: gated TWAP (same 300 bps band as remint). After `strategy.deposit` the TWAP includes `amount`.
+        uint256 navTwap;
+        if (supply != 0) {
+            navTwap = strategy.poolValueTwap();
+            if (navTwap == 0) revert TwapUnavailable();
+        }
+        IERC20(address(weth)).forceApprove(address(strategy), amount);
+        strategy.deposit(amount);
+        uint256 navAfter = balance();
+        uint256 credited = navAfter > navBefore ? navAfter - navBefore : 0;
+        // Cap to deposited WETH so spot/NAV jumps between reads cannot overmint shares (V-NAV-MINT).
+        if (credited > amount) credited = amount;
+        shares = _sharesForDeposit(credited, navBefore, supply, navTwap);
+        if (shares == 0) revert ZeroValue();
+        _syncAcc();
+        liquidShares.mint(msg.sender, shares);
+        _bumpSharePriceHighWater(balance(), totalSupply());
+        emit Deposit(msg.sender, credited, shares, accUniswapFeesPerShare);
+    }
+
+    /// @dev Owner seeds 1:1. Later min(spot, gated TWAP); high-water only if TWAP is unreadable.
+    function _sharesForDeposit(uint256 credited, uint256 navBefore, uint256 supply, uint256 navTwap)
+        internal
+        view
+        returns (uint256)
+    {
+        if (supply == 0) return credited;
+        uint256 sharesSpot = navBefore == 0
+            ? type(uint256).max
+            : Math.mulDiv(credited, supply + VIRTUAL_SHARES, navBefore + VIRTUAL_ASSETS);
+        if (navTwap > 0) {
+            return Math.min(sharesSpot, Math.mulDiv(credited, supply + VIRTUAL_SHARES, navTwap + VIRTUAL_ASSETS));
+        }
+        if (lastSharePriceX18 == 0) return sharesSpot;
+        return Math.min(sharesSpot, Math.mulDiv(credited, 1e18, lastSharePriceX18));
+    }
+
+    function _bumpSharePriceHighWater(uint256 nav, uint256 supply) internal {
+        if (supply == 0 || nav == 0) return;
+        uint256 priceX18 = Math.mulDiv(nav, 1e18, supply);
+        if (priceX18 > lastSharePriceX18) {
+            lastSharePriceX18 = priceX18;
+            emit SharePriceHighWater(priceX18);
+        }
+    }
+
+    function withdraw(uint256 shares, bool asAsset) external override nonReentrant returns (uint256) {
+        uint256 supply = totalSupply();
+        uint256 bal = balanceOf(msg.sender);
+        if (shares == 0 || supply == 0) revert ZeroValue();
+        // Clamp rather than revert. A caller sizing shares from a supply or NAV that has since moved overshoots its
+        // own balance, and reverting gives it no way to tell that apart from an empty vault: estimation just fails
+        // and no transaction is produced. Nobody can withdraw more than they hold either way.
+        if (shares > bal) shares = bal;
+        // Treat near-full personal exits as full exits so wei dust is not left behind.
+        if (bal - shares < MIN_SHARE_DUST) shares = bal;
+        ICofferStrategy.WithdrawToken out =
+            asAsset ? ICofferStrategy.WithdrawToken.ASSET : ICofferStrategy.WithdrawToken.WETH;
+        _syncAcc();
+        uint256 beforeBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
+        strategy.withdraw(shares, msg.sender, out);
+        liquidShares.burn(msg.sender, shares);
+        if (totalSupply() == 0) lastSharePriceX18 = 0;
+        uint256 afterBal = asAsset ? asset.balanceOf(msg.sender) : weth.balanceOf(msg.sender);
+        uint256 received = afterBal > beforeBal ? afterBal - beforeBal : 0;
+        emit Withdraw(msg.sender, shares, asAsset, received, accUniswapFeesPerShare);
+        return received;
+    }
+
+    function _syncAcc() internal {
+        uint256 feesNow = strategy.UniswapFeesCollected();
+        uint256 supply = liquidShares.totalSupply();
+        if (supply > 0 && feesNow > uniswapFeesCollectedSynced) {
+            accUniswapFeesPerShare += (feesNow - uniswapFeesCollectedSynced) * 1e18 / supply;
+        }
+        uniswapFeesCollectedSynced = feesNow;
+    }
+
+    receive() external payable {
+        revert("use depositETH");
+    }
+}
