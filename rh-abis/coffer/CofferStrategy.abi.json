@@ -3,19 +3,61 @@
     "type": "constructor",
     "inputs": [
       {
-        "name": "factory_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "quote_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "quotePool_",
-        "type": "address",
-        "internalType": "address"
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct CofferStrategy.Config",
+        "components": [
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quotePool",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "swapRouter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "operatorRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "keeper",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "feeManager",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "asset",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "poolFee",
+            "type": "uint24",
+            "internalType": "uint24"
+          },
+          {
+            "name": "reserveMode",
+            "type": "uint8",
+            "internalType": "enum CofferStrategyManager.ReserveMode"
+          }
+        ]
       }
     ],
     "stateMutability": "nonpayable"
@@ -105,59 +147,6 @@
   },
   {
     "type": "function",
-    "name": "bootstrap",
-    "inputs": [
-      {
-        "name": "owner_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "vault_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "swapRouter_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "operatorRegistry_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "keeper_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "feeManager_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "asset_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "poolFee_",
-        "type": "uint24",
-        "internalType": "uint24"
-      },
-      {
-        "name": "reserveMode_",
-        "type": "uint8",
-        "internalType": "enum CofferStrategyManager.ReserveMode"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "changeAsset",
     "inputs": [
       {
@@ -193,19 +182,6 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "factory",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -444,19 +420,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "ownershipLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -875,19 +838,6 @@
   {
     "type": "function",
     "name": "transferOwnership",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "transferOwnershipFromFactory",
     "inputs": [
       {
         "name": "newOwner",

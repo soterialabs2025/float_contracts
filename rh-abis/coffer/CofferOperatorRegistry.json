@@ -1,10 +1,10 @@
 {
   "name": "CofferOperatorRegistry",
-  "address": "0x5af67Ef469EeEa0807D42d7A1505ddbf532B20dC",
+  "address": "0x932faEB584254e776Dc39B8A5FF55ec6319bBf82",
   "chainId": 4663,
   "product": "coffer",
   "profile": "coffer",
-  "timestamp": 1789439014669,
+  "timestamp": 1789441288897,
   "abi": [
     {
       "type": "constructor",

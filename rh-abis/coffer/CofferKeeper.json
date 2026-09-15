@@ -1,10 +1,10 @@
 {
   "name": "CofferKeeper",
-  "address": "0xCC0F49c07e76b398d26103539cd2Ae525013cA61",
+  "address": "0xAf132C43E60c09b657267ebce75a1a34e8DBE9a0",
   "chainId": 4663,
   "product": "coffer",
   "profile": "coffer",
-  "timestamp": 1789439014672,
+  "timestamp": 1789441288901,
   "abi": [
     {
       "type": "constructor",
@@ -146,19 +146,6 @@
     },
     {
       "type": "function",
-      "name": "setStrategyFactory",
-      "inputs": [
-        {
-          "name": "factory",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "snapshotVaultPoolValue",
       "inputs": [
         {
@@ -192,19 +179,6 @@
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "strategyFactory",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
         }
       ],
       "stateMutability": "view"
@@ -318,19 +292,6 @@
           "type": "uint32",
           "indexed": false,
           "internalType": "uint32"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "StrategyFactoryUpdated",
-      "inputs": [
-        {
-          "name": "factory",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
         }
       ],
       "anonymous": false

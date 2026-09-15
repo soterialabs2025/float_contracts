@@ -1,20 +1,14 @@
 {
   "name": "CofferLiquidShares",
-  "address": "0x5774ec91794d0259fAE944f37A7F41634E791CEC",
+  "address": "0xF2736eE8361241B283c1e579B5173eb9aB54EBD1",
   "chainId": 4663,
   "product": "coffer",
   "profile": "coffer",
-  "timestamp": 1789439014686,
+  "timestamp": 1789441288915,
   "abi": [
     {
       "type": "constructor",
-      "inputs": [
-        {
-          "name": "factory_",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
+      "inputs": [],
       "stateMutability": "nonpayable"
     },
     {
@@ -86,19 +80,6 @@
     },
     {
       "type": "function",
-      "name": "bootstrap",
-      "inputs": [
-        {
-          "name": "vault_",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "burn",
       "inputs": [
         {
@@ -130,55 +111,6 @@
     },
     {
       "type": "function",
-      "name": "factory",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "initialize",
-      "inputs": [
-        {
-          "name": "vault_",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "name_",
-          "type": "string",
-          "internalType": "string"
-        },
-        {
-          "name": "symbol_",
-          "type": "string",
-          "internalType": "string"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "initialized",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "mint",
       "inputs": [
         {
@@ -206,27 +138,7 @@
           "internalType": "string"
         }
       ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "owner",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "renounceOwnership",
-      "inputs": [],
-      "outputs": [],
-      "stateMutability": "nonpayable"
+      "stateMutability": "pure"
     },
     {
       "type": "function",
@@ -239,7 +151,7 @@
           "internalType": "string"
         }
       ],
-      "stateMutability": "view"
+      "stateMutability": "pure"
     },
     {
       "type": "function",
@@ -309,19 +221,6 @@
     },
     {
       "type": "function",
-      "name": "transferOwnership",
-      "inputs": [
-        {
-          "name": "newOwner",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "vault",
       "inputs": [],
       "outputs": [
@@ -360,25 +259,6 @@
     },
     {
       "type": "event",
-      "name": "OwnershipTransferred",
-      "inputs": [
-        {
-          "name": "previousOwner",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "newOwner",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
       "name": "Transfer",
       "inputs": [
         {
@@ -404,39 +284,7 @@
     },
     {
       "type": "error",
-      "name": "AlreadyInitialized",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "OwnableInvalidOwner",
-      "inputs": [
-        {
-          "name": "owner",
-          "type": "address",
-          "internalType": "address"
-        }
-      ]
-    },
-    {
-      "type": "error",
-      "name": "OwnableUnauthorizedAccount",
-      "inputs": [
-        {
-          "name": "account",
-          "type": "address",
-          "internalType": "address"
-        }
-      ]
-    },
-    {
-      "type": "error",
       "name": "Unauthorized",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "ZeroAddress",
       "inputs": []
     }
   ]

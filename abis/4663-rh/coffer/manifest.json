@@ -4,34 +4,34 @@
   "profile": "coffer",
   "contracts": {
     "CofferOperatorRegistry": {
-      "address": "0x5af67Ef469EeEa0807D42d7A1505ddbf532B20dC",
+      "address": "0x932faEB584254e776Dc39B8A5FF55ec6319bBf82",
       "artifact": "artifacts/CofferOperatorRegistry.sol/CofferOperatorRegistry.json",
       "abiEntries": 14
     },
     "CofferKeeper": {
-      "address": "0xCC0F49c07e76b398d26103539cd2Ae525013cA61",
+      "address": "0xAf132C43E60c09b657267ebce75a1a34e8DBE9a0",
       "artifact": "artifacts/CofferKeeper.sol/CofferKeeper.json",
-      "abiEntries": 29
+      "abiEntries": 26
     },
     "CofferSwapRouter": {
-      "address": "0xDdBcdfBcF17903d8D18f76D564c684211Ac58010",
+      "address": "0x62B49Ea133C32D91b255043e87DDD0667B784d6a",
       "artifact": "artifacts/CofferSwapRouter.sol/CofferSwapRouter.json",
-      "abiEntries": 29
+      "abiEntries": 26
     },
     "CofferVault": {
-      "address": "0x620136C3A4937AEEB4f846ce965c97c6571b31Fd",
+      "address": "0x948c683a5885D49383C8d94Fc1827a036543E803",
       "artifact": "artifacts/CofferVault.sol/CofferVault.json",
-      "abiEntries": 58
+      "abiEntries": 49
     },
     "CofferLiquidShares": {
-      "address": "0x5774ec91794d0259fAE944f37A7F41634E791CEC",
+      "address": "0xF2736eE8361241B283c1e579B5173eb9aB54EBD1",
       "artifact": "artifacts/CofferLiquidShares.sol/CofferLiquidShares.json",
-      "abiEntries": 28
+      "abiEntries": 16
     },
     "CofferStrategy": {
-      "address": "0xCD6b9F85B9e2e707b2884533559B7A8b24180bD7",
+      "address": "0xf0572eAA01924e20330A825311136b0BF9F886ca",
       "artifact": "artifacts/CofferStrategy.sol/CofferStrategy.json",
-      "abiEntries": 82
+      "abiEntries": 78
     },
     "CofferStrategyManager": {
       "address": null,

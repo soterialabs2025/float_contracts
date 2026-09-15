@@ -3,7 +3,12 @@
     "type": "constructor",
     "inputs": [
       {
-        "name": "factory_",
+        "name": "operatorRegistry_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "keeper_",
         "type": "address",
         "internalType": "address"
       }
@@ -105,47 +110,6 @@
   },
   {
     "type": "function",
-    "name": "bootstrap",
-    "inputs": [
-      {
-        "name": "owner_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "liquidShares_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "operatorRegistry_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "keeper_",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "bootstrapped",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "depositETH",
     "inputs": [],
     "outputs": [
@@ -156,19 +120,6 @@
       }
     ],
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "factory",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -223,7 +174,7 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract ICofferLiquidShares"
+        "internalType": "contract CofferLiquidShares"
       }
     ],
     "stateMutability": "view"
@@ -250,19 +201,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "ownershipLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -387,19 +325,6 @@
   },
   {
     "type": "function",
-    "name": "transferOwnershipFromFactory",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "uniswapFeesCollectedSynced",
     "inputs": [],
     "outputs": [
@@ -470,19 +395,6 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "OwnershipLocked",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -659,11 +571,6 @@
   },
   {
     "type": "error",
-    "name": "AlreadyBootstrapped",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "BadIndex",
     "inputs": []
   },
@@ -680,11 +587,6 @@
   {
     "type": "error",
     "name": "NoRoute",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotBootstrapped",
     "inputs": []
   },
   {
@@ -713,11 +615,6 @@
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "OwnershipIsLocked",
-    "inputs": []
   },
   {
     "type": "error",
