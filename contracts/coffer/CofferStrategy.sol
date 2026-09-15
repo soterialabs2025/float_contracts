@@ -28,7 +28,24 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
 
     error E();
 
-    address public immutable factory;
+    /// @notice Everything a strategy needs at construction. There is no clone factory, so there is no second
+    ///         initialisation step: the pair, the infra and the reserve mode are all fixed here.
+    struct Config {
+        /// @dev The pair's quote token: aeWETH for a volatile/WETH pair, USDG for a stock/USDG pair.
+        address quote;
+        /// @dev QUOTE/aeWETH Uniswap V3 pool used to value QUOTE in the unit of account. `address(0)` when
+        ///      `quote` is aeWETH; otherwise a pool of exactly those two tokens. Its fee tier is read from it.
+        address quotePool;
+        address vault;
+        address swapRouter;
+        address operatorRegistry;
+        address keeper;
+        address feeManager;
+        address asset;
+        uint24 poolFee;
+        ReserveMode reserveMode;
+    }
+
     INonfungiblePositionManager public immutable positionManager;
     IUniswapV3Factory public immutable v3Factory;
     /// @notice The vault's unit of account (aeWETH). Deposits arrive in it, withdrawals and NAV are reported in it.
@@ -44,17 +61,14 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
     LiquidityLibraryV2.PositionState private liqPos;
     IERC20 private _asset;
     ICofferSwapRouter public swapRouter;
-    ICofferOperatorRegistry public operatorRegistry;
+    ICofferOperatorRegistry public immutable operatorRegistry;
     IUniswapV3PoolMinimal private _pool;
 
-    address public vault;
-    address public keeper;
-    address private _feeManager;
+    address public immutable vault;
+    address public immutable keeper;
+    address private immutable _feeManager;
     uint24 public poolFee;
     bool public watched;
-    bool private _bootstrapped;
-    /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
-    bool public ownershipLocked;
     int24 public lastBandBaseTick;
     bool public hasBandBase;
     uint256 public lastHarvest;
@@ -95,93 +109,49 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
 
     // `SwapFailed` is emitted from this address by `CofferSwapLib` (delegatecall); see the library for its declaration.
 
-    /// @notice Sets the deployer-as-factory, the Rh (4663) Uniswap v3 immutables, and this strategy's quote leg.
-    ///         Package wiring happens in `bootstrap`.
-    /// @param quote_ The pair's quote token. Pass aeWETH for a WETH-quoted pair.
-    /// @param quotePool_ QUOTE/aeWETH Uniswap V3 pool used to value QUOTE in the unit of account and to convert
-    ///        deposits and withdrawals. Must be `address(0)` when `quote_` is aeWETH, and a pool of exactly those
-    ///        two tokens otherwise. Its fee tier is read from the pool.
-    constructor(address factory_, address quote_, address quotePool_) CofferStrategyManager() {
-        factory = factory_;
+    /// @notice Deployer is owner. Robinhood (4663) Uniswap v3 addresses are compiled in; the pair, the quote
+    ///         conversion and the infra come from `cfg`.
+    constructor(Config memory cfg) CofferStrategyManager() {
         positionManager = INonfungiblePositionManager(V3Deployments4663.NPM);
         v3Factory = IUniswapV3Factory(V3Deployments4663.FACTORY);
         UNIT = IERC20(V3Deployments4663.WETH);
-        if (quote_ == address(0)) revert E();
-        QUOTE = IERC20(quote_);
-        if (quote_ == V3Deployments4663.WETH) {
-            if (quotePool_ != address(0)) revert E();
+        if (
+            cfg.quote == address(0) || cfg.vault == address(0) || cfg.swapRouter == address(0)
+                || cfg.operatorRegistry == address(0) || cfg.keeper == address(0) || cfg.feeManager == address(0)
+                || cfg.asset == address(0) || cfg.asset == cfg.quote || cfg.asset == V3Deployments4663.WETH
+        ) revert E();
+        QUOTE = IERC20(cfg.quote);
+        if (cfg.quote == V3Deployments4663.WETH) {
+            if (cfg.quotePool != address(0)) revert E();
             _quotePoolFee = 0;
         } else {
-            IUniswapV3PoolMinimal qp = IUniswapV3PoolMinimal(quotePool_);
+            IUniswapV3PoolMinimal qp = IUniswapV3PoolMinimal(cfg.quotePool);
             address t0 = qp.token0();
             address t1 = qp.token1();
-            bool ok = (t0 == quote_ && t1 == V3Deployments4663.WETH) || (t1 == quote_ && t0 == V3Deployments4663.WETH);
+            bool ok = (t0 == cfg.quote && t1 == V3Deployments4663.WETH) || (t1 == cfg.quote && t0 == V3Deployments4663.WETH);
             if (!ok) revert E();
             _quotePoolFee = qp.fee();
         }
-        _quotePool = IUniswapV3PoolMinimal(quotePool_);
-        _initAutoDefaults();
-    }
+        _quotePool = IUniswapV3PoolMinimal(cfg.quotePool);
 
-    modifier onlyFactory() {
-        if (msg.sender != factory) revert E();
-        _;
-    }
-
-    function bootstrap(
-        address owner_,
-        address vault_,
-        address swapRouter_,
-        address operatorRegistry_,
-        address keeper_,
-        address feeManager_,
-        address asset_,
-        uint24 poolFee_,
-        ReserveMode reserveMode_
-    ) external onlyFactory {
-        if (_bootstrapped || ownershipLocked) revert E();
-        if (
-            owner_ == address(0) || vault_ == address(0) || swapRouter_ == address(0) || operatorRegistry_ == address(0)
-                || keeper_ == address(0) || feeManager_ == address(0) || asset_ == address(0)
-                || asset_ == address(QUOTE) || asset_ == address(UNIT)
-        ) revert E();
-        address pool_ = v3Factory.getPool(asset_, address(QUOTE), poolFee_);
+        address pool_ = v3Factory.getPool(cfg.asset, cfg.quote, cfg.poolFee);
         if (pool_ == address(0)) revert E();
-
-        vault = vault_;
-        swapRouter = ICofferSwapRouter(swapRouter_);
-        operatorRegistry = ICofferOperatorRegistry(operatorRegistry_);
-        keeper = keeper_;
-        _feeManager = feeManager_;
-        _asset = IERC20(asset_);
+        vault = cfg.vault;
+        swapRouter = ICofferSwapRouter(cfg.swapRouter);
+        operatorRegistry = ICofferOperatorRegistry(cfg.operatorRegistry);
+        keeper = cfg.keeper;
+        _feeManager = cfg.feeManager;
+        _asset = IERC20(cfg.asset);
         _pool = IUniswapV3PoolMinimal(pool_);
-        poolFee = poolFee_;
-        isAllowedToken[asset_] = true;
-        emit AllowedTokenSet(asset_, true);
-        // Defaults again in case this is ever cloned; harmless on a directly constructed instance.
-        _initAutoDefaults();
-        reserveMode = reserveMode_;
+        poolFee = cfg.poolFee;
+        isAllowedToken[cfg.asset] = true;
+        emit AllowedTokenSet(cfg.asset, true);
+        reserveMode = cfg.reserveMode;
         int24 sp = _pool.tickSpacing();
         if (sp <= 0) revert E();
         _alignBandOffsets(sp);
-        _bootstrapped = true;
         _asset.forceApprove(address(positionManager), type(uint256).max);
         QUOTE.forceApprove(address(positionManager), type(uint256).max);
-        _transferOwnership(owner_);
-    }
-
-    /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
-    function transferOwnershipFromFactory(address newOwner) external onlyFactory {
-        if (!_bootstrapped) revert E();
-        if (newOwner == address(0)) revert E();
-        if (ownershipLocked) revert E();
-        _transferOwnership(newOwner);
-        ownershipLocked = true;
-    }
-
-    function transferOwnership(address newOwner) public override onlyOwner {
-        if (ownershipLocked) revert E();
-        super.transferOwnership(newOwner);
     }
 
     function renounceOwnership() public pure override {
@@ -211,7 +181,7 @@ contract CofferStrategy is CofferStrategyManager, ReentrancyGuard, IERC721Receiv
     }
 
     function setWatched(bool status) external override {
-        if (msg.sender != keeper && msg.sender != factory && msg.sender != owner()) revert E();
+        if (msg.sender != keeper && msg.sender != owner()) revert E();
         watched = status;
     }
 

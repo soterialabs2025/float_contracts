@@ -312,17 +312,12 @@ contract CofferVaultTest is Test {
         registry = new CofferMockRegistry();
         registry.set(OPERATOR, true);
 
-        vault = new CofferVault(address(this));
-        shares = new CofferLiquidShares(address(this));
-        shares.bootstrap(address(vault));
-        vault.bootstrap(address(this), address(shares), address(registry), KEEPER);
+        vault = new CofferVault(address(registry), KEEPER);
+        shares = vault.liquidShares();
 
-        sVol = new CofferStrategy(address(this), WETH, address(0));
-        sA = new CofferStrategy(address(this), address(usdg), address(poolQuote));
-        sB = new CofferStrategy(address(this), address(usdg), address(poolQuote));
-        _boot(sVol, address(alt), CofferStrategyManager.ReserveMode.QUOTE_ONLY);
-        _boot(sA, address(stockA), CofferStrategyManager.ReserveMode.PAIRED);
-        _boot(sB, address(stockB), CofferStrategyManager.ReserveMode.PAIRED);
+        sVol = _strat(WETH, address(0), address(alt), CofferStrategyManager.ReserveMode.QUOTE_ONLY);
+        sA = _strat(address(usdg), address(poolQuote), address(stockA), CofferStrategyManager.ReserveMode.PAIRED);
+        sB = _strat(address(usdg), address(poolQuote), address(stockB), CofferStrategyManager.ReserveMode.PAIRED);
         vault.addStrategy(address(sVol), 3334);
         vault.addStrategy(address(sA), 3333);
         vault.addStrategy(address(sB), 3333);
@@ -332,8 +327,24 @@ contract CofferVaultTest is Test {
         vm.warp(1_000_000);
     }
 
-    function _boot(CofferStrategy s, address asset, CofferStrategyManager.ReserveMode mode) internal {
-        s.bootstrap(address(this), address(vault), address(router), address(registry), KEEPER, FEES, asset, FEE, mode);
+    function _strat(address quote, address quotePool, address asset, CofferStrategyManager.ReserveMode mode)
+        internal
+        returns (CofferStrategy)
+    {
+        return new CofferStrategy(
+            CofferStrategy.Config({
+                quote: quote,
+                quotePool: quotePool,
+                vault: address(vault),
+                swapRouter: address(router),
+                operatorRegistry: address(registry),
+                keeper: KEEPER,
+                feeManager: FEES,
+                asset: asset,
+                poolFee: FEE,
+                reserveMode: mode
+            })
+        );
     }
 
     function _nav(CofferStrategy s) internal view returns (uint256) {

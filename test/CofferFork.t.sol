@@ -9,7 +9,6 @@ import {V3Deployments4663} from "../contracts/coffer/V3Deployments4663.sol";
 import {CofferStrategy} from "../contracts/coffer/CofferStrategy.sol";
 import {CofferStrategyManager} from "../contracts/coffer/CofferStrategyManager.sol";
 import {CofferVault} from "../contracts/coffer/CofferVault.sol";
-import {CofferLiquidShares} from "../contracts/coffer/CofferLiquidShares.sol";
 import {CofferKeeper} from "../contracts/coffer/CofferKeeper.sol";
 import {CofferSwapRouter} from "../contracts/coffer/CofferSwapRouter.sol";
 import {CofferOperatorRegistry} from "../contracts/coffer/CofferOperatorRegistry.sol";
@@ -64,17 +63,11 @@ contract CofferForkTest is Test {
         registry = new CofferOperatorRegistry(address(this));
         keeper = new CofferKeeper(address(registry));
         router = new CofferSwapRouter();
-        vault = new CofferVault(address(this));
-        CofferLiquidShares shares = new CofferLiquidShares(address(this));
-        shares.bootstrap(address(vault));
-        vault.bootstrap(address(this), address(shares), address(registry), address(keeper));
+        vault = new CofferVault(address(registry), address(keeper));
 
-        sVol = new CofferStrategy(address(this), WETH, address(0));
-        sCost = new CofferStrategy(address(this), USDG, QUOTE_POOL);
-        sNvda = new CofferStrategy(address(this), USDG, QUOTE_POOL);
-        _boot(sVol, CASHCAT, FEE_100BP, CofferStrategyManager.ReserveMode.QUOTE_ONLY);
-        _boot(sCost, COST, FEE_30BP, CofferStrategyManager.ReserveMode.PAIRED);
-        _boot(sNvda, NVDA, FEE_30BP, CofferStrategyManager.ReserveMode.PAIRED);
+        sVol = _strat(WETH, address(0), CASHCAT, FEE_100BP, CofferStrategyManager.ReserveMode.QUOTE_ONLY);
+        sCost = _strat(USDG, QUOTE_POOL, COST, FEE_30BP, CofferStrategyManager.ReserveMode.PAIRED);
+        sNvda = _strat(USDG, QUOTE_POOL, NVDA, FEE_30BP, CofferStrategyManager.ReserveMode.PAIRED);
 
         sVol.setAllowedToken(FRONG, true);
         sCost.setAllowedToken(AAPL, true);
@@ -89,9 +82,23 @@ contract CofferForkTest is Test {
         vm.deal(address(this), 10 ether);
     }
 
-    function _boot(CofferStrategy s, address asset, uint24 fee, CofferStrategyManager.ReserveMode mode) internal {
-        s.bootstrap(
-            address(this), address(vault), address(router), address(registry), address(keeper), FEE_MANAGER, asset, fee, mode
+    function _strat(address quote, address quotePool, address asset, uint24 fee, CofferStrategyManager.ReserveMode mode)
+        internal
+        returns (CofferStrategy s)
+    {
+        s = new CofferStrategy(
+            CofferStrategy.Config({
+                quote: quote,
+                quotePool: quotePool,
+                vault: address(vault),
+                swapRouter: address(router),
+                operatorRegistry: address(registry),
+                keeper: address(keeper),
+                feeManager: FEE_MANAGER,
+                asset: asset,
+                poolFee: fee,
+                reserveMode: mode
+            })
         );
         router.addAuthorizedStrategy(address(s));
     }

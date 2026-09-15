@@ -11,14 +11,12 @@ import "./interfaces/ICofferSwapRouter.sol";
 import "./interfaces/IUniswapRouter.sol";
 
 /// @title CofferSwapRouter
-/// @notice Robinhood Chain (4663) Uniswap v3 swap router for Coffer strategies. Owner-managed allowlist; there is no
-///         factory, so `strategyFactory` stays unset.
+/// @notice Robinhood Chain (4663) Uniswap v3 swap router for Coffer strategies. Owner-managed allowlist.
 /// @dev Caller supplies `minAmountOut`; router does not quote.
 contract CofferSwapRouter is ICofferSwapRouter, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IUniswapRouter public immutable router = IUniswapRouter(V3Deployments4663.SWAP_ROUTER02);
-    address public strategyFactory;
     mapping(address => bool) public isAuthorizedStrategy;
 
     error Unauthorized();
@@ -29,7 +27,6 @@ contract CofferSwapRouter is ICofferSwapRouter, Ownable, ReentrancyGuard {
     error Expired();
     error AlreadyAuthorized();
 
-    event StrategyFactoryUpdated(address indexed factory);
     event StrategyAuthorized(address indexed strategy);
     event StrategyDeauthorized(address indexed strategy);
     event Rescued(address indexed token, address indexed to, uint256 amount);
@@ -39,18 +36,7 @@ contract CofferSwapRouter is ICofferSwapRouter, Ownable, ReentrancyGuard {
 
     constructor() Ownable(msg.sender) {}
 
-    modifier onlyOwnerOrFactory() {
-        if (msg.sender != owner() && msg.sender != strategyFactory) revert Unauthorized();
-        _;
-    }
-
-    function setStrategyFactory(address factory_) external onlyOwner {
-        if (factory_ == address(0)) revert ZeroAddress();
-        strategyFactory = factory_;
-        emit StrategyFactoryUpdated(factory_);
-    }
-
-    function addAuthorizedStrategy(address strategy) external override onlyOwnerOrFactory {
+    function addAuthorizedStrategy(address strategy) external override onlyOwner {
         if (strategy == address(0)) revert ZeroAddress();
         if (isAuthorizedStrategy[strategy]) revert AlreadyAuthorized();
         isAuthorizedStrategy[strategy] = true;

@@ -23,14 +23,12 @@ contract CofferKeeper is ICofferKeeper, Ownable, ReentrancyGuard {
 
     ICofferOperatorRegistry public immutable operatorRegistry;
     WatchedStrategy[] public watched;
-    address public strategyFactory;
 
     error Unauthorized();
     error ZeroAddress();
     error BadId();
 
     event StrategyAdded(address indexed stratAddr, uint32 minInterval);
-    event StrategyFactoryUpdated(address indexed factory);
     event UpkeepFailed(uint256 indexed id, address indexed stratAddr, bytes reason);
     event VaultPoolValueSnapshot(uint256 indexed id, address indexed vault, address indexed strat, address caller);
 
@@ -44,17 +42,7 @@ contract CofferKeeper is ICofferKeeper, Ownable, ReentrancyGuard {
         _;
     }
 
-    modifier onlyStrategyFactory() {
-        if (msg.sender != strategyFactory && msg.sender != owner()) revert Unauthorized();
-        _;
-    }
-
-    function setStrategyFactory(address factory) external override onlyOwner {
-        strategyFactory = factory;
-        emit StrategyFactoryUpdated(factory);
-    }
-
-    function addStrategy(address strat) external override onlyStrategyFactory returns (uint256 id) {
+    function addStrategy(address strat) external override onlyOwner returns (uint256 id) {
         if (strat == address(0)) revert ZeroAddress();
         watched.push(
             WatchedStrategy({

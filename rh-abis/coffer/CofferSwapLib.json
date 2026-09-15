@@ -1,0 +1,40 @@
+{
+  "name": "CofferSwapLib",
+  "address": "0xF3c8798c1F6Eca8F6Ff35c345dC907e8bbB6Fb07",
+  "chainId": 4663,
+  "product": "coffer",
+  "profile": "coffer",
+  "timestamp": 1789439014714,
+  "abi": [
+    {
+      "type": "event",
+      "name": "SwapFailed",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "error",
+      "name": "SafeERC20FailedOperation",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        }
+      ]
+    }
+  ]
+}

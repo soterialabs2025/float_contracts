@@ -128,24 +128,6 @@ contract CofferStrategyManager is Ownable {
         innerAboveTicks = TrailingFloorLib.alignTicksDownToSpacing(innerAboveTicks, spacing);
     }
 
-    function _initAutoDefaults() internal {
-        tickSpacing = 200;
-        rangeBelowTicks = 1000; 
-        rangeAboveTicks = 1000;
-        innerBelowTicks = 800;
-        innerAboveTicks = 800;
-        slippageBps = 100;
-        minHarvestDelay = 2 hours;
-        withdrawalFeeBps = 100;
-        protocolFeeBps = 300;
-        protocolFeeOn = true;
-        reserveBps = 3000;
-        reserveMode = ReserveMode.PAIRED;
-        twapSeconds = 30 minutes;
-        maxTwapDeviationBps = 300;
-        swapSlippageBps = 200;
-    }
-
     /// @notice Set the outer mint band and the inner comfort band together.
     /// @dev One call rather than two because the four values are only meaningful relative to each other. Setting
     ///      them separately required every intermediate state to be valid as well, so widening had to be applied

@@ -8,9 +8,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./V3Deployments4663.sol";
+import "./CofferLiquidShares.sol";
 import "./interfaces/ICofferVault.sol";
 import "./interfaces/ICofferStrategy.sol";
-import "./interfaces/ICofferLiquidShares.sol";
 import "./interfaces/ICofferOperatorRegistry.sol";
 
 interface IWETHV3Rh is IERC20 {
@@ -25,7 +25,8 @@ interface IWETHV3Rh is IERC20 {
 ///         everyone's share price and nobody is disadvantaged by which position pays them out.
 /// @dev Built from AutoVaultRhV3. What did not change: ETH-only deposits wrapped to aeWETH, the owner-only first
 ///      mint, min(spot, TWAP-gated) share pricing with virtual offsets, the fee index for off-chain APR. What did:
-///      the single `strategy` slot is a list, and every read or call over it is a loop.
+///      the single `strategy` slot is a list, and every read or call over it is a loop; and there is no clone
+///      factory, so the vault is wired in its constructor and creates its own share token.
 contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
     using SafeERC20 for IERC20;
 
@@ -43,15 +44,11 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
     uint256 public constant MAX_STRATEGIES = 8;
 
     IWETHV3Rh public immutable weth;
-    ICofferLiquidShares public liquidShares;
-    ICofferOperatorRegistry public operatorRegistry;
-    address public keeper;
+    CofferLiquidShares public immutable liquidShares;
+    ICofferOperatorRegistry public immutable operatorRegistry;
+    address public immutable keeper;
     StrategyInfo[] public strategies;
     mapping(address => bool) public isStrategy;
-    address public immutable factory;
-    bool public bootstrapped;
-    /// @notice After one factory ownership transfer (e.g. to ERC-6551), ownership cannot move again.
-    bool public ownershipLocked;
     /// @notice High-water WETH-per-share (scaled 1e18). Later mints use min(spot, this).
     uint256 public lastSharePriceX18;
     uint256 public accUniswapFeesPerShare;
@@ -65,7 +62,6 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
     event Deposit(address indexed user, uint256 wethNotional, uint256 shares, uint256 acc);
     event Withdraw(address indexed user, uint256 shares, uint256 outAmount, uint256 acc);
     event PoolValueSnapshotRecorded(uint256 valueWeth, uint256 uniswapFeesCollected, uint64 indexed timestamp);
-    event OwnershipLocked(address indexed owner);
     event SharePriceHighWater(uint256 priceX18);
     event StrategyAdded(uint256 indexed index, address indexed strategy, uint16 targetWeightBps);
     event StrategyWeightSet(uint256 indexed index, uint16 targetWeightBps);
@@ -75,9 +71,6 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
     error Unauthorized();
     error ZeroAddress();
     error ZeroValue();
-    error AlreadyBootstrapped();
-    error NotBootstrapped();
-    error OwnershipIsLocked();
     error FirstMintOwnerOnly();
     error TwapUnavailable();
     error TooManyStrategies();
@@ -86,10 +79,12 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
     error NoRoute();
     error BadIndex();
 
-    constructor(address factory_) Ownable(msg.sender) {
-        if (factory_ == address(0)) revert ZeroAddress();
-        factory = factory_;
+    constructor(address operatorRegistry_, address keeper_) Ownable(msg.sender) {
+        if (operatorRegistry_ == address(0) || keeper_ == address(0)) revert ZeroAddress();
         weth = IWETHV3Rh(V3Deployments4663.WETH);
+        operatorRegistry = ICofferOperatorRegistry(operatorRegistry_);
+        keeper = keeper_;
+        liquidShares = new CofferLiquidShares();
     }
 
     modifier onlyAutoKeeper() {
@@ -101,26 +96,10 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
         if (!operatorRegistry.isOperator(msg.sender) && msg.sender != owner()) revert Unauthorized();
     }
 
-    // ---- wiring -------------------------------------------------------------------------------------------------
+    // ---- strategies ---------------------------------------------------------------------------------------------
 
-    function bootstrap(address owner_, address liquidShares_, address operatorRegistry_, address keeper_) external {
-        if (bootstrapped) revert AlreadyBootstrapped();
-        if (ownershipLocked) revert OwnershipIsLocked();
-        if (msg.sender != factory) revert Unauthorized();
-        if (owner_ == address(0) || liquidShares_ == address(0) || operatorRegistry_ == address(0) || keeper_ == address(0))
-        {
-            revert ZeroAddress();
-        }
-        liquidShares = ICofferLiquidShares(liquidShares_);
-        operatorRegistry = ICofferOperatorRegistry(operatorRegistry_);
-        keeper = keeper_;
-        bootstrapped = true;
-        _transferOwnership(owner_);
-    }
-
-    /// @notice Add a strategy already bootstrapped against this vault. Owner only; at most `MAX_STRATEGIES`.
+    /// @notice Add a strategy constructed against this vault. Owner only; at most `MAX_STRATEGIES`.
     function addStrategy(address strategy_, uint16 targetWeightBps) external onlyOwner {
-        if (!bootstrapped) revert NotBootstrapped();
         if (strategy_ == address(0)) revert ZeroAddress();
         if (isStrategy[strategy_]) revert DuplicateStrategy();
         if (strategies.length >= MAX_STRATEGIES) revert TooManyStrategies();
@@ -149,27 +128,6 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
 
     function strategyCount() external view returns (uint256) {
         return strategies.length;
-    }
-
-    /// @notice One-shot factory ownership move (e.g. package → ERC-6551 TBA). Locks ownership afterward.
-    function transferOwnershipFromFactory(address newOwner) external {
-        if (msg.sender != factory) revert Unauthorized();
-        if (!bootstrapped) revert NotBootstrapped();
-        if (newOwner == address(0)) revert ZeroAddress();
-        if (ownershipLocked) revert OwnershipIsLocked();
-        _transferOwnership(newOwner);
-        ownershipLocked = true;
-        emit OwnershipLocked(newOwner);
-    }
-
-    function transferOwnership(address newOwner) public override onlyOwner {
-        if (ownershipLocked) revert OwnershipIsLocked();
-        super.transferOwnership(newOwner);
-    }
-
-    function renounceOwnership() public override onlyOwner {
-        if (ownershipLocked) revert OwnershipIsLocked();
-        super.renounceOwnership();
     }
 
     // ---- NAV ----------------------------------------------------------------------------------------------------
@@ -210,7 +168,6 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
 
     /// @notice Emit NAV + cumulative Uniswap fees for off-chain indexing. Keeper-only.
     function recordPoolValueSnapshot() external override onlyAutoKeeper {
-        if (!bootstrapped) revert NotBootstrapped();
         emit PoolValueSnapshotRecorded(balance(), _totalFeesCollected(), uint64(block.timestamp));
     }
 
@@ -231,7 +188,6 @@ contract CofferVault is Ownable, ReentrancyGuard, ICofferVault {
     }
 
     function _mintSharesAndDeploy(uint256 amount) internal returns (uint256 shares) {
-        if (!bootstrapped) revert NotBootstrapped();
         uint256 n = strategies.length;
         if (n == 0) revert NoRoute();
         uint256 supply = totalSupply();

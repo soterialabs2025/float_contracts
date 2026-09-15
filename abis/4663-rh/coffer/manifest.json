@@ -1,0 +1,57 @@
+{
+  "chainId": 4663,
+  "product": "coffer",
+  "profile": "coffer",
+  "contracts": {
+    "CofferOperatorRegistry": {
+      "address": "0x5af67Ef469EeEa0807D42d7A1505ddbf532B20dC",
+      "artifact": "artifacts/CofferOperatorRegistry.sol/CofferOperatorRegistry.json",
+      "abiEntries": 14
+    },
+    "CofferKeeper": {
+      "address": "0xCC0F49c07e76b398d26103539cd2Ae525013cA61",
+      "artifact": "artifacts/CofferKeeper.sol/CofferKeeper.json",
+      "abiEntries": 29
+    },
+    "CofferSwapRouter": {
+      "address": "0xDdBcdfBcF17903d8D18f76D564c684211Ac58010",
+      "artifact": "artifacts/CofferSwapRouter.sol/CofferSwapRouter.json",
+      "abiEntries": 29
+    },
+    "CofferVault": {
+      "address": "0x620136C3A4937AEEB4f846ce965c97c6571b31Fd",
+      "artifact": "artifacts/CofferVault.sol/CofferVault.json",
+      "abiEntries": 58
+    },
+    "CofferLiquidShares": {
+      "address": "0x5774ec91794d0259fAE944f37A7F41634E791CEC",
+      "artifact": "artifacts/CofferLiquidShares.sol/CofferLiquidShares.json",
+      "abiEntries": 28
+    },
+    "CofferStrategy": {
+      "address": "0xCD6b9F85B9e2e707b2884533559B7A8b24180bD7",
+      "artifact": "artifacts/CofferStrategy.sol/CofferStrategy.json",
+      "abiEntries": 82
+    },
+    "CofferStrategyManager": {
+      "address": null,
+      "artifact": "artifacts/CofferStrategyManager.sol/CofferStrategyManager.json",
+      "abiEntries": 35
+    },
+    "LiquidityLibraryV2": {
+      "address": "0x7289Cde1783B275fEAa4eF3978e49314E59dFc14",
+      "artifact": "artifacts/LiquidityLibraryV2.sol/LiquidityLibraryV2.json",
+      "abiEntries": 2
+    },
+    "TwapQuoteLib": {
+      "address": "0xf1C2F33793d62E458f43a3c77Ef6c6817bC6a2DC",
+      "artifact": "artifacts/TwapQuoteLib.sol/TwapQuoteLib.json",
+      "abiEntries": 7
+    },
+    "CofferSwapLib": {
+      "address": "0xF3c8798c1F6Eca8F6Ff35c345dC907e8bbB6Fb07",
+      "artifact": "artifacts/CofferSwapLib.sol/CofferSwapLib.json",
+      "abiEntries": 2
+    }
+  }
+}

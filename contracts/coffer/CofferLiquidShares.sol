@@ -3,53 +3,31 @@ pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/ICofferLiquidShares.sol";
 
 /// @title CofferLiquidShares
-/// @notice Cloneable share token; `initialize` sets vault + metadata (OZ ERC20 constructor does not run on clones).
-contract CofferLiquidShares is Ownable, ICofferLiquidShares {
-    string private _name;
-    string private _symbol;
+/// @notice Share token of one CofferVault. The vault creates it in its constructor and is the only minter/burner.
+contract CofferLiquidShares is ICofferLiquidShares {
+    string private constant _name = "Liquid Shares";
+    string private constant _symbol = "aLS";
     uint8 private constant _decimals = 18;
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
     uint256 private _totalSupply;
 
-    address public vault;
-    address public immutable factory;
-    bool public initialized;
+    address public immutable vault;
 
     error Unauthorized();
-    error ZeroAddress();
-    error AlreadyInitialized();
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    /// @notice Implementation sets immutable `factory` (copied into EIP-1167 clones).
-    constructor(address factory_) Ownable(msg.sender) {
-        if (factory_ == address(0)) revert ZeroAddress();
-        factory = factory_;
+    constructor() {
+        vault = msg.sender;
     }
 
-    function initialize(address vault_, string memory name_, string memory symbol_) public override {
-        if (initialized) revert AlreadyInitialized();
-        if (msg.sender != factory) revert Unauthorized();
-        if (vault_ == address(0)) revert ZeroAddress();
-        vault = vault_;
-        _name = name_;
-        _symbol = symbol_;
-        initialized = true;
-        _transferOwnership(vault_);
-    }
-
-    function bootstrap(address vault_) external override {
-        initialize(vault_, "Liquid Shares", "aLS");
-    }
-
-    function name() external view returns (string memory) { return _name; }
-    function symbol() external view returns (string memory) { return _symbol; }
+    function name() external pure returns (string memory) { return _name; }
+    function symbol() external pure returns (string memory) { return _symbol; }
     function decimals() external pure returns (uint8) { return _decimals; }
     function totalSupply() external view override returns (uint256) { return _totalSupply; }
     function balanceOf(address account) external view override returns (uint256) { return _balances[account]; }
